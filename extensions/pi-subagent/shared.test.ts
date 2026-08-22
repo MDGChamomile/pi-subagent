@@ -35,13 +35,18 @@ describe("pi-subagent scope policy", () => {
     }
   });
 
-  test("supports an empty local scope for web-only research", async () => {
+  test("separates local and web capabilities", async () => {
     const root = await mkdtemp(join(tmpdir(), "pi-subagent-test-"));
     try {
-      const policy = await buildChildPolicy(root, []);
-      assert.deepEqual(policy.roots, []);
-      assert.match(buildChildPrompt("Research a public API", policy), /none; web-only investigation/);
-      await assert.rejects(() => authorizeReadPath(policy, "."), /outside its explicit scope/);
+      await writeFile(join(root, "local.txt"), "local\n");
+      const webPolicy = await buildChildPolicy(root, [], "web");
+      assert.deepEqual(webPolicy.roots, []);
+      assert.match(buildChildPrompt("Research a public API", webPolicy), /none; web-only investigation/);
+      await assert.rejects(() => authorizeReadPath(webPolicy, "."), /outside its explicit scope/);
+      const localPolicy = await buildChildPolicy(root, ["local.txt"], "local");
+      assert.equal(localPolicy.capability, "local");
+      await assert.rejects(() => buildChildPolicy(root, [], "local"), /requires at least one local scope/);
+      await assert.rejects(() => buildChildPolicy(root, ["local.txt"], "web"), /requires an empty local scope/);
     } finally {
       await rm(root, { recursive: true, force: true });
     }
@@ -59,7 +64,7 @@ describe("pi-subagent scope policy", () => {
       await assert.rejects(() => buildChildPolicy(workspace, ["../outside.txt"]), /inside the current working directory/);
       await assert.rejects(() => buildChildPolicy(workspace, [outside]), /inside the current working directory/);
       await assert.rejects(() => buildChildPolicy(workspace, ["escape"]), /inside the current working directory/);
-      const policy = await buildChildPolicy(workspace, ["inside.txt"]);
+      const policy = await buildChildPolicy(workspace, ["inside.txt"], "local");
       await assert.rejects(() => authorizeReadPath(policy, outside), /outside its explicit scope/);
     } finally {
       await rm(root, { recursive: true, force: true });
@@ -81,22 +86,26 @@ describe("pi-subagent scope policy", () => {
 });
 
 describe("pi-subagent model invocation contract", () => {
-  test("authorizes exactly one tool call per parent agent run", () => {
+  test("allows one started child plus one preflight retry per parent agent run", () => {
     const gate = new ModelInvocationGate();
     assert.equal(gate.authorize("before-run"), false);
     gate.startRun();
     assert.equal(gate.authorize("call-1"), true);
-    assert.equal(gate.authorize("call-2"), false);
-    assert.equal(gate.consume("call-2"), false);
-    assert.equal(gate.consume("call-1"), true);
-    assert.equal(gate.consume("call-1"), false);
+    assert.equal(gate.authorize("parallel-call"), false);
+    assert.equal(gate.rejectPreflight("wrong-id"), false);
+    assert.equal(gate.rejectPreflight("call-1"), true);
+    assert.equal(gate.authorize("retry-1"), true);
+    assert.equal(gate.rejectPreflight("retry-1"), true);
+    assert.equal(gate.authorize("third-attempt"), false);
+    gate.endRun();
+    gate.startRun();
+    assert.equal(gate.authorize("call-2"), true);
+    assert.equal(gate.commit("call-2"), true);
+    assert.equal(gate.authorize("after-start"), false);
     gate.startRun();
     assert.equal(gate.authorize("same-unsettled-run"), false);
     gate.endRun();
-    gate.startRun();
-    assert.equal(gate.authorize("call-3"), true);
-    gate.endRun();
-    assert.equal(gate.consume("call-3"), false);
+    assert.equal(gate.commit("call-2"), false);
   });
 
   test("skill is visible for model invocation", async () => {

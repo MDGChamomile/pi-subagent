@@ -2,17 +2,16 @@ import { lstatSync, readFileSync, realpathSync } from "node:fs";
 import { resolve } from "node:path";
 import type { ExtensionAPI } from "@earendil-works/pi-coding-agent";
 import {
-  ALLOWED_CHILD_TOOLS,
   ALLOWED_FILE_TOOLS,
   ALLOWED_WEB_TOOLS,
   authorizeReadPath,
   isWithin,
   POLICY_ENV,
+  toolsForCapability,
   WEB_EXTENSION_ENV,
   type ChildPolicy,
 } from "./shared.ts";
 
-const ALLOWED = new Set<string>(ALLOWED_CHILD_TOOLS);
 const FILE_TOOLS = new Set<string>(ALLOWED_FILE_TOOLS);
 const WEB_TOOLS = new Set<string>(ALLOWED_WEB_TOOLS);
 
@@ -29,7 +28,12 @@ function loadPolicy(): ChildPolicy {
   }
   if (realpathSync(resolved) !== resolved) throw new Error("child policy path changed");
   const parsed = JSON.parse(readFileSync(resolved, "utf8")) as Partial<ChildPolicy>;
-  if (parsed.version !== 1 || typeof parsed.cwd !== "string" || !Array.isArray(parsed.roots)) {
+  if (
+    parsed.version !== 1 ||
+    typeof parsed.cwd !== "string" ||
+    !Array.isArray(parsed.roots) ||
+    (parsed.capability !== "local" && parsed.capability !== "web" && parsed.capability !== "both")
+  ) {
     throw new Error("child policy is malformed");
   }
   const cwd = realpathSync(parsed.cwd);
@@ -42,7 +46,7 @@ function loadPolicy(): ChildPolicy {
     if (canonical !== root.path || !isWithin(cwd, canonical)) throw new Error("child policy root escapes cwd");
     return { path: canonical, kind: root.kind };
   });
-  return { version: 1, cwd, roots };
+  return { version: 1, cwd, capability: parsed.capability, roots };
 }
 
 function loadWebExtensionPath(): string {
@@ -75,7 +79,7 @@ function canonicalSourcePath(raw: unknown): string | undefined {
 function validatePublicHttpUrl(raw: string): string | undefined {
   try {
     const url = new URL(raw);
-    if (url.protocol !== "http:" && url.protocol !== "https:") return "fetch_content permits only public HTTP(S) URLs";
+    if (url.protocol !== "http:" && url.protocol !== "https:") return "fetch_content permits only HTTP(S) URLs";
     if (url.username || url.password) return "fetch_content URLs must not contain embedded credentials";
     return undefined;
   } catch {
@@ -99,7 +103,7 @@ function validateWebCall(toolName: string, input: Record<string, unknown>): stri
     if (!input.urls.every((value) => typeof value === "string")) return "fetch_content URLs must be strings";
     urls.push(...input.urls as string[]);
   }
-  if (urls.length === 0) return "fetch_content requires at least one public HTTP(S) URL";
+  if (urls.length === 0) return "fetch_content requires at least one HTTP(S) URL";
   for (const url of urls) {
     const error = validatePublicHttpUrl(url);
     if (error) return error;
@@ -113,44 +117,50 @@ export default function childGuard(pi: ExtensionAPI): void {
   let policyError: string | undefined;
   try {
     policy = loadPolicy();
-    webExtensionPath = loadWebExtensionPath();
+    if (policy.capability !== "local") webExtensionPath = loadWebExtensionPath();
   } catch (error) {
     policyError = error instanceof Error ? error.message : String(error);
   }
 
   pi.on("session_start", () => {
-    if (!policy || !webExtensionPath) {
+    if (!policy || (policy.capability !== "local" && !webExtensionPath)) {
       pi.setActiveTools([]);
       return;
     }
     const tools = pi.getAllTools();
-    for (const name of ALLOWED_FILE_TOOLS) {
-      const tool = tools.find((candidate) => candidate.name === name);
-      if (!tool || tool.sourceInfo?.source !== "builtin") {
-        policy = undefined;
-        policyError = `${name} is not owned by Pi's built-in tool set`;
-        pi.setActiveTools([]);
-        return;
+    const activeTools = toolsForCapability(policy.capability);
+    if (policy.capability !== "web") {
+      for (const name of ALLOWED_FILE_TOOLS) {
+        const tool = tools.find((candidate) => candidate.name === name);
+        if (!tool || tool.sourceInfo?.source !== "builtin") {
+          policy = undefined;
+          policyError = `${name} is not owned by Pi's built-in tool set`;
+          pi.setActiveTools([]);
+          return;
+        }
       }
     }
-    for (const name of ALLOWED_WEB_TOOLS) {
-      const tool = tools.find((candidate) => candidate.name === name);
-      const sourcePath = canonicalSourcePath(tool?.sourceInfo?.path);
-      if (!tool || sourcePath !== webExtensionPath) {
-        policy = undefined;
-        policyError = `${name} is not owned by the explicitly loaded web extension`;
-        pi.setActiveTools([]);
-        return;
+    if (policy.capability !== "local") {
+      for (const name of ALLOWED_WEB_TOOLS) {
+        const tool = tools.find((candidate) => candidate.name === name);
+        const sourcePath = canonicalSourcePath(tool?.sourceInfo?.path);
+        if (!tool || sourcePath !== webExtensionPath) {
+          policy = undefined;
+          policyError = `${name} is not owned by the explicitly loaded web extension`;
+          pi.setActiveTools([]);
+          return;
+        }
       }
     }
-    pi.setActiveTools([...ALLOWED_CHILD_TOOLS]);
+    pi.setActiveTools(activeTools);
   });
 
   pi.on("tool_call", async (event) => {
-    if (!policy || !webExtensionPath) {
+    if (!policy || (policy.capability !== "local" && !webExtensionPath)) {
       return { block: true, reason: `Subagent policy is unavailable: ${policyError ?? "unknown error"}`, terminate: true };
     }
-    if (!ALLOWED.has(event.toolName)) {
+    const allowed = new Set(toolsForCapability(policy.capability));
+    if (!allowed.has(event.toolName)) {
       return { block: true, reason: `Tool ${event.toolName} is not allowed in the subagent`, terminate: true };
     }
 

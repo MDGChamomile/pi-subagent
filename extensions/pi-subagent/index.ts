@@ -11,6 +11,8 @@ import {
   PROFILE_MODELS,
   resolveWebExtensionPath,
   TOOL_NAME,
+  type Capability,
+  type ChildPolicy,
   type Profile,
   type Thinking,
 } from "./shared.ts";
@@ -20,6 +22,9 @@ const ProfileSchema = StringEnum(["lookup", "analysis", "review"] as const, {
   description: "lookup=luna, analysis=terra, review=sol",
 });
 const ThinkingSchema = StringEnum(["medium", "high", "xhigh", "max"] as const);
+const CapabilitySchema = StringEnum(["local", "web", "both"] as const, {
+  description: "local=files only, web=public web only, both=files and public web",
+});
 const Parameters = Type.Object({
   task: Type.String({ minLength: 1, maxLength: 12_000, description: "One focused local and/or web investigation and required deliverable" }),
   scope: Type.Array(Type.String({ minLength: 1, maxLength: 4096 }), {
@@ -27,6 +32,7 @@ const Parameters = Type.Object({
     maxItems: MAX_SCOPE_ROOTS,
     description: "Existing local files/directories inside cwd; use [] for web-only research",
   }),
+  capability: CapabilitySchema,
   profile: ProfileSchema,
   thinking: ThinkingSchema,
 }, { additionalProperties: false });
@@ -53,17 +59,24 @@ export default function piSubagentExtension(pi: ExtensionAPI): void {
       if (!authorizedCalls.delete(toolCallId) || !ownSourcePath || currentSource !== ownSourcePath) {
         throw new Error("pi_subagent allows only one model-selected call per parent agent run");
       }
-      if (!gate.consume(toolCallId)) throw new Error("pi_subagent invocation permit is invalid or already consumed");
-      if (params.task.includes("\0")) throw new Error("task must not contain NUL bytes");
-
+      const capability = params.capability as Capability;
       const profile = params.profile as Profile;
       const thinking = params.thinking as Thinking;
       const model = PROFILE_MODELS[profile];
-      const [provider, modelId] = model.split("/", 2);
-      if (!ctx.modelRegistry.find(provider!, modelId!)) throw new Error(`Configured subagent model is unavailable: ${model}`);
+      let webExtensionPath: string | undefined;
+      let policy: ChildPolicy;
+      try {
+        if (params.task.includes("\0")) throw new Error("task must not contain NUL bytes");
+        const [provider, modelId] = model.split("/", 2);
+        if (!ctx.modelRegistry.find(provider!, modelId!)) throw new Error(`Configured subagent model is unavailable: ${model}`);
+        if (capability !== "local") webExtensionPath = await resolveWebExtensionPath(pi.getAllTools());
+        policy = await buildChildPolicy(ctx.cwd, params.scope, capability);
+      } catch (error) {
+        gate.rejectPreflight(toolCallId);
+        throw error;
+      }
+      if (!gate.commit(toolCallId)) throw new Error("pi_subagent invocation permit is invalid or already consumed");
 
-      const webExtensionPath = await resolveWebExtensionPath(pi.getAllTools());
-      const policy = await buildChildPolicy(ctx.cwd, params.scope);
       const tempDir = await mkdtemp(join(tmpdir(), "pi-subagent-"));
       try {
         await chmod(tempDir, 0o700);
@@ -82,11 +95,12 @@ export default function piSubagentExtension(pi: ExtensionAPI): void {
         return {
           content: [{ type: "text", text: result.output }],
           details: {
+            capability,
             profile,
             model,
             thinking,
             scopeRoots: policy.roots.length,
-            webEnabled: true,
+            webEnabled: capability !== "local",
             durationMs: result.durationMs,
             exitCode: result.exitCode,
             stopReason: result.stopReason,
@@ -115,7 +129,7 @@ export default function piSubagentExtension(pi: ExtensionAPI): void {
     if (!ownSourcePath || currentSource !== ownSourcePath || !gate.authorize(event.toolCallId)) {
       return {
         block: true,
-        reason: "pi_subagent allows only one model-selected call per parent agent run",
+        reason: "pi_subagent allows one successful call per parent agent run, plus one retry after preflight validation failure",
         terminate: true,
       };
     }
