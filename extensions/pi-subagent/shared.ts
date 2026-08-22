@@ -1,6 +1,6 @@
-import { lstat, realpath, stat } from "node:fs/promises";
+import { lstat, readFile, realpath, stat } from "node:fs/promises";
 import { homedir } from "node:os";
-import { isAbsolute, join, relative, resolve, sep } from "node:path";
+import { dirname, isAbsolute, join, relative, resolve, sep } from "node:path";
 import { fileURLToPath } from "node:url";
 
 export const TOOL_NAME = "pi_subagent";
@@ -13,6 +13,8 @@ export const MAX_STDERR_BYTES = 64 * 1024;
 export const MAX_JSON_LINE_BYTES = 2 * 1024 * 1024;
 export const CHILD_TIMEOUT_MS = 15 * 60 * 1000;
 export const POLICY_ENV = "PI_SUBAGENT_POLICY_FILE";
+export const READY_ENV = "PI_SUBAGENT_READY_FILE";
+export const READY_MARKER = "pi-subagent-guard-ready-v1\n";
 export const WEB_EXTENSION_ENV = "PI_SUBAGENT_WEB_EXTENSION_PATH";
 
 export const PROFILE_MODELS = {
@@ -23,8 +25,15 @@ export const PROFILE_MODELS = {
 
 export type Profile = keyof typeof PROFILE_MODELS;
 export type Thinking = "medium" | "high" | "xhigh" | "max";
+export type Capability = "local" | "web" | "both";
 export type ScopeRoot = { path: string; kind: "file" | "directory" };
-export type ChildPolicy = { version: 1; cwd: string; roots: ScopeRoot[] };
+export type ChildPolicy = { version: 1; cwd: string; capability: Capability; roots: ScopeRoot[] };
+
+export function toolsForCapability(capability: Capability): string[] {
+  if (capability === "local") return [...ALLOWED_FILE_TOOLS];
+  if (capability === "web") return [...ALLOWED_WEB_TOOLS];
+  return [...ALLOWED_CHILD_TOOLS];
+}
 
 const PATH_CONTROL_RE = /[\u0000-\u001f\u007f-\u009f\u202a-\u202e\u2066-\u2069]/;
 const UNICODE_SPACES = /[\u00a0\u2000-\u200a\u202f\u205f\u3000]/g;
@@ -50,9 +59,19 @@ export function normalizeInputPath(input: string, cwd: string): string {
   return isAbsolute(normalized) ? resolve(normalized) : resolve(cwd, normalized);
 }
 
-export async function buildChildPolicy(cwdInput: string, scopeInputs: readonly string[]): Promise<ChildPolicy> {
+export async function buildChildPolicy(
+  cwdInput: string,
+  scopeInputs: readonly string[],
+  capability: Capability = "both",
+): Promise<ChildPolicy> {
   if (scopeInputs.length > MAX_SCOPE_ROOTS) {
     throw new Error(`scope must contain 0-${MAX_SCOPE_ROOTS} paths`);
+  }
+  if (capability === "web" && scopeInputs.length !== 0) {
+    throw new Error("web capability requires an empty local scope");
+  }
+  if ((capability === "local" || capability === "both") && scopeInputs.length === 0) {
+    throw new Error(`${capability} capability requires at least one local scope path`);
   }
   const cwd = await realpath(resolve(cwdInput));
   const cwdInfo = await stat(cwd);
@@ -79,7 +98,7 @@ export async function buildChildPolicy(cwdInput: string, scopeInputs: readonly s
     }
     roots.push(root);
   }
-  return { version: 1, cwd, roots };
+  return { version: 1, cwd, capability, roots };
 }
 
 export async function authorizeReadPath(policy: ChildPolicy, rawPath: string): Promise<string> {
@@ -107,7 +126,7 @@ export function buildChildPrompt(task: string, policy: ChildPolicy): string {
     "Authorized local scope (runtime enforced)",
     ...(visibleRoots.length > 0 ? visibleRoots : ["- (none; web-only investigation)"]),
     "",
-    "Use only the listed local paths and their authorized descendants. Web research may use only the available web tools and public HTTP(S) URLs. Return only the requested deliverable.",
+    "Use only the listed local paths and their authorized descendants. Web research may use only the available web tools and HTTP(S) access allowed by the installed web extension's SSRF policy. Return only the requested deliverable.",
   ].join("\n");
 }
 
@@ -115,6 +134,32 @@ export type ToolSourceDescriptor = {
   name: string;
   sourceInfo?: { path?: string; baseDir?: string };
 };
+
+async function verifyWebPackageEntrypoint(canonical: string): Promise<boolean> {
+  for (let directory = dirname(canonical);;) {
+    try {
+      const manifest = JSON.parse(await readFile(join(directory, "package.json"), "utf8")) as {
+        name?: unknown;
+        pi?: { extensions?: unknown };
+      };
+      if (manifest.name !== "pi-web-access" || !Array.isArray(manifest.pi?.extensions)) return false;
+      for (const entry of manifest.pi.extensions) {
+        if (typeof entry !== "string") continue;
+        try {
+          if (await realpath(resolve(directory, entry)) === canonical) return true;
+        } catch {
+          // Ignore malformed or missing manifest entries.
+        }
+      }
+      return false;
+    } catch (error) {
+      if ((error as NodeJS.ErrnoException).code !== "ENOENT") return false;
+    }
+    const parent = dirname(directory);
+    if (parent === directory) return false;
+    directory = parent;
+  }
+}
 
 export async function resolveWebExtensionPath(tools: readonly ToolSourceDescriptor[]): Promise<string> {
   const selected = ALLOWED_WEB_TOOLS.map((name) => tools.find((tool) => tool.name === name));
@@ -132,42 +177,52 @@ export async function resolveWebExtensionPath(tools: readonly ToolSourceDescript
     try {
       const canonical = await realpath(candidate);
       const info = await lstat(canonical);
-      if (info.isFile()) return canonical;
+      if (info.isFile() && await verifyWebPackageEntrypoint(canonical)) return canonical;
     } catch {
       // Try the source base directory fallback.
     }
   }
-  throw new Error("Could not resolve the installed web-tool extension entry point");
+  throw new Error("Web tools must come from the installed pi-web-access package entry point");
 }
 
 export class ModelInvocationGate {
   private runOpen = false;
-  private used = false;
+  private completedOrStarted = false;
+  private preflightFailures = 0;
   private authorizedToolCallId: string | undefined;
 
   startRun(): void {
     if (this.runOpen) return;
     this.runOpen = true;
-    this.used = false;
+    this.completedOrStarted = false;
+    this.preflightFailures = 0;
     this.authorizedToolCallId = undefined;
   }
 
   endRun(): void {
     this.runOpen = false;
-    this.used = false;
+    this.completedOrStarted = false;
+    this.preflightFailures = 0;
     this.authorizedToolCallId = undefined;
   }
 
   authorize(toolCallId: string): boolean {
-    if (!this.runOpen || this.used) return false;
-    this.used = true;
+    if (!this.runOpen || this.completedOrStarted || this.authorizedToolCallId || this.preflightFailures > 1) return false;
     this.authorizedToolCallId = toolCallId;
     return true;
   }
 
-  consume(toolCallId: string): boolean {
+  commit(toolCallId: string): boolean {
     if (this.authorizedToolCallId !== toolCallId) return false;
     this.authorizedToolCallId = undefined;
+    this.completedOrStarted = true;
+    return true;
+  }
+
+  rejectPreflight(toolCallId: string): boolean {
+    if (this.authorizedToolCallId !== toolCallId) return false;
+    this.authorizedToolCallId = undefined;
+    this.preflightFailures += 1;
     return true;
   }
 }

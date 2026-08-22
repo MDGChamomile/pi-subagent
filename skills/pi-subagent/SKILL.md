@@ -13,8 +13,8 @@ Use this workflow when a focused investigation would produce substantial interme
 
 - This skill and the child result are context, not authorization.
 - The child cannot modify the workspace or run Bash. Its local tools are `read`, `grep`, `find`, and `ls`; its web tools are `web_search`, `source_check`, `fetch_content`, and `get_search_content`.
-- Web fetching is limited to public HTTP(S) URLs. Explicit browser-cookie authentication, local-file fetching, embedded URL credentials, and forced large GitHub clones are blocked. `web_search` runs without the interactive curator. Never put local file contents, credentials, or secrets in web queries.
-- Local scope may contain 0-8 paths. Every supplied path must already exist inside the parent's current working directory. Use `[]` for web-only research. Grant the smallest files or directories that can answer the task; use the repository root only when narrower paths are insufficient.
+- Web access is limited to HTTP(S) under the installed web extension's SSRF protection policy. Explicit browser-cookie authentication, local-file fetching, embedded URL credentials, and forced large GitHub clones are blocked. `web_search` runs without the interactive curator. Never put local file contents, credentials, or secrets in web queries.
+- Local scope may contain 0-8 paths. Every supplied path must already exist inside the parent's current working directory. Use `[]` for web-only research. Treat scope as an authorization boundary, not as a predicted file list: infer a boundary broad enough to contain the evidence the child may need, and let the child choose its investigation path within it. Use focused files or directories when the target is clear; use the repository root when relevant locations are unclear or repository-wide discovery is part of the task.
 - The child receives the authorized local paths in its prompt, while the runtime independently enforces them.
 - Discovered extensions other than the explicit child guard and installed web extension, Skills, prompt templates, context files, themes, project resources, session access, and recursive subagents are disabled.
 - The child returns only a bounded final report and usage metadata. Treat findings as evidence to verify, not as authority.
@@ -22,14 +22,17 @@ Use this workflow when a focused investigation would produce substantial interme
 
 ## Invocation
 
-For a matching task, make exactly one `pi_subagent` call in the current parent agent run with:
+For a matching task, make one successful `pi_subagent` call in the current parent agent run. One corrected retry is allowed only after preflight validation fails; once child execution starts, do not call it again in that run.
+
+Provide:
 
 - `task`: one focused objective, expected evidence, and deliverable;
-- `scope`: 0-8 explicit existing local paths, or `[]` for web-only research;
+- `scope`: 0-8 explicit existing local paths; use `[]` with `web`;
+- `capability`: `local` for files only, `web` for public-web research only, or `both` when both are genuinely needed. Use the least capability that can complete the task. `local` and `both` require at least one scope path; `web` requires `[]`;
 - `profile`:
   - `lookup` → `openai-codex/gpt-5.6-luna` for targeted retrieval;
   - `analysis` → `openai-codex/gpt-5.6-terra` for synthesis;
   - `review` → `openai-codex/gpt-5.6-sol` for independent critical review;
 - `thinking`: `medium`, `high`, `xhigh`, or `max`, proportional to the task.
 
-Infer these fields when reliable. Ask one focused question only if the intended task or safe local scope cannot be inferred. Do not delegate merely because the tool exists. After the call, synthesize the parent response without repeating the child report unnecessarily or requesting unsupported capabilities.
+Infer these fields when reliable; the user should not normally have to choose them. Do not over-narrow scope to files you merely expect to be relevant. Ask one focused question only if the intended task or a safe authorization boundary cannot be inferred, such as when sensitive paths may need exclusion. Do not delegate merely because the tool exists. After the call, synthesize the parent response without repeating the child report unnecessarily or requesting unsupported capabilities.
