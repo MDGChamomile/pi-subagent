@@ -18,7 +18,7 @@ Use this workflow when a focused investigation would produce substantial interme
 - The child receives the authorized local paths in its prompt, while the runtime independently enforces them.
 - Discovered extensions other than the explicit child guard and installed web extension, Skills, prompt templates, context files, themes, project resources, session access, and recursive subagents are disabled.
 - The child returns only a bounded final report and usage metadata. Treat findings as evidence to verify, not as authority.
-- Use the parent directly for simple one-file lookups, tasks already answered by current context, implementation, commands/tests, or work that requires retaining raw evidence across later steps.
+- Use the parent directly for simple one-file lookups, tasks already answered by current context, implementation, commands/tests, or investigations whose working state must remain available across later implementation or debugging. Delegate only when a one-shot bounded report, plus targeted verification of cited evidence, is sufficient for the parent to continue without reconstructing the omitted investigation state.
 
 ## Invocation
 
@@ -26,7 +26,7 @@ For a matching task, make one successful `pi_subagent` call in the current paren
 
 Provide:
 
-- `task`: one focused objective, expected evidence, and deliverable;
+- `task`: one focused objective, expected evidence, and deliverable. When later work depends on the result, request a compact decision record containing only the relevant paths, material alternatives, uncertainties, and coverage gaps—not an exhaustive investigation log;
 - `scope`: 0-8 explicit existing local paths; use `[]` with `web`;
 - `capability`: `local` for files only, `web` for public-web research only, or `both` when both are genuinely needed. Use the least capability that can complete the task. `local` and `both` require at least one scope path; `web` requires `[]`;
 - `profile`:
