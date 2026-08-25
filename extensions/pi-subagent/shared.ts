@@ -24,7 +24,8 @@ export const PROFILE_MODELS = {
 } as const;
 
 export type Profile = keyof typeof PROFILE_MODELS;
-export type Thinking = "medium" | "high" | "xhigh" | "max";
+export const THINKING_LEVELS = ["low", "medium", "high", "xhigh", "max"] as const;
+export type Thinking = (typeof THINKING_LEVELS)[number];
 export type Capability = "local" | "web" | "both";
 export type ScopeRoot = { path: string; kind: "file" | "directory" };
 export type ChildPolicy = { version: 1; cwd: string; capability: Capability; roots: ScopeRoot[] };

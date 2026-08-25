@@ -10,6 +10,7 @@ import {
   ModelInvocationGate,
   PROFILE_MODELS,
   resolveWebExtensionPath,
+  THINKING_LEVELS,
   TOOL_NAME,
   type Capability,
   type ChildPolicy,
@@ -21,7 +22,7 @@ import { runChild } from "./subprocess.ts";
 const ProfileSchema = StringEnum(["lookup", "analysis", "review"] as const, {
   description: "lookup=luna, analysis=terra, review=sol",
 });
-const ThinkingSchema = StringEnum(["medium", "high", "xhigh", "max"] as const);
+const ThinkingSchema = StringEnum(THINKING_LEVELS);
 const CapabilitySchema = StringEnum(["local", "web", "both"] as const, {
   description: "local=files only, web=public web only, both=files and public web",
 });
@@ -52,7 +53,7 @@ export default function piSubagentExtension(pi: ExtensionAPI): void {
     name: TOOL_NAME,
     label: "Pi Subagent",
     executionMode: "sequential",
-    description: "Delegate one focused, noisy local-file and/or public-web investigation to an isolated child Pi context and return only a bounded report. Use when intermediate discovery, reads, searches, or fetched pages would be large; use the parent directly for simple lookups, implementation, or tests.",
+    description: "Run one bounded investigation in an isolated child context. Use for noisy local or public-web research; use the parent for simple lookups, implementation, or tests.",
     parameters: Parameters,
     async execute(toolCallId, params, signal, onUpdate, ctx) {
       const currentSource = currentOwnSource();

@@ -42,6 +42,8 @@ Profiles map to fixed models:
 - `analysis` → `openai-codex/gpt-5.6-terra`
 - `review` → `openai-codex/gpt-5.6-sol`
 
+Child thinking levels are `low`, `medium`, `high`, `xhigh`, and `max`.
+
 The companion progressively disclosed workflow is `../../skills/pi-subagent/SKILL.md`.
 
 ## Security boundary

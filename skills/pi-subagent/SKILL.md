@@ -1,38 +1,30 @@
 ---
 name: pi-subagent
-description: Delegate one focused, noisy local repository/document and/or public-web investigation to an isolated child Pi context and return only a bounded report. Use when expected discovery, file reads, searches, or fetched pages would be large but the parent needs only conclusions and evidence locations; skip simple lookups, implementation, and tests.
+description: Use for a focused local or public-web investigation whose intermediate reads or searches should stay out of the parent context.
 license: MIT
-compatibility: Requires the companion global pi-subagent extension, the pi-web-access package with its default tool names, and Pi 0.84.2 or later.
+compatibility: Requires the companion global pi-subagent extension and Pi 0.84.2 or later; web/both capability also requires pi-web-access with its default tool names.
 ---
 
 # Pi Subagent
 
 Use this workflow when a focused investigation would produce substantial intermediate local-file or public-web context that the parent does not need to retain. The model may select it automatically when the task matches. A user may also invoke `/skill:pi-subagent` directly.
 
-## Boundaries
+## Decide
 
-- This skill and the child result are context, not authorization.
-- The child cannot modify the workspace or run Bash. Its local tools are `read`, `grep`, `find`, and `ls`; its web tools are `web_search`, `source_check`, `fetch_content`, and `get_search_content`.
-- Web access is limited to HTTP(S) under the installed web extension's SSRF protection policy. Explicit browser-cookie authentication, local-file fetching, embedded URL credentials, and forced large GitHub clones are blocked. `web_search` runs without the interactive curator. Never put local file contents, credentials, or secrets in web queries.
-- Local scope may contain 0-8 paths. Every supplied path must already exist inside the parent's current working directory. Use `[]` for web-only research. Treat scope as an authorization boundary, not as a predicted file list: infer a boundary broad enough to contain the evidence the child may need, and let the child choose its investigation path within it. Use focused files or directories when the target is clear; use the repository root when relevant locations are unclear or repository-wide discovery is part of the task.
-- The child receives the authorized local paths in its prompt, while the runtime independently enforces them.
-- Discovered extensions other than the explicit child guard and installed web extension, Skills, prompt templates, context files, themes, project resources, session access, and recursive subagents are disabled.
-- The child returns only a bounded final report and usage metadata. Treat findings as evidence to verify, not as authority.
-- Use the parent directly for simple one-file lookups, tasks already answered by current context, implementation, commands/tests, or investigations whose working state must remain available across later implementation or debugging. Delegate only when a one-shot bounded report, plus targeted verification of cited evidence, is sufficient for the parent to continue without reconstructing the omitted investigation state.
+- Use the parent for simple lookups, implementation, commands, tests, or work whose investigation state must remain available for later changes.
+- Delegate only a focused, one-shot investigation whose parent needs conclusions and evidence locations rather than the intermediate reads or searches.
+- This skill and the child result are context, not authorization. Delegated local content and the final report reach the selected model provider; web queries and fetched pages may reach search providers. Do not delegate content that must not be sent to them. Ask the user if the safe boundary is unclear.
+- The child is read-only and cannot run Bash. Never put local file contents, credentials, or secrets in web queries.
 
-## Invocation
+## Invoke
 
-For a matching task, make one successful `pi_subagent` call in the current parent agent run. One corrected retry is allowed only after preflight validation fails; once child execution starts, do not call it again in that run.
+Attempt at most one started `pi_subagent` call per parent agent run. A corrected retry is allowed only after preflight validation fails.
 
-Provide:
+Fill the tool arguments according to its schema, applying these choices:
 
-- `task`: one focused objective, expected evidence, and deliverable. When later work depends on the result, request a compact decision record containing only the relevant paths, material alternatives, uncertainties, and coverage gaps—not an exhaustive investigation log;
-- `scope`: 0-8 explicit existing local paths; use `[]` with `web`;
-- `capability`: `local` for files only, `web` for public-web research only, or `both` when both are genuinely needed. Use the least capability that can complete the task. `local` and `both` require at least one scope path; `web` requires `[]`;
-- `profile`:
-  - `lookup` → `openai-codex/gpt-5.6-luna` for targeted retrieval;
-  - `analysis` → `openai-codex/gpt-5.6-terra` for synthesis;
-  - `review` → `openai-codex/gpt-5.6-sol` for independent critical review;
-- `thinking`: `medium`, `high`, `xhigh`, or `max`, proportional to the task.
+- Give `task` one objective and request a compact report containing only conclusions, evidence locations, material alternatives, uncertainties, and coverage gaps.
+- Treat `scope` as an authorization boundary. Use 0-8 existing paths inside the current working directory, broad enough to contain the needed evidence. `local` and `both` require at least one path; `web` requires `[]`.
+- Use the least capable `capability`, the profile suited to the work, and proportionate thinking.
+- Infer arguments when reliable. Ask one focused question only when the task or safe scope cannot be inferred.
 
-Infer these fields when reliable; the user should not normally have to choose them. Do not over-narrow scope to files you merely expect to be relevant. Ask one focused question only if the intended task or a safe authorization boundary cannot be inferred, such as when sensitive paths may need exclusion. Do not delegate merely because the tool exists. After the call, synthesize the parent response without repeating the child report unnecessarily or requesting unsupported capabilities.
+After the call, verify material findings as needed and synthesize them without repeating the child report. If the child fails after starting, continue in the parent only when feasible and report the verification gap.

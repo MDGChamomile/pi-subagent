@@ -12,6 +12,7 @@ import {
   ModelInvocationGate,
   PROFILE_MODELS,
   resolveWebExtensionPath,
+  THINKING_LEVELS,
   truncateUtf8,
 } from "./shared.ts";
 
@@ -149,12 +150,13 @@ describe("pi-subagent model invocation contract", () => {
 });
 
 describe("pi-subagent public contract", () => {
-  test("profile mapping is fixed", () => {
+  test("profile mapping and thinking levels are fixed", () => {
     assert.deepEqual(PROFILE_MODELS, {
       lookup: "openai-codex/gpt-5.6-luna",
       analysis: "openai-codex/gpt-5.6-terra",
       review: "openai-codex/gpt-5.6-sol",
     });
+    assert.deepEqual(THINKING_LEVELS, ["low", "medium", "high", "xhigh", "max"]);
   });
 
   test("UTF-8 output truncation stays within its byte budget", () => {
