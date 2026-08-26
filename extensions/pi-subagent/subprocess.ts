@@ -22,6 +22,8 @@ import {
   truncateUtf8,
   WEB_EXTENSION_ENV,
   type ChildPolicy,
+  type SubagentFailureDiagnostics,
+  type SubagentFailurePhase,
   type Thinking,
 } from "./shared.ts";
 
@@ -100,9 +102,33 @@ function assistantText(message: unknown): string {
     .join("\n");
 }
 
+type AssistantMode = "none" | "empty" | "text" | "tool" | "mixed";
+
+function assistantMode(message: { content?: unknown }): AssistantMode {
+  if (!Array.isArray(message.content)) return "empty";
+  const hasText = message.content.some((part) => {
+    if (!part || typeof part !== "object") return false;
+    const item = part as { type?: unknown; text?: unknown };
+    return item.type === "text" && typeof item.text === "string" && item.text.trim().length > 0;
+  });
+  const hasTool = message.content.some((part) =>
+    Boolean(part && typeof part === "object" && (part as { type?: unknown }).type === "toolCall")
+  );
+  if (hasText && hasTool) return "mixed";
+  if (hasTool) return "tool";
+  if (hasText) return "text";
+  return "empty";
+}
+
 export type ChildJsonSnapshot = {
   finalOutput: string;
   reportCount: number;
+  reportAttemptCount: number;
+  reportErrorCount: number;
+  toolErrorCount: number;
+  lastToolError?: string;
+  assistantMessageCount: number;
+  lastAssistantMode: AssistantMode;
   stopReason?: string;
   errorMessage?: string;
   protocolError?: string;
@@ -121,6 +147,12 @@ export class ChildJsonCollector {
   private disposition: "unknown" | "capture" | "discard" = "unknown";
   private finalOutput = "";
   private reportCount = 0;
+  private reportAttemptCount = 0;
+  private reportErrorCount = 0;
+  private toolErrorCount = 0;
+  private lastToolError: string | undefined;
+  private assistantMessageCount = 0;
+  private lastAssistantMode: AssistantMode = "none";
   private stopReason: string | undefined;
   private errorMessage: string | undefined;
   private protocolError: string | undefined;
@@ -157,6 +189,12 @@ export class ChildJsonCollector {
     return {
       finalOutput: this.finalOutput,
       reportCount: this.reportCount,
+      reportAttemptCount: this.reportAttemptCount,
+      reportErrorCount: this.reportErrorCount,
+      toolErrorCount: this.toolErrorCount,
+      lastToolError: this.lastToolError,
+      assistantMessageCount: this.assistantMessageCount,
+      lastAssistantMode: this.lastAssistantMode,
       stopReason: this.stopReason,
       errorMessage: this.errorMessage,
       protocolError: this.protocolError,
@@ -241,13 +279,24 @@ export class ChildJsonCollector {
     };
     if (message.role === "toolResult") {
       addUsage(this.usage, message.usage);
-      if (message.toolName === REPORT_TOOL_NAME && message.isError !== true) {
-        this.reportCount += 1;
-        this.finalOutput = message.content ? assistantText({ role: "assistant", content: message.content }) : "";
+      if (message.isError === true) {
+        this.toolErrorCount += 1;
+        if (typeof message.toolName === "string") this.lastToolError = message.toolName;
+      }
+      if (message.toolName === REPORT_TOOL_NAME) {
+        this.reportAttemptCount += 1;
+        if (message.isError === true) {
+          this.reportErrorCount += 1;
+        } else {
+          this.reportCount += 1;
+          this.finalOutput = message.content ? assistantText({ role: "assistant", content: message.content }) : "";
+        }
       }
       return;
     }
     if (message.role !== "assistant") return;
+    this.assistantMessageCount += 1;
+    this.lastAssistantMode = assistantMode(message);
     addUsage(this.usage, message.usage);
     if (typeof message.stopReason === "string") this.stopReason = message.stopReason;
     if (typeof message.errorMessage === "string") this.errorMessage = message.errorMessage;
@@ -265,6 +314,29 @@ export class ChildJsonCollector {
     this.lineBytes = 0;
     this.disposition = "unknown";
   }
+}
+
+function childFailure(
+  error: unknown,
+  phase: SubagentFailurePhase,
+  snapshot: ChildJsonSnapshot,
+  startedAt: number,
+  exitCode?: number,
+): Error {
+  const diagnostics: SubagentFailureDiagnostics = {
+    phase,
+    exitCode,
+    stopReason: snapshot.stopReason,
+    durationMs: Date.now() - startedAt,
+    assistantMessages: snapshot.assistantMessageCount,
+    lastAssistantMode: snapshot.lastAssistantMode,
+    reportAttempts: snapshot.reportAttemptCount,
+    reportSuccesses: snapshot.reportCount,
+    reportErrors: snapshot.reportErrorCount,
+    toolErrors: snapshot.toolErrorCount,
+    lastToolError: snapshot.lastToolError,
+  };
+  return new Error(boundedParentError(error, diagnostics));
 }
 
 function getPiInvocation(args: string[]): { command: string; args: string[] } {
@@ -317,7 +389,9 @@ export async function runChild(options: {
   timeoutMs?: number;
   killGraceMs?: number;
 }): Promise<ChildResult> {
-  if (options.signal?.aborted) throw new Error("Subagent invocation was cancelled before start");
+  if (options.signal?.aborted) {
+    throw new Error(boundedParentError("Subagent invocation was cancelled before start", { phase: "cancelled" }));
+  }
   const childTools = toolsForCapability(options.policy.capability);
   const args = [
     "--mode", "json",
@@ -357,16 +431,24 @@ export async function runChild(options: {
   }
 
   const startedAt = Date.now();
-  const child = spawn(invocation.command, invocation.args, {
-    cwd: options.policy.cwd,
-    env,
-    detached: process.platform !== "win32",
-    shell: false,
-    stdio: ["pipe", "pipe", "pipe"],
-  });
+  let child: ReturnType<typeof spawn>;
+  try {
+    child = spawn(invocation.command, invocation.args, {
+      cwd: options.policy.cwd,
+      env,
+      detached: process.platform !== "win32",
+      shell: false,
+      stdio: ["pipe", "pipe", "pipe"],
+    });
+  } catch (error) {
+    throw new Error(boundedParentError(error, { phase: "spawn", durationMs: Date.now() - startedAt }));
+  }
   if (!child.stdin || !child.stdout || !child.stderr) {
     killProcessGroup(child.pid, "SIGKILL");
-    throw new Error("Subagent process pipes are unavailable");
+    throw new Error(boundedParentError("Subagent process pipes are unavailable", {
+      phase: "spawn",
+      durationMs: Date.now() - startedAt,
+    }));
   }
 
   let stderr = "";
@@ -429,12 +511,15 @@ export async function runChild(options: {
   child.stdin.on("error", () => undefined);
   child.stdin.end(buildChildPrompt(options.task, options.policy));
 
-  let exitCode: number;
+  let exitCode = 1;
+  let waitError: unknown;
   try {
     exitCode = await new Promise<number>((resolveExit, reject) => {
       child.once("error", reject);
       child.once("close", (code) => resolveExit(code ?? 1));
     });
+  } catch (error) {
+    waitError = error;
   } finally {
     clearTimeout(timeout);
     if (killTimer) clearTimeout(killTimer);
@@ -444,25 +529,53 @@ export async function runChild(options: {
   collector.finish();
   const snapshot = collector.snapshot();
 
-  if (aborted) throw new Error("Subagent invocation was cancelled");
-  if (timedOut) throw new Error(
+  if (aborted) throw childFailure("Subagent invocation was cancelled", "cancelled", snapshot, startedAt);
+  if (timedOut) throw childFailure(
     effectiveTimeoutMs === CHILD_TIMEOUT_MS
       ? `Subagent timed out after ${CHILD_TIMEOUT_MS / 60_000} minutes`
       : `Subagent timed out after ${effectiveTimeoutMs} milliseconds`,
+    "timeout",
+    snapshot,
+    startedAt,
   );
-  if (snapshot.protocolError) throw new Error(snapshot.protocolError);
+  if (waitError) throw childFailure(waitError, "spawn", snapshot, startedAt);
+  if (snapshot.protocolError) throw childFailure(snapshot.protocolError, "protocol", snapshot, startedAt, exitCode);
   if (exitCode !== 0) {
     const diagnostic = truncateUtf8(sanitizeDisplayText(stderr.trim()), 4 * 1024).text;
-    throw new Error(`Subagent exited with code ${exitCode}${diagnostic ? `: ${diagnostic}` : ""}`);
+    throw childFailure(
+      `Subagent exited with code ${exitCode}${diagnostic ? `: ${diagnostic}` : ""}`,
+      "process",
+      snapshot,
+      startedAt,
+      exitCode,
+    );
   }
-  await assertChildReady(options.readyFile);
+  try {
+    await assertChildReady(options.readyFile);
+  } catch (error) {
+    throw childFailure(error, "readiness", snapshot, startedAt, exitCode);
+  }
   if (snapshot.stopReason === "error" || snapshot.stopReason === "aborted") {
-    throw new Error(boundedParentError(snapshot.errorMessage || `Subagent stopped with reason ${snapshot.stopReason}`));
+    throw childFailure(
+      snapshot.errorMessage || `Subagent stopped with reason ${snapshot.stopReason}`,
+      "model",
+      snapshot,
+      startedAt,
+      exitCode,
+    );
   }
   if (snapshot.reportCount !== 1) {
-    throw new Error(`Subagent must submit exactly one structured final report; received ${snapshot.reportCount}`);
+    throw childFailure(
+      `Subagent must submit exactly one structured final report; received ${snapshot.reportCount}`,
+      "report",
+      snapshot,
+      startedAt,
+      exitCode,
+    );
   }
-  if (!snapshot.finalOutput.trim()) throw new Error("Subagent submitted an empty structured final report");
+  if (!snapshot.finalOutput.trim()) {
+    throw childFailure("Subagent submitted an empty structured final report", "output", snapshot, startedAt, exitCode);
+  }
   const capped = truncateUtf8(sanitizeDisplayText(snapshot.finalOutput));
   return {
     output: capped.text,

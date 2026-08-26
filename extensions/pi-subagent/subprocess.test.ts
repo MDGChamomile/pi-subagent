@@ -65,6 +65,11 @@ describe("child JSON stream collector", () => {
     assert.equal(result.protocolError, undefined);
     assert.equal(result.finalOutput, '{"conclusion":"final report","findings":[]}');
     assert.equal(result.reportCount, 1);
+    assert.equal(result.reportAttemptCount, 1);
+    assert.equal(result.reportErrorCount, 0);
+    assert.equal(result.toolErrorCount, 0);
+    assert.equal(result.assistantMessageCount, 2);
+    assert.equal(result.lastAssistantMode, "text");
     assert.equal(result.usage.input, 30);
     assert.equal(result.usage.totalTokens, 44);
     assert.equal(result.usage.cost.total, 22);
@@ -101,8 +106,12 @@ describe("child JSON stream collector", () => {
     const collector = new ChildJsonCollector();
     collector.push(`${assistantEvent("intermediate")}\n${assistantEvent("to=read code: raw syntax")}\n`);
     collector.finish();
-    assert.equal(collector.snapshot().finalOutput, "");
-    assert.equal(collector.snapshot().reportCount, 0);
+    const result = collector.snapshot();
+    assert.equal(result.finalOutput, "");
+    assert.equal(result.reportCount, 0);
+    assert.equal(result.reportAttemptCount, 0);
+    assert.equal(result.assistantMessageCount, 2);
+    assert.equal(result.lastAssistantMode, "text");
   });
 
   test("discards an oversized aggregate agent_end record without failing", () => {
@@ -135,8 +144,13 @@ describe("child JSON stream collector", () => {
     collector.push(`${toolResultEvent(REPORT_TOOL_NAME, "first")}\n`);
     collector.push(`${toolResultEvent(REPORT_TOOL_NAME, "second")}\n`);
     collector.finish();
-    assert.equal(collector.snapshot().reportCount, 2);
-    assert.equal(collector.snapshot().finalOutput, "second");
+    const result = collector.snapshot();
+    assert.equal(result.reportCount, 2);
+    assert.equal(result.reportAttemptCount, 3);
+    assert.equal(result.reportErrorCount, 1);
+    assert.equal(result.toolErrorCount, 1);
+    assert.equal(result.lastToolError, REPORT_TOOL_NAME);
+    assert.equal(result.finalOutput, "second");
   });
 
   test("preserves terminal error metadata for the parent runner", () => {

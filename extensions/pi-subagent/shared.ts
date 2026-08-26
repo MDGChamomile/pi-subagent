@@ -15,11 +15,18 @@ export const MAX_STRUCTURED_REPORT_BYTES = 8 * 1024;
 export const MAX_PARENT_ERROR_BYTES = 4 * 1024;
 export const MAX_STDERR_BYTES = 64 * 1024;
 export const MAX_JSON_LINE_BYTES = 2 * 1024 * 1024;
-export const CHILD_TIMEOUT_MS = 15 * 60 * 1000;
+export const CHILD_TIMEOUT_MS = 20 * 60 * 1000;
 export const POLICY_ENV = "PI_SUBAGENT_POLICY_FILE";
 export const READY_ENV = "PI_SUBAGENT_READY_FILE";
 export const READY_MARKER = "pi-subagent-guard-ready-v1\n";
 export const WEB_EXTENSION_ENV = "PI_SUBAGENT_WEB_EXTENSION_PATH";
+
+export function invocationLimitBlock(): { block: true; reason: string } {
+  return {
+    block: true,
+    reason: `pi_subagent allows at most ${MAX_SUBAGENT_CALLS} started calls per parent agent run, plus one corrected retry after preflight validation failure. Do not retry; continue with successful sibling results or investigate in the parent`,
+  };
+}
 
 export const THINKING_LEVELS = ["low", "medium", "high", "xhigh", "max"] as const;
 export type Thinking = (typeof THINKING_LEVELS)[number];
@@ -57,6 +64,34 @@ export function legacyPreset(profile: unknown, thinking: unknown): Preset | unde
 export type Capability = "local" | "web" | "both";
 export type ScopeRoot = { path: string; kind: "file" | "directory" };
 export type ChildPolicy = { version: 1; cwd: string; capability: Capability; roots: ScopeRoot[] };
+
+export type SubagentFailurePhase =
+  | "preflight"
+  | "setup"
+  | "spawn"
+  | "cancelled"
+  | "timeout"
+  | "protocol"
+  | "process"
+  | "readiness"
+  | "model"
+  | "report"
+  | "output"
+  | "cleanup";
+
+export type SubagentFailureDiagnostics = {
+  phase: SubagentFailurePhase;
+  exitCode?: number;
+  stopReason?: string;
+  durationMs?: number;
+  assistantMessages?: number;
+  lastAssistantMode?: "none" | "empty" | "text" | "tool" | "mixed";
+  reportAttempts?: number;
+  reportSuccesses?: number;
+  reportErrors?: number;
+  toolErrors?: number;
+  lastToolError?: string;
+};
 
 export function toolsForCapability(capability: Capability): string[] {
   if (capability === "local") return [...ALLOWED_FILE_TOOLS, REPORT_TOOL_NAME];
@@ -305,11 +340,34 @@ export function truncateUtf8(text: string, maxBytes = MAX_FINAL_BYTES): { text: 
   return truncateUtf8WithMarker(text, maxBytes, "\n\n[Subagent output truncated]");
 }
 
-export function boundedParentError(error: unknown): string {
-  const raw = error instanceof Error ? error.message : String(error);
-  return truncateUtf8WithMarker(
-    sanitizeDisplayText(raw),
-    MAX_PARENT_ERROR_BYTES,
-    "\n\n[Subagent error truncated]",
-  ).text;
+function safeDiagnosticText(value: string): string {
+  return sanitizeDisplayText(value).replace(/\s+/g, " ").slice(0, 80);
+}
+
+function failureDiagnosticSuffix(diagnostics: SubagentFailureDiagnostics): string {
+  const safe = {
+    phase: diagnostics.phase,
+    ...(Number.isInteger(diagnostics.exitCode) ? { exitCode: diagnostics.exitCode } : {}),
+    ...(diagnostics.stopReason ? { stopReason: safeDiagnosticText(diagnostics.stopReason) } : {}),
+    ...(Number.isFinite(diagnostics.durationMs) ? { durationMs: Math.max(0, Math.round(diagnostics.durationMs!)) } : {}),
+    ...(Number.isInteger(diagnostics.assistantMessages) ? { assistantMessages: diagnostics.assistantMessages } : {}),
+    ...(diagnostics.lastAssistantMode ? { lastAssistantMode: diagnostics.lastAssistantMode } : {}),
+    ...(Number.isInteger(diagnostics.reportAttempts) ? { reportAttempts: diagnostics.reportAttempts } : {}),
+    ...(Number.isInteger(diagnostics.reportSuccesses) ? { reportSuccesses: diagnostics.reportSuccesses } : {}),
+    ...(Number.isInteger(diagnostics.reportErrors) ? { reportErrors: diagnostics.reportErrors } : {}),
+    ...(Number.isInteger(diagnostics.toolErrors) ? { toolErrors: diagnostics.toolErrors } : {}),
+    ...(diagnostics.lastToolError ? { lastToolError: safeDiagnosticText(diagnostics.lastToolError) } : {}),
+  };
+  return `\n\n[Subagent diagnostics ${JSON.stringify(safe)}]`;
+}
+
+export function boundedParentError(error: unknown, diagnostics?: SubagentFailureDiagnostics): string {
+  const raw = sanitizeDisplayText(error instanceof Error ? error.message : String(error));
+  if (!diagnostics) {
+    return truncateUtf8WithMarker(raw, MAX_PARENT_ERROR_BYTES, "\n\n[Subagent error truncated]").text;
+  }
+  const suffix = failureDiagnosticSuffix(diagnostics);
+  const messageBudget = Math.max(0, MAX_PARENT_ERROR_BYTES - Buffer.byteLength(suffix, "utf8"));
+  const message = truncateUtf8WithMarker(raw, messageBudget, "\n\n[Subagent error truncated]").text;
+  return `${message}${suffix}`;
 }

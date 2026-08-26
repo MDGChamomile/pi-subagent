@@ -8,6 +8,7 @@ import {
   boundedParentError,
   buildChildPolicy,
   MAX_SCOPE_ROOTS,
+  invocationLimitBlock,
   legacyPreset,
   makeCanonicalTempDirectory,
   MAX_SUBAGENT_CALLS,
@@ -69,7 +70,10 @@ export default function piSubagentExtension(pi: ExtensionAPI): void {
       try {
         const currentSource = currentOwnSource();
         if (!authorizedCalls.delete(toolCallId) || !ownSourcePath || currentSource !== ownSourcePath) {
-          throw new Error(`pi_subagent allows at most ${MAX_SUBAGENT_CALLS} model-selected calls per parent agent run`);
+          throw new Error(boundedParentError(
+            `pi_subagent allows at most ${MAX_SUBAGENT_CALLS} model-selected calls per parent agent run`,
+            { phase: "preflight" },
+          ));
         }
         const capability = params.capability as Capability;
         const preset = params.preset as Preset;
@@ -84,17 +88,26 @@ export default function piSubagentExtension(pi: ExtensionAPI): void {
           policy = await buildChildPolicy(ctx.cwd, params.scope, capability);
         } catch (error) {
           gate.rejectPreflight(toolCallId);
-          throw error;
+          throw new Error(boundedParentError(error, { phase: "preflight" }));
         }
-        if (!gate.commit(toolCallId)) throw new Error("pi_subagent invocation permit is invalid or already consumed");
+        if (!gate.commit(toolCallId)) {
+          throw new Error(boundedParentError("pi_subagent invocation permit is invalid or already consumed", { phase: "preflight" }));
+        }
 
-        const tempDir = await makeCanonicalTempDirectory(join(tmpdir(), "pi-subagent-"));
+        let tempDir: string;
+        try {
+          tempDir = await makeCanonicalTempDirectory(join(tmpdir(), "pi-subagent-"));
+        } catch (error) {
+          throw new Error(boundedParentError(error, { phase: "setup" }));
+        }
         let executionError: unknown;
+        let childStarted = false;
         try {
           await chmod(tempDir, 0o700);
           const policyFile = join(tempDir, "policy.json");
           const readyFile = join(tempDir, "guard.ready");
           await writeFile(policyFile, JSON.stringify(policy), { encoding: "utf8", mode: 0o600, flag: "wx" });
+          childStarted = true;
           const result = await runChild({
             policy,
             policyFile,
@@ -125,12 +138,15 @@ export default function piSubagentExtension(pi: ExtensionAPI): void {
           };
         } catch (error) {
           executionError = error;
+          if (!childStarted) throw new Error(boundedParentError(error, { phase: "setup" }));
           throw error;
         } finally {
           try {
             await rm(tempDir, { recursive: true, force: true });
           } catch (cleanupError) {
-            if (executionError === undefined) throw cleanupError;
+            if (executionError === undefined) {
+              throw new Error(boundedParentError(cleanupError, { phase: "cleanup" }));
+            }
           }
         }
       } catch (error) {
@@ -151,11 +167,7 @@ export default function piSubagentExtension(pi: ExtensionAPI): void {
     if (event.toolName !== TOOL_NAME) return;
     const currentSource = currentOwnSource();
     if (!ownSourcePath || currentSource !== ownSourcePath || !gate.authorize(event.toolCallId)) {
-      return {
-        block: true,
-        reason: `pi_subagent allows at most ${MAX_SUBAGENT_CALLS} started calls per parent agent run, plus one corrected retry after preflight validation failure`,
-        terminate: true,
-      };
+      return invocationLimitBlock();
     }
     authorizedCalls.add(event.toolCallId);
   });

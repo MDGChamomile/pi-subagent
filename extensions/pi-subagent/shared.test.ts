@@ -10,6 +10,8 @@ import {
   boundedParentError,
   buildChildPolicy,
   buildChildPrompt,
+  CHILD_TIMEOUT_MS,
+  invocationLimitBlock,
   legacyPreset,
   makeCanonicalTempDirectory,
   MAX_PARENT_ERROR_BYTES,
@@ -137,6 +139,11 @@ describe("pi-subagent model invocation contract", () => {
       assert.equal(gate.commit(id), true);
     }
     assert.equal(gate.authorize("after-limit"), false);
+    const denied = invocationLimitBlock();
+    assert.equal(denied.block, true);
+    assert.equal((denied as { terminate?: boolean }).terminate, undefined);
+    assert.match(denied.reason, /Do not retry/);
+    assert.match(denied.reason, /continue with successful sibling results or investigate in the parent/);
   });
 
   test("allows remaining started calls after a corrected preflight retry succeeds", () => {
@@ -206,7 +213,8 @@ describe("pi-subagent model invocation contract", () => {
 });
 
 describe("pi-subagent public contract", () => {
-  test("exposes only quality-tested model and thinking presets", () => {
+  test("exposes bounded runtime and quality-tested model presets", () => {
+    assert.equal(CHILD_TIMEOUT_MS, 20 * 60 * 1000);
     assert.deepEqual(PRESET_NAMES, [
       "lookup-standard",
       "lookup-balanced",
@@ -249,5 +257,29 @@ describe("pi-subagent public contract", () => {
     assert.doesNotMatch(result, /\u001b|\u202e/);
     assert.equal(result.includes("�"), false);
     assert.match(result, /Subagent error truncated/);
+  });
+
+  test("reserves room for content-free failure diagnostics under the same error bound", () => {
+    const result = boundedParentError(`provider failed ${"가".repeat(MAX_PARENT_ERROR_BYTES)}`, {
+      phase: "report",
+      exitCode: 0,
+      stopReason: "stop\u202eunsafe",
+      durationMs: 123.6,
+      assistantMessages: 4,
+      lastAssistantMode: "text",
+      reportAttempts: 1,
+      reportSuccesses: 0,
+      reportErrors: 1,
+      toolErrors: 2,
+      lastToolError: "submit_subagent_report\u001b[31m",
+    });
+    assert.ok(Buffer.byteLength(result, "utf8") <= MAX_PARENT_ERROR_BYTES);
+    assert.doesNotMatch(result, /\u001b|\u202e/);
+    assert.equal(result.includes("�"), false);
+    assert.match(result, /Subagent error truncated/);
+    assert.match(result, /Subagent diagnostics/);
+    assert.match(result, /"phase":"report"/);
+    assert.match(result, /"durationMs":124/);
+    assert.match(result, /"reportErrors":1/);
   });
 });

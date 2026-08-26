@@ -43,10 +43,21 @@ describe("pi-subagent spawned-child integration", () => {
     assert.equal(result.usage.totalTokens, 48);
   });
 
-  test("rejects a zero-exit child that never submits the report tool", async () => {
+  test("records bounded diagnostics when a zero-exit child never submits the report tool", async () => {
     await assert.rejects(
       () => withFixture("missing-report", (options) => runChild(options)),
-      /exactly one structured final report; received 0/,
+      (error: unknown) => {
+        const message = error instanceof Error ? error.message : String(error);
+        assert.match(message, /exactly one structured final report; received 0/);
+        assert.match(message, /Subagent diagnostics/);
+        assert.match(message, /"phase":"report"/);
+        assert.match(message, /"exitCode":0/);
+        assert.match(message, /"stopReason":"stop"/);
+        assert.match(message, /"lastAssistantMode":"text"/);
+        assert.match(message, /"reportAttempts":0/);
+        assert.match(message, /"reportSuccesses":0/);
+        return true;
+      },
     );
   });
 
@@ -61,13 +72,21 @@ describe("pi-subagent spawned-child integration", () => {
     assert.ok(Buffer.byteLength(message, "utf8") <= MAX_PARENT_ERROR_BYTES);
     assert.doesNotMatch(message, /\u001b|\u202e/);
     assert.match(message, /Subagent error truncated/);
+    assert.match(message, /Subagent diagnostics/);
+    assert.match(message, /"phase":"model"/);
+    assert.match(message, /"stopReason":"error"/);
   });
 
   test("terminates a child process that ignores the timeout SIGTERM", async () => {
     const startedAt = Date.now();
     await assert.rejects(
       () => withFixture("timeout", (options) => runChild({ ...options, timeoutMs: 50, killGraceMs: 50 })),
-      /timed out after 50 milliseconds/,
+      (error: unknown) => {
+        const message = error instanceof Error ? error.message : String(error);
+        assert.match(message, /timed out after 50 milliseconds/);
+        assert.match(message, /"phase":"timeout"/);
+        return true;
+      },
     );
     assert.ok(Date.now() - startedAt < 2_000);
   });
@@ -77,7 +96,12 @@ describe("pi-subagent spawned-child integration", () => {
     setTimeout(() => controller.abort(), 50);
     await assert.rejects(
       () => withFixture("timeout", (options) => runChild({ ...options, signal: controller.signal })),
-      /cancelled/,
+      (error: unknown) => {
+        const message = error instanceof Error ? error.message : String(error);
+        assert.match(message, /cancelled/);
+        assert.match(message, /"phase":"cancelled"/);
+        return true;
+      },
     );
   });
 });

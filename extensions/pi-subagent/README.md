@@ -35,7 +35,7 @@ Restart Pi or run `/reload` after installation.
 - Readiness: the parent accepts a report only after the child guard validates policy and tool ownership and publishes a private readiness marker
 - Return: each call must finish with exactly one successful guard-owned structured report, submitted as the only tool call in the final turn, containing a conclusion, up to 10 material findings, evidence locations, alternatives, uncertainties, and coverage gaps; the report tool enforces 8 KiB, a size-rejected submission may be reduced and retried, and the parent retains a 12 KiB final safety cap
 - Progress: each running call reports its own `mm:ss · Subagent running · N reported tokens` status once per second
-- Timeout: 15 minutes per call
+- Timeout: 20 minutes per call
 
 Quality-tested presets combine child models and thinking levels without changing the main model's thinking:
 
@@ -60,7 +60,7 @@ Web access is deliberately narrower than the full `pi-web-access` surface and re
 
 This is an application-level capability boundary, not an OS or network sandbox. The child and the trusted web extension still run as the current user. Do not use it for untrusted workloads requiring host isolation or for secrets that must not be sent to configured providers.
 
-Ordinary child assistant text and investigation tool results are discarded. A zero-exit child without exactly one successful structured-report submission is rejected, and every error reaching the parent is control-character-sanitized and capped at 4 KiB.
+Ordinary child assistant text and investigation tool results are discarded. A zero-exit child without exactly one successful structured-report submission is rejected. Every error reaching the parent is control-character-sanitized and capped at 4 KiB; child failures also reserve space for content-free diagnostics such as the failure phase, exit and stop state, assistant completion mode, and report or tool-error counts. Tasks, paths, assistant text, and tool-result contents are never included in those diagnostics.
 
 The extension does not support workspace writes, Bash, tests, session-history access, project-controlled resources, recursion, background runs, or child-session persistence. Parallelism is limited to three independent foreground child calls per parent agent run and can multiply model, provider, and web-request usage.
 
