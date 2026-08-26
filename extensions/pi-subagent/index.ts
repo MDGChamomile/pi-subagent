@@ -7,6 +7,7 @@ import { Type } from "typebox";
 import {
   buildChildPolicy,
   MAX_SCOPE_ROOTS,
+  MAX_SUBAGENT_CALLS,
   ModelInvocationGate,
   PROFILE_MODELS,
   resolveWebExtensionPath,
@@ -52,13 +53,13 @@ export default function piSubagentExtension(pi: ExtensionAPI): void {
   pi.registerTool({
     name: TOOL_NAME,
     label: "Pi Subagent",
-    executionMode: "sequential",
-    description: "Run one bounded investigation in an isolated child context. Use for noisy local or public-web research; use the parent for simple lookups, implementation, or tests.",
+    executionMode: "parallel",
+    description: "Run one bounded investigation in an isolated child context. Use one by default and up to three parallel calls only for distinct, independent research tracks; use the parent for simple lookups, implementation, or tests.",
     parameters: Parameters,
     async execute(toolCallId, params, signal, onUpdate, ctx) {
       const currentSource = currentOwnSource();
       if (!authorizedCalls.delete(toolCallId) || !ownSourcePath || currentSource !== ownSourcePath) {
-        throw new Error("pi_subagent allows only one model-selected call per parent agent run");
+        throw new Error(`pi_subagent allows at most ${MAX_SUBAGENT_CALLS} model-selected calls per parent agent run`);
       }
       const capability = params.capability as Capability;
       const profile = params.profile as Profile;
@@ -132,7 +133,7 @@ export default function piSubagentExtension(pi: ExtensionAPI): void {
     if (!ownSourcePath || currentSource !== ownSourcePath || !gate.authorize(event.toolCallId)) {
       return {
         block: true,
-        reason: "pi_subagent allows one successful call per parent agent run, plus one retry after preflight validation failure",
+        reason: `pi_subagent allows at most ${MAX_SUBAGENT_CALLS} started calls per parent agent run, plus one corrected retry after preflight validation failure`,
         terminate: true,
       };
     }

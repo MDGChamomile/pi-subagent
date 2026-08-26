@@ -18,11 +18,11 @@ Use this workflow when a focused investigation would produce substantial interme
 
 ## Invoke
 
-Attempt at most one started `pi_subagent` call per parent agent run. A corrected retry is allowed only after preflight validation fails.
+Use one `pi_subagent` call by default. Use up to three calls per parent agent run only when the investigation can be split into distinct, independent research tracks that materially benefit from parallel work. A corrected retry is allowed only after preflight validation fails.
 
 Fill the tool arguments according to its schema, applying these choices:
 
-- Give `task` one objective and request a compact report containing only conclusions, evidence locations, material alternatives, uncertainties, and coverage gaps.
+- Give each `task` one non-overlapping objective and request a compact report containing only conclusions, evidence locations, material alternatives, uncertainties, and coverage gaps. When using multiple calls, issue independent calls together so they can run in parallel and leave synthesis to the parent.
 - Treat `scope` as an authorization boundary. Use 0-8 existing paths inside the current working directory, broad enough to contain the needed evidence. `local` and `both` require at least one path; `web` requires `[]`.
 - Use the least capable `capability`, the profile suited to the work, and proportionate thinking.
 - Infer arguments when reliable. Ask one focused question only when the task or safe scope cannot be inferred.

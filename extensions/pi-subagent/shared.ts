@@ -8,6 +8,7 @@ export const ALLOWED_FILE_TOOLS = ["read", "grep", "find", "ls"] as const;
 export const ALLOWED_WEB_TOOLS = ["web_search", "source_check", "fetch_content", "get_search_content"] as const;
 export const ALLOWED_CHILD_TOOLS = [...ALLOWED_FILE_TOOLS, ...ALLOWED_WEB_TOOLS] as const;
 export const MAX_SCOPE_ROOTS = 8;
+export const MAX_SUBAGENT_CALLS = 3;
 export const MAX_FINAL_BYTES = 12 * 1024;
 export const MAX_STDERR_BYTES = 64 * 1024;
 export const MAX_JSON_LINE_BYTES = 2 * 1024 * 1024;
@@ -188,41 +189,49 @@ export async function resolveWebExtensionPath(tools: readonly ToolSourceDescript
 
 export class ModelInvocationGate {
   private runOpen = false;
-  private completedOrStarted = false;
+  private startedCalls = 0;
   private preflightFailures = 0;
-  private authorizedToolCallId: string | undefined;
+  private preflightRetryAuthorized = false;
+  private readonly authorizedToolCallIds = new Set<string>();
 
   startRun(): void {
     if (this.runOpen) return;
     this.runOpen = true;
-    this.completedOrStarted = false;
+    this.startedCalls = 0;
     this.preflightFailures = 0;
-    this.authorizedToolCallId = undefined;
+    this.preflightRetryAuthorized = false;
+    this.authorizedToolCallIds.clear();
   }
 
   endRun(): void {
     this.runOpen = false;
-    this.completedOrStarted = false;
+    this.startedCalls = 0;
     this.preflightFailures = 0;
-    this.authorizedToolCallId = undefined;
+    this.preflightRetryAuthorized = false;
+    this.authorizedToolCallIds.clear();
   }
 
   authorize(toolCallId: string): boolean {
-    if (!this.runOpen || this.completedOrStarted || this.authorizedToolCallId || this.preflightFailures > 1) return false;
-    this.authorizedToolCallId = toolCallId;
+    if (
+      !this.runOpen
+      || this.preflightFailures > 1
+      || (this.preflightFailures === 1 && this.preflightRetryAuthorized)
+      || this.authorizedToolCallIds.has(toolCallId)
+      || this.startedCalls + this.authorizedToolCallIds.size >= MAX_SUBAGENT_CALLS
+    ) return false;
+    this.authorizedToolCallIds.add(toolCallId);
+    if (this.preflightFailures === 1) this.preflightRetryAuthorized = true;
     return true;
   }
 
   commit(toolCallId: string): boolean {
-    if (this.authorizedToolCallId !== toolCallId) return false;
-    this.authorizedToolCallId = undefined;
-    this.completedOrStarted = true;
+    if (!this.authorizedToolCallIds.delete(toolCallId)) return false;
+    this.startedCalls += 1;
     return true;
   }
 
   rejectPreflight(toolCallId: string): boolean {
-    if (this.authorizedToolCallId !== toolCallId) return false;
-    this.authorizedToolCallId = undefined;
+    if (!this.authorizedToolCallIds.delete(toolCallId)) return false;
     this.preflightFailures += 1;
     return true;
   }

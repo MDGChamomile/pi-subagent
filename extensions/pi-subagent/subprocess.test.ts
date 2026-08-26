@@ -3,7 +3,7 @@ import { mkdtemp, rm, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { describe, test } from "node:test";
-import { assertChildReady, ChildJsonCollector } from "./subprocess.ts";
+import { assertChildReady, ChildJsonCollector, formatElapsed } from "./subprocess.ts";
 import { MAX_JSON_LINE_BYTES, READY_MARKER, sanitizeDisplayText } from "./shared.ts";
 
 function assistantEvent(text: string, overrides: Record<string, unknown> = {}): string {
@@ -103,6 +103,13 @@ describe("child JSON stream collector", () => {
 });
 
 describe("child completion boundary", () => {
+  test("formats live progress time as mm:ss", () => {
+    assert.equal(formatElapsed(0), "00:00");
+    assert.equal(formatElapsed(59_999), "00:59");
+    assert.equal(formatElapsed(60_000), "01:00");
+    assert.equal(formatElapsed(15 * 60_000), "15:00");
+  });
+
   test("requires the exact guard readiness marker", async () => {
     const root = await mkdtemp(join(tmpdir(), "pi-subagent-ready-test-"));
     try {

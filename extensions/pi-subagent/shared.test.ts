@@ -9,6 +9,7 @@ import {
   authorizeReadPath,
   buildChildPolicy,
   buildChildPrompt,
+  MAX_SUBAGENT_CALLS,
   ModelInvocationGate,
   PROFILE_MODELS,
   resolveWebExtensionPath,
@@ -87,26 +88,34 @@ describe("pi-subagent scope policy", () => {
 });
 
 describe("pi-subagent model invocation contract", () => {
-  test("allows one started child plus one preflight retry per parent agent run", () => {
+  test("allows three started children plus one corrected preflight retry per parent agent run", () => {
     const gate = new ModelInvocationGate();
     assert.equal(gate.authorize("before-run"), false);
     gate.startRun();
     assert.equal(gate.authorize("call-1"), true);
-    assert.equal(gate.authorize("parallel-call"), false);
+    assert.equal(gate.authorize("call-2"), true);
+    assert.equal(gate.authorize("call-3"), true);
+    assert.equal(gate.authorize("call-4"), false);
     assert.equal(gate.rejectPreflight("wrong-id"), false);
     assert.equal(gate.rejectPreflight("call-1"), true);
     assert.equal(gate.authorize("retry-1"), true);
+    assert.equal(gate.authorize("parallel-retry"), false);
     assert.equal(gate.rejectPreflight("retry-1"), true);
     assert.equal(gate.authorize("third-attempt"), false);
-    gate.endRun();
-    gate.startRun();
-    assert.equal(gate.authorize("call-2"), true);
     assert.equal(gate.commit("call-2"), true);
-    assert.equal(gate.authorize("after-start"), false);
+    assert.equal(gate.commit("call-3"), true);
     gate.startRun();
     assert.equal(gate.authorize("same-unsettled-run"), false);
     gate.endRun();
     assert.equal(gate.commit("call-2"), false);
+
+    gate.startRun();
+    for (let index = 0; index < MAX_SUBAGENT_CALLS; index++) {
+      const id = `started-${index}`;
+      assert.equal(gate.authorize(id), true);
+      assert.equal(gate.commit(id), true);
+    }
+    assert.equal(gate.authorize("after-limit"), false);
   });
 
   test("skill is visible for model invocation", async () => {

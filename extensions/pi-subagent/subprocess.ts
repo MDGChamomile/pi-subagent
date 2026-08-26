@@ -50,6 +50,13 @@ export type ChildResult = {
   usage: Usage;
 };
 
+export function formatElapsed(durationMs: number): string {
+  const totalSeconds = Math.max(0, Math.floor(durationMs / 1000));
+  const minutes = Math.floor(totalSeconds / 60).toString().padStart(2, "0");
+  const seconds = (totalSeconds % 60).toString().padStart(2, "0");
+  return `${minutes}:${seconds}`;
+}
+
 export function emptyUsage(): Usage {
   return {
     input: 0,
@@ -353,9 +360,10 @@ export async function runChild(options: {
   let stderrBytes = 0;
   let timedOut = false;
   let aborted = false;
-  let lastUpdateAt = 0;
+  let latestReportedTokens = 0;
   let stopping = false;
   let killTimer: ReturnType<typeof setTimeout> | undefined;
+  let progressTimer: ReturnType<typeof setInterval> | undefined;
 
   const requestStop = (reason: "timeout" | "aborted" | "protocol") => {
     if (reason === "timeout") timedOut = true;
@@ -367,19 +375,28 @@ export async function runChild(options: {
     killTimer.unref?.();
   };
 
+  const emitProgress = () => {
+    options.onUpdate?.({
+      content: [{
+        type: "text",
+        text: `${formatElapsed(Date.now() - startedAt)} · Subagent running · ${latestReportedTokens} reported tokens`,
+      }],
+      details: { running: true, model: options.model, thinking: options.thinking },
+    });
+  };
+
   const collector = new ChildJsonCollector(
     (usage) => {
-      const now = Date.now();
-      if (options.onUpdate && now - lastUpdateAt >= 250) {
-        lastUpdateAt = now;
-        options.onUpdate({
-          content: [{ type: "text", text: `Subagent running · ${usage.totalTokens} reported tokens` }],
-          details: { running: true, model: options.model, thinking: options.thinking },
-        });
-      }
+      latestReportedTokens = usage.totalTokens;
+      emitProgress();
     },
     () => requestStop("protocol"),
   );
+  if (options.onUpdate) {
+    emitProgress();
+    progressTimer = setInterval(emitProgress, 1_000);
+    progressTimer.unref?.();
+  }
 
   child.stdout.on("data", (chunk: Buffer) => collector.push(chunk));
   child.stderr.on("data", (chunk: Buffer) => {
@@ -407,6 +424,7 @@ export async function runChild(options: {
   } finally {
     clearTimeout(timeout);
     if (killTimer) clearTimeout(killTimer);
+    if (progressTimer) clearInterval(progressTimer);
     options.signal?.removeEventListener("abort", onAbort);
   }
   collector.finish();
