@@ -1,4 +1,4 @@
-import { chmod, mkdtemp, rm, writeFile } from "node:fs/promises";
+import { chmod, rm, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import type { ExtensionAPI } from "@earendil-works/pi-coding-agent";
@@ -9,6 +9,7 @@ import {
   buildChildPolicy,
   MAX_SCOPE_ROOTS,
   legacyPreset,
+  makeCanonicalTempDirectory,
   MAX_SUBAGENT_CALLS,
   ModelInvocationGate,
   PRESET_NAMES,
@@ -87,7 +88,7 @@ export default function piSubagentExtension(pi: ExtensionAPI): void {
         }
         if (!gate.commit(toolCallId)) throw new Error("pi_subagent invocation permit is invalid or already consumed");
 
-        const tempDir = await mkdtemp(join(tmpdir(), "pi-subagent-"));
+        const tempDir = await makeCanonicalTempDirectory(join(tmpdir(), "pi-subagent-"));
         let executionError: unknown;
         try {
           await chmod(tempDir, 0o700);

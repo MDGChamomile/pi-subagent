@@ -71,6 +71,32 @@ describe("child JSON stream collector", () => {
     assert.equal(updates, 2);
   });
 
+  test("preserves optional reasoning and long-cache usage only when providers report them", () => {
+    const withoutBreakdown = new ChildJsonCollector();
+    withoutBreakdown.push(`${assistantEvent("ordinary usage")}\n`);
+    withoutBreakdown.finish();
+    assert.equal(withoutBreakdown.snapshot().usage.reasoning, undefined);
+    assert.equal(withoutBreakdown.snapshot().usage.cacheWrite1h, undefined);
+
+    const withBreakdown = new ChildJsonCollector();
+    const usage = (reasoning: number, cacheWrite1h: number) => ({
+      input: 10,
+      output: 5,
+      cacheRead: 2,
+      cacheWrite: 3,
+      cacheWrite1h,
+      reasoning,
+      totalTokens: 20,
+      cost: { input: 1, output: 2, cacheRead: 3, cacheWrite: 4, total: 10 },
+    });
+    withBreakdown.push(`${assistantEvent("first", { usage: usage(4, 2) })}\n`);
+    withBreakdown.push(`${assistantEvent("second", { usage: usage(6, 3) })}\n`);
+    withBreakdown.finish();
+    assert.equal(withBreakdown.snapshot().usage.reasoning, 10);
+    assert.equal(withBreakdown.snapshot().usage.cacheWrite1h, 5);
+    assert.equal(withBreakdown.snapshot().usage.totalTokens, 40);
+  });
+
   test("does not treat ordinary assistant text as a final report", () => {
     const collector = new ChildJsonCollector();
     collector.push(`${assistantEvent("intermediate")}\n${assistantEvent("to=read code: raw syntax")}\n`);

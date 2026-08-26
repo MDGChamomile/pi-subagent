@@ -33,7 +33,7 @@ Restart Pi or run `/reload` after installation.
 - Web boundary: HTTP(S) under the installed web extension's SSRF protection policy; no local-file fetch, explicit browser-cookie auth, embedded URL credentials, or forced large GitHub clone; search curator is disabled
 - Resources disabled: all discovered extensions, Skills, prompt templates, context files, themes, and project trust. Only the child guard and resolved web extension are explicitly loaded
 - Readiness: the parent accepts a report only after the child guard validates policy and tool ownership and publishes a private readiness marker
-- Return: each call must submit exactly one guard-owned structured report containing a conclusion, up to 10 material findings, evidence locations, alternatives, uncertainties, and coverage gaps; the report tool enforces 8 KiB and the parent retains a 12 KiB final safety cap
+- Return: each call must finish with exactly one successful guard-owned structured report, submitted as the only tool call in the final turn, containing a conclusion, up to 10 material findings, evidence locations, alternatives, uncertainties, and coverage gaps; the report tool enforces 8 KiB, a size-rejected submission may be reduced and retried, and the parent retains a 12 KiB final safety cap
 - Progress: each running call reports its own `mm:ss · Subagent running · N reported tokens` status once per second
 - Timeout: 15 minutes per call
 

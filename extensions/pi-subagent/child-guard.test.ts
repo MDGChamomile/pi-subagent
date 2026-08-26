@@ -186,7 +186,7 @@ describe("pi-subagent child guard", () => {
           detail: "d".repeat(700),
           evidence: ["e".repeat(400), "f".repeat(400), "g".repeat(400)],
         })),
-      }), /Structured report exceeds/);
+      }), /Structured report exceeds.*does not count/);
 
       reportTool.sourceInfo.path = join(harness.root, "replacement.ts");
       await writeFile(reportTool.sourceInfo.path, "export default () => {};\n");
@@ -197,6 +197,65 @@ describe("pi-subagent child guard", () => {
       });
       assert.equal(changedOwner.block, true);
       assert.match(changedOwner.reason, /ownership changed/);
+    } finally {
+      await harness.cleanup();
+    }
+  });
+
+  test("requires the structured report to be the only tool call in its final turn", async () => {
+    const harness = await createHarness(["allowed"], "local");
+    try {
+      await harness.emit("session_start");
+
+      for (const reportFirst of [true, false]) {
+        const suffix = reportFirst ? "report-first" : "read-first";
+        const reportCall = { type: "toolCall", id: `report-${suffix}`, name: REPORT_TOOL_NAME, arguments: {} };
+        const readCall = { type: "toolCall", id: `read-${suffix}`, name: "read", arguments: { path: "allowed/inside.txt" } };
+        await harness.emit("message_end", {
+          message: { role: "assistant", content: reportFirst ? [reportCall, readCall] : [readCall, reportCall] },
+        });
+
+        const calls = reportFirst ? [reportCall, readCall] : [readCall, reportCall];
+        for (const call of calls) {
+          const result = await harness.emit("tool_call", {
+            toolName: call.name,
+            toolCallId: call.id,
+            input: call.arguments,
+          });
+          if (call.name === REPORT_TOOL_NAME) {
+            assert.equal(result.block, true);
+            assert.match(result.reason, /only tool call/);
+            assert.equal(result.terminate, undefined);
+          } else {
+            assert.equal(result, undefined);
+          }
+        }
+      }
+
+      const firstReport = { type: "toolCall", id: "duplicate-report-1", name: REPORT_TOOL_NAME, arguments: {} };
+      const secondReport = { type: "toolCall", id: "duplicate-report-2", name: REPORT_TOOL_NAME, arguments: {} };
+      await harness.emit("message_end", {
+        message: { role: "assistant", content: [firstReport, secondReport] },
+      });
+      for (const call of [firstReport, secondReport]) {
+        const result = await harness.emit("tool_call", {
+          toolName: call.name,
+          toolCallId: call.id,
+          input: call.arguments,
+        });
+        assert.equal(result.block, true);
+        assert.match(result.reason, /only tool call/);
+      }
+
+      const standaloneReport = { type: "toolCall", id: "standalone-report", name: REPORT_TOOL_NAME, arguments: {} };
+      await harness.emit("message_end", {
+        message: { role: "assistant", content: [standaloneReport] },
+      });
+      assert.equal(await harness.emit("tool_call", {
+        toolName: standaloneReport.name,
+        toolCallId: standaloneReport.id,
+        input: standaloneReport.arguments,
+      }), undefined);
     } finally {
       await harness.cleanup();
     }

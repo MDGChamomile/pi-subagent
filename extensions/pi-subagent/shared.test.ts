@@ -1,7 +1,7 @@
 import assert from "node:assert/strict";
-import { mkdir, mkdtemp, readFile, rm, symlink, writeFile } from "node:fs/promises";
+import { mkdir, mkdtemp, readFile, realpath, rm, symlink, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
-import { join } from "node:path";
+import { dirname, join } from "node:path";
 import { describe, test } from "node:test";
 import { fileURLToPath } from "node:url";
 import {
@@ -11,6 +11,7 @@ import {
   buildChildPolicy,
   buildChildPrompt,
   legacyPreset,
+  makeCanonicalTempDirectory,
   MAX_PARENT_ERROR_BYTES,
   MAX_SUBAGENT_CALLS,
   ModelInvocationGate,
@@ -89,6 +90,22 @@ describe("pi-subagent scope policy", () => {
       await rm(root, { recursive: true, force: true });
     }
   });
+
+  test("canonicalizes temporary directories created beneath a symlink base", async () => {
+    const realBase = await mkdtemp(join(tmpdir(), "pi-subagent-temp-base-"));
+    const linkBase = `${realBase}-link`;
+    let childDir: string | undefined;
+    try {
+      await symlink(realBase, linkBase, "dir");
+      childDir = await makeCanonicalTempDirectory(join(linkBase, "child-"));
+      assert.equal(childDir, await realpath(childDir));
+      assert.equal(dirname(childDir), await realpath(realBase));
+    } finally {
+      if (childDir) await rm(childDir, { recursive: true, force: true });
+      await rm(linkBase, { force: true });
+      await rm(realBase, { recursive: true, force: true });
+    }
+  });
 });
 
 describe("pi-subagent model invocation contract", () => {
@@ -120,6 +137,30 @@ describe("pi-subagent model invocation contract", () => {
       assert.equal(gate.commit(id), true);
     }
     assert.equal(gate.authorize("after-limit"), false);
+  });
+
+  test("allows remaining started calls after a corrected preflight retry succeeds", () => {
+    const gate = new ModelInvocationGate();
+    gate.startRun();
+    assert.equal(gate.authorize("invalid"), true);
+    assert.equal(gate.rejectPreflight("invalid"), true);
+    assert.equal(gate.authorize("replacement"), true);
+    assert.equal(gate.commit("replacement"), true);
+    assert.equal(gate.authorize("second"), true);
+    assert.equal(gate.commit("second"), true);
+    assert.equal(gate.authorize("third"), true);
+    assert.equal(gate.commit("third"), true);
+    assert.equal(gate.authorize("fourth"), false);
+
+    gate.endRun();
+    gate.startRun();
+    assert.equal(gate.authorize("first-invalid"), true);
+    assert.equal(gate.rejectPreflight("first-invalid"), true);
+    assert.equal(gate.authorize("first-replacement"), true);
+    assert.equal(gate.commit("first-replacement"), true);
+    assert.equal(gate.authorize("second-invalid"), true);
+    assert.equal(gate.rejectPreflight("second-invalid"), true);
+    assert.equal(gate.authorize("second-replacement"), false);
   });
 
   test("skill is visible for model invocation", async () => {

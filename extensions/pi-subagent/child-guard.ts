@@ -163,15 +163,17 @@ function validateWebCall(toolName: string, input: Record<string, unknown>): stri
 }
 
 export default function childGuard(pi: ExtensionAPI): void {
+  const mixedReportToolCallIds = new Set<string>();
+
   pi.registerTool({
     name: REPORT_TOOL_NAME,
     label: "Submit Subagent Report",
-    description: "Submit the one final structured investigation report. Use exactly once as the last action after all investigation is complete.",
+    description: `Submit the one final structured investigation report as the only tool call in the final turn. Exactly one successful submission is required. The aggregate limit is ${MAX_STRUCTURED_REPORT_BYTES} UTF-8 bytes; a size-rejected submission does not count and may be reduced and retried.`,
     parameters: StructuredReportSchema,
     async execute(_toolCallId, params) {
       const output = JSON.stringify(params);
       if (Buffer.byteLength(output, "utf8") > MAX_STRUCTURED_REPORT_BYTES) {
-        throw new Error(`Structured report exceeds ${MAX_STRUCTURED_REPORT_BYTES} UTF-8 bytes; reduce it and submit once more`);
+        throw new Error(`Structured report exceeds ${MAX_STRUCTURED_REPORT_BYTES} UTF-8 bytes; reduce it and retry. A size-rejected submission does not count as the successful final report`);
       }
       return {
         content: [{ type: "text", text: output }],
@@ -193,6 +195,18 @@ export default function childGuard(pi: ExtensionAPI): void {
   } catch (error) {
     policyError = error instanceof Error ? error.message : String(error);
   }
+
+  pi.on("message_end", (event) => {
+    if (event.message.role !== "assistant") return;
+    const toolCalls = event.message.content.filter((part) => part.type === "toolCall");
+    const reportCalls = toolCalls.filter((part) => part.name === REPORT_TOOL_NAME);
+    if (reportCalls.length === 0 || toolCalls.length === 1) return;
+    for (const reportCall of reportCalls) mixedReportToolCallIds.add(reportCall.id);
+  });
+
+  pi.on("turn_end", () => {
+    mixedReportToolCallIds.clear();
+  });
 
   pi.on("session_start", () => {
     if (!policy || !readyPath || (policy.capability !== "local" && !webExtensionPath)) {
@@ -248,6 +262,9 @@ export default function childGuard(pi: ExtensionAPI): void {
     if (event.toolName === REPORT_TOOL_NAME) {
       if (canonicalSourcePath(tool?.sourceInfo?.path) !== canonicalSourcePath(CHILD_GUARD_SOURCE_PATH)) {
         return { block: true, reason: "Structured report tool ownership changed", terminate: true };
+      }
+      if (mixedReportToolCallIds.delete(event.toolCallId)) {
+        return { block: true, reason: "Submit the structured report as the only tool call in a final turn; finish any other investigation first, then retry the report alone" };
       }
       return;
     }

@@ -1,4 +1,4 @@
-import { lstat, readFile, realpath, stat } from "node:fs/promises";
+import { lstat, mkdtemp, readFile, realpath, rm, stat } from "node:fs/promises";
 import { homedir } from "node:os";
 import { dirname, isAbsolute, join, relative, resolve, sep } from "node:path";
 import { fileURLToPath } from "node:url";
@@ -70,6 +70,16 @@ const UNICODE_SPACES = /[\u00a0\u2000-\u200a\u202f\u205f\u3000]/g;
 export function isWithin(parent: string, child: string): boolean {
   const rel = relative(parent, child);
   return rel === "" || (!rel.startsWith(`..${sep}`) && rel !== ".." && !isAbsolute(rel));
+}
+
+export async function makeCanonicalTempDirectory(prefix: string): Promise<string> {
+  const created = await mkdtemp(prefix);
+  try {
+    return await realpath(created);
+  } catch (error) {
+    await rm(created, { recursive: true, force: true }).catch(() => undefined);
+    throw error;
+  }
 }
 
 export function normalizeInputPath(input: string, cwd: string): string {
@@ -218,7 +228,8 @@ export class ModelInvocationGate {
   private runOpen = false;
   private startedCalls = 0;
   private preflightFailures = 0;
-  private preflightRetryAuthorized = false;
+  private preflightReplacementPending = false;
+  private replacementToolCallId: string | undefined;
   private readonly authorizedToolCallIds = new Set<string>();
 
   startRun(): void {
@@ -226,7 +237,8 @@ export class ModelInvocationGate {
     this.runOpen = true;
     this.startedCalls = 0;
     this.preflightFailures = 0;
-    this.preflightRetryAuthorized = false;
+    this.preflightReplacementPending = false;
+    this.replacementToolCallId = undefined;
     this.authorizedToolCallIds.clear();
   }
 
@@ -234,7 +246,8 @@ export class ModelInvocationGate {
     this.runOpen = false;
     this.startedCalls = 0;
     this.preflightFailures = 0;
-    this.preflightRetryAuthorized = false;
+    this.preflightReplacementPending = false;
+    this.replacementToolCallId = undefined;
     this.authorizedToolCallIds.clear();
   }
 
@@ -242,24 +255,30 @@ export class ModelInvocationGate {
     if (
       !this.runOpen
       || this.preflightFailures > 1
-      || (this.preflightFailures === 1 && this.preflightRetryAuthorized)
+      || (this.preflightReplacementPending && this.replacementToolCallId !== undefined)
       || this.authorizedToolCallIds.has(toolCallId)
       || this.startedCalls + this.authorizedToolCallIds.size >= MAX_SUBAGENT_CALLS
     ) return false;
     this.authorizedToolCallIds.add(toolCallId);
-    if (this.preflightFailures === 1) this.preflightRetryAuthorized = true;
+    if (this.preflightReplacementPending) this.replacementToolCallId = toolCallId;
     return true;
   }
 
   commit(toolCallId: string): boolean {
     if (!this.authorizedToolCallIds.delete(toolCallId)) return false;
     this.startedCalls += 1;
+    if (this.replacementToolCallId === toolCallId) {
+      this.preflightReplacementPending = false;
+      this.replacementToolCallId = undefined;
+    }
     return true;
   }
 
   rejectPreflight(toolCallId: string): boolean {
     if (!this.authorizedToolCallIds.delete(toolCallId)) return false;
     this.preflightFailures += 1;
+    if (this.preflightFailures === 1) this.preflightReplacementPending = true;
+    if (this.replacementToolCallId === toolCallId) this.replacementToolCallId = undefined;
     return true;
   }
 }
