@@ -5,25 +5,25 @@ import type { ExtensionAPI } from "@earendil-works/pi-coding-agent";
 import { StringEnum } from "@earendil-works/pi-ai";
 import { Type } from "typebox";
 import {
+  boundedParentError,
   buildChildPolicy,
   MAX_SCOPE_ROOTS,
+  legacyPreset,
   MAX_SUBAGENT_CALLS,
   ModelInvocationGate,
-  PROFILE_MODELS,
+  PRESET_NAMES,
   resolveWebExtensionPath,
-  THINKING_LEVELS,
+  SUBAGENT_PRESETS,
   TOOL_NAME,
   type Capability,
   type ChildPolicy,
-  type Profile,
-  type Thinking,
+  type Preset,
 } from "./shared.ts";
 import { runChild } from "./subprocess.ts";
 
-const ProfileSchema = StringEnum(["lookup", "analysis", "review"] as const, {
-  description: "lookup=luna, analysis=terra, review=sol",
+const PresetSchema = StringEnum(PRESET_NAMES, {
+  description: "Validated child model+thinking preset: lookup=luna, analysis=terra, review=sol; standard/balanced/deep/exhaustive select thinking depth",
 });
-const ThinkingSchema = StringEnum(THINKING_LEVELS);
 const CapabilitySchema = StringEnum(["local", "web", "both"] as const, {
   description: "local=files only, web=public web only, both=files and public web",
 });
@@ -35,8 +35,7 @@ const Parameters = Type.Object({
     description: "Existing local files/directories inside cwd; use [] for web-only research",
   }),
   capability: CapabilitySchema,
-  profile: ProfileSchema,
-  thinking: ThinkingSchema,
+  preset: PresetSchema,
 }, { additionalProperties: false });
 
 export default function piSubagentExtension(pi: ExtensionAPI): void {
@@ -56,65 +55,85 @@ export default function piSubagentExtension(pi: ExtensionAPI): void {
     executionMode: "parallel",
     description: "Run one bounded investigation in an isolated child context. Use one by default and up to three parallel calls only for distinct, independent research tracks; use the parent for simple lookups, implementation, or tests.",
     parameters: Parameters,
+    prepareArguments(args) {
+      if (!args || typeof args !== "object") return args;
+      const input = args as Record<string, unknown>;
+      if (typeof input.preset === "string") return args;
+      const preset = legacyPreset(input.profile, input.thinking);
+      if (!preset) return args;
+      const { profile: _profile, thinking: _thinking, ...rest } = input;
+      return { ...rest, preset };
+    },
     async execute(toolCallId, params, signal, onUpdate, ctx) {
-      const currentSource = currentOwnSource();
-      if (!authorizedCalls.delete(toolCallId) || !ownSourcePath || currentSource !== ownSourcePath) {
-        throw new Error(`pi_subagent allows at most ${MAX_SUBAGENT_CALLS} model-selected calls per parent agent run`);
-      }
-      const capability = params.capability as Capability;
-      const profile = params.profile as Profile;
-      const thinking = params.thinking as Thinking;
-      const model = PROFILE_MODELS[profile];
-      let webExtensionPath: string | undefined;
-      let policy: ChildPolicy;
       try {
-        if (params.task.includes("\0")) throw new Error("task must not contain NUL bytes");
-        const [provider, modelId] = model.split("/", 2);
-        if (!ctx.modelRegistry.find(provider!, modelId!)) throw new Error(`Configured subagent model is unavailable: ${model}`);
-        if (capability !== "local") webExtensionPath = await resolveWebExtensionPath(pi.getAllTools());
-        policy = await buildChildPolicy(ctx.cwd, params.scope, capability);
-      } catch (error) {
-        gate.rejectPreflight(toolCallId);
-        throw error;
-      }
-      if (!gate.commit(toolCallId)) throw new Error("pi_subagent invocation permit is invalid or already consumed");
+        const currentSource = currentOwnSource();
+        if (!authorizedCalls.delete(toolCallId) || !ownSourcePath || currentSource !== ownSourcePath) {
+          throw new Error(`pi_subagent allows at most ${MAX_SUBAGENT_CALLS} model-selected calls per parent agent run`);
+        }
+        const capability = params.capability as Capability;
+        const preset = params.preset as Preset;
+        const { model, thinking } = SUBAGENT_PRESETS[preset];
+        let webExtensionPath: string | undefined;
+        let policy: ChildPolicy;
+        try {
+          if (params.task.includes("\0")) throw new Error("task must not contain NUL bytes");
+          const [provider, modelId] = model.split("/", 2);
+          if (!ctx.modelRegistry.find(provider!, modelId!)) throw new Error(`Configured subagent model is unavailable: ${model}`);
+          if (capability !== "local") webExtensionPath = await resolveWebExtensionPath(pi.getAllTools());
+          policy = await buildChildPolicy(ctx.cwd, params.scope, capability);
+        } catch (error) {
+          gate.rejectPreflight(toolCallId);
+          throw error;
+        }
+        if (!gate.commit(toolCallId)) throw new Error("pi_subagent invocation permit is invalid or already consumed");
 
-      const tempDir = await mkdtemp(join(tmpdir(), "pi-subagent-"));
-      try {
-        await chmod(tempDir, 0o700);
-        const policyFile = join(tempDir, "policy.json");
-        const readyFile = join(tempDir, "guard.ready");
-        await writeFile(policyFile, JSON.stringify(policy), { encoding: "utf8", mode: 0o600, flag: "wx" });
-        const result = await runChild({
-          policy,
-          policyFile,
-          readyFile,
-          webExtensionPath,
-          task: params.task,
-          model,
-          thinking,
-          signal,
-          onUpdate,
-        });
-        return {
-          content: [{ type: "text", text: result.output }],
-          details: {
-            capability,
-            profile,
+        const tempDir = await mkdtemp(join(tmpdir(), "pi-subagent-"));
+        let executionError: unknown;
+        try {
+          await chmod(tempDir, 0o700);
+          const policyFile = join(tempDir, "policy.json");
+          const readyFile = join(tempDir, "guard.ready");
+          await writeFile(policyFile, JSON.stringify(policy), { encoding: "utf8", mode: 0o600, flag: "wx" });
+          const result = await runChild({
+            policy,
+            policyFile,
+            readyFile,
+            webExtensionPath,
+            task: params.task,
             model,
             thinking,
-            scopeRoots: policy.roots.length,
-            webEnabled: capability !== "local",
-            durationMs: result.durationMs,
-            exitCode: result.exitCode,
-            stopReason: result.stopReason,
-            outputTruncated: result.outputTruncated,
+            signal,
+            onUpdate,
+          });
+          return {
+            content: [{ type: "text", text: result.output }],
+            details: {
+              capability,
+              preset,
+              model,
+              thinking,
+              scopeRoots: policy.roots.length,
+              webEnabled: capability !== "local",
+              durationMs: result.durationMs,
+              exitCode: result.exitCode,
+              stopReason: result.stopReason,
+              outputTruncated: result.outputTruncated,
+              usage: result.usage,
+            },
             usage: result.usage,
-          },
-          usage: result.usage,
-        };
-      } finally {
-        await rm(tempDir, { recursive: true, force: true });
+          };
+        } catch (error) {
+          executionError = error;
+          throw error;
+        } finally {
+          try {
+            await rm(tempDir, { recursive: true, force: true });
+          } catch (cleanupError) {
+            if (executionError === undefined) throw cleanupError;
+          }
+        }
+      } catch (error) {
+        throw new Error(boundedParentError(error));
       }
     },
   });

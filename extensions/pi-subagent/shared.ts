@@ -4,12 +4,15 @@ import { dirname, isAbsolute, join, relative, resolve, sep } from "node:path";
 import { fileURLToPath } from "node:url";
 
 export const TOOL_NAME = "pi_subagent";
+export const REPORT_TOOL_NAME = "submit_subagent_report";
 export const ALLOWED_FILE_TOOLS = ["read", "grep", "find", "ls"] as const;
 export const ALLOWED_WEB_TOOLS = ["web_search", "source_check", "fetch_content", "get_search_content"] as const;
 export const ALLOWED_CHILD_TOOLS = [...ALLOWED_FILE_TOOLS, ...ALLOWED_WEB_TOOLS] as const;
 export const MAX_SCOPE_ROOTS = 8;
 export const MAX_SUBAGENT_CALLS = 3;
 export const MAX_FINAL_BYTES = 12 * 1024;
+export const MAX_STRUCTURED_REPORT_BYTES = 8 * 1024;
+export const MAX_PARENT_ERROR_BYTES = 4 * 1024;
 export const MAX_STDERR_BYTES = 64 * 1024;
 export const MAX_JSON_LINE_BYTES = 2 * 1024 * 1024;
 export const CHILD_TIMEOUT_MS = 15 * 60 * 1000;
@@ -18,23 +21,47 @@ export const READY_ENV = "PI_SUBAGENT_READY_FILE";
 export const READY_MARKER = "pi-subagent-guard-ready-v1\n";
 export const WEB_EXTENSION_ENV = "PI_SUBAGENT_WEB_EXTENSION_PATH";
 
-export const PROFILE_MODELS = {
-  lookup: "openai-codex/gpt-5.6-luna",
-  analysis: "openai-codex/gpt-5.6-terra",
-  review: "openai-codex/gpt-5.6-sol",
-} as const;
-
-export type Profile = keyof typeof PROFILE_MODELS;
 export const THINKING_LEVELS = ["low", "medium", "high", "xhigh", "max"] as const;
 export type Thinking = (typeof THINKING_LEVELS)[number];
+
+export const SUBAGENT_PRESETS = {
+  "lookup-standard": { model: "openai-codex/gpt-5.6-luna", thinking: "low" },
+  "lookup-balanced": { model: "openai-codex/gpt-5.6-luna", thinking: "medium" },
+  "lookup-deep": { model: "openai-codex/gpt-5.6-luna", thinking: "high" },
+  "analysis-standard": { model: "openai-codex/gpt-5.6-terra", thinking: "high" },
+  "analysis-deep": { model: "openai-codex/gpt-5.6-terra", thinking: "xhigh" },
+  "review-standard": { model: "openai-codex/gpt-5.6-sol", thinking: "high" },
+  "review-deep": { model: "openai-codex/gpt-5.6-sol", thinking: "xhigh" },
+  "review-exhaustive": { model: "openai-codex/gpt-5.6-sol", thinking: "max" },
+} as const satisfies Record<string, { model: string; thinking: Thinking }>;
+export type Preset = keyof typeof SUBAGENT_PRESETS;
+export const PRESET_NAMES = Object.keys(SUBAGENT_PRESETS) as Preset[];
+
+export function legacyPreset(profile: unknown, thinking: unknown): Preset | undefined {
+  if (profile === "lookup") {
+    if (thinking === "low") return "lookup-standard";
+    if (thinking === "medium") return "lookup-balanced";
+    if (thinking === "high" || thinking === "xhigh" || thinking === "max") return "lookup-deep";
+  }
+  if (profile === "analysis") {
+    if (thinking === "xhigh" || thinking === "max") return "analysis-deep";
+    if (THINKING_LEVELS.includes(thinking as Thinking)) return "analysis-standard";
+  }
+  if (profile === "review") {
+    if (thinking === "max") return "review-exhaustive";
+    if (thinking === "xhigh") return "review-deep";
+    if (THINKING_LEVELS.includes(thinking as Thinking)) return "review-standard";
+  }
+  return undefined;
+}
 export type Capability = "local" | "web" | "both";
 export type ScopeRoot = { path: string; kind: "file" | "directory" };
 export type ChildPolicy = { version: 1; cwd: string; capability: Capability; roots: ScopeRoot[] };
 
 export function toolsForCapability(capability: Capability): string[] {
-  if (capability === "local") return [...ALLOWED_FILE_TOOLS];
-  if (capability === "web") return [...ALLOWED_WEB_TOOLS];
-  return [...ALLOWED_CHILD_TOOLS];
+  if (capability === "local") return [...ALLOWED_FILE_TOOLS, REPORT_TOOL_NAME];
+  if (capability === "web") return [...ALLOWED_WEB_TOOLS, REPORT_TOOL_NAME];
+  return [...ALLOWED_CHILD_TOOLS, REPORT_TOOL_NAME];
 }
 
 const PATH_CONTROL_RE = /[\u0000-\u001f\u007f-\u009f\u202a-\u202e\u2066-\u2069]/;
@@ -241,12 +268,29 @@ export function sanitizeDisplayText(text: string): string {
   return text.replace(/[\u0000-\u0008\u000b-\u001f\u007f-\u009f\u202a-\u202e\u2066-\u2069]/g, "?");
 }
 
-export function truncateUtf8(text: string, maxBytes = MAX_FINAL_BYTES): { text: string; truncated: boolean } {
+function truncateUtf8WithMarker(
+  text: string,
+  maxBytes: number,
+  markerText: string,
+): { text: string; truncated: boolean } {
   const source = Buffer.from(text, "utf8");
   if (source.length <= maxBytes) return { text, truncated: false };
-  const marker = Buffer.from("\n\n[Subagent output truncated]", "utf8");
+  const marker = Buffer.from(markerText, "utf8");
   const budget = Math.max(0, maxBytes - marker.length);
   let end = budget;
   while (end > 0 && (source[end]! & 0xc0) === 0x80) end--;
   return { text: Buffer.concat([source.subarray(0, end), marker]).toString("utf8"), truncated: true };
+}
+
+export function truncateUtf8(text: string, maxBytes = MAX_FINAL_BYTES): { text: string; truncated: boolean } {
+  return truncateUtf8WithMarker(text, maxBytes, "\n\n[Subagent output truncated]");
+}
+
+export function boundedParentError(error: unknown): string {
+  const raw = error instanceof Error ? error.message : String(error);
+  return truncateUtf8WithMarker(
+    sanitizeDisplayText(raw),
+    MAX_PARENT_ERROR_BYTES,
+    "\n\n[Subagent error truncated]",
+  ).text;
 }

@@ -7,12 +7,16 @@ import { fileURLToPath } from "node:url";
 import {
   ALLOWED_WEB_TOOLS,
   authorizeReadPath,
+  boundedParentError,
   buildChildPolicy,
   buildChildPrompt,
+  legacyPreset,
+  MAX_PARENT_ERROR_BYTES,
   MAX_SUBAGENT_CALLS,
   ModelInvocationGate,
-  PROFILE_MODELS,
+  PRESET_NAMES,
   resolveWebExtensionPath,
+  SUBAGENT_PRESETS,
   THINKING_LEVELS,
   truncateUtf8,
 } from "./shared.ts";
@@ -124,6 +128,8 @@ describe("pi-subagent model invocation contract", () => {
     assert.doesNotMatch(skill, /disable-model-invocation:\s*true/);
     assert.match(skill, /The model may select it automatically/);
     assert.match(skill, /public-web investigation/);
+    assert.match(skill, /up to 10 material findings/);
+    assert.match(skill, /Do not repeat broad reads/);
   });
 
   test("resolves one common installed web extension source", async () => {
@@ -159,12 +165,32 @@ describe("pi-subagent model invocation contract", () => {
 });
 
 describe("pi-subagent public contract", () => {
-  test("profile mapping and thinking levels are fixed", () => {
-    assert.deepEqual(PROFILE_MODELS, {
-      lookup: "openai-codex/gpt-5.6-luna",
-      analysis: "openai-codex/gpt-5.6-terra",
-      review: "openai-codex/gpt-5.6-sol",
+  test("exposes only quality-tested model and thinking presets", () => {
+    assert.deepEqual(PRESET_NAMES, [
+      "lookup-standard",
+      "lookup-balanced",
+      "lookup-deep",
+      "analysis-standard",
+      "analysis-deep",
+      "review-standard",
+      "review-deep",
+      "review-exhaustive",
+    ]);
+    assert.deepEqual(SUBAGENT_PRESETS["lookup-standard"], {
+      model: "openai-codex/gpt-5.6-luna",
+      thinking: "low",
     });
+    assert.deepEqual(SUBAGENT_PRESETS["analysis-deep"], {
+      model: "openai-codex/gpt-5.6-terra",
+      thinking: "xhigh",
+    });
+    assert.deepEqual(SUBAGENT_PRESETS["review-exhaustive"], {
+      model: "openai-codex/gpt-5.6-sol",
+      thinking: "max",
+    });
+    assert.equal(legacyPreset("lookup", "medium"), "lookup-balanced");
+    assert.equal(legacyPreset("analysis", "max"), "analysis-deep");
+    assert.equal(legacyPreset("review", "max"), "review-exhaustive");
     assert.deepEqual(THINKING_LEVELS, ["low", "medium", "high", "xhigh", "max"]);
   });
 
@@ -174,5 +200,13 @@ describe("pi-subagent public contract", () => {
     assert.ok(Buffer.byteLength(result.text, "utf8") <= 80);
     assert.equal(result.text.includes("�"), false);
     assert.match(result.text, /Subagent output truncated/);
+  });
+
+  test("bounds and sanitizes every error that can reach the parent", () => {
+    const result = boundedParentError(`provider\u001b[31m\u202efailed ${"가".repeat(MAX_PARENT_ERROR_BYTES)}`);
+    assert.ok(Buffer.byteLength(result, "utf8") <= MAX_PARENT_ERROR_BYTES);
+    assert.doesNotMatch(result, /\u001b|\u202e/);
+    assert.equal(result.includes("�"), false);
+    assert.match(result, /Subagent error truncated/);
   });
 });

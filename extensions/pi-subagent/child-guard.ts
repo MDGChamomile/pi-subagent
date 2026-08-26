@@ -1,18 +1,59 @@
 import { lstatSync, readFileSync, realpathSync, writeFileSync } from "node:fs";
 import { dirname, resolve } from "node:path";
+import { fileURLToPath } from "node:url";
 import type { ExtensionAPI } from "@earendil-works/pi-coding-agent";
 import {
   ALLOWED_FILE_TOOLS,
   ALLOWED_WEB_TOOLS,
   authorizeReadPath,
   isWithin,
+  MAX_STRUCTURED_REPORT_BYTES,
   POLICY_ENV,
   READY_ENV,
   READY_MARKER,
+  REPORT_TOOL_NAME,
   toolsForCapability,
   WEB_EXTENSION_ENV,
   type ChildPolicy,
 } from "./shared.ts";
+
+export const CHILD_GUARD_SOURCE_PATH = fileURLToPath(import.meta.url);
+
+const FindingSchema = {
+  type: "object",
+  properties: {
+    title: { type: "string", minLength: 1, maxLength: 120 },
+    detail: { type: "string", minLength: 1, maxLength: 700 },
+    evidence: {
+      type: "array",
+      items: { type: "string", minLength: 1, maxLength: 400 },
+      maxItems: 3,
+    },
+  },
+  required: ["title", "detail", "evidence"],
+  additionalProperties: false,
+} as const;
+
+const boundedList = (maxItems: number) => ({
+  type: "array",
+  items: { type: "string", minLength: 1, maxLength: 500 },
+  maxItems,
+}) as const;
+
+// Pi consumes TypeBox-compatible JSON Schema at runtime. Keeping the literal
+// local avoids adding a child-only package dependency solely for schema builders.
+const StructuredReportSchema = {
+  type: "object",
+  properties: {
+    conclusion: { type: "string", minLength: 1, maxLength: 1200 },
+    findings: { type: "array", items: FindingSchema, maxItems: 10 },
+    alternatives: boundedList(4),
+    uncertainties: boundedList(4),
+    coverageGaps: boundedList(4),
+  },
+  required: ["conclusion", "findings"],
+  additionalProperties: false,
+} as any;
 
 const FILE_TOOLS = new Set<string>(ALLOWED_FILE_TOOLS);
 const WEB_TOOLS = new Set<string>(ALLOWED_WEB_TOOLS);
@@ -122,6 +163,24 @@ function validateWebCall(toolName: string, input: Record<string, unknown>): stri
 }
 
 export default function childGuard(pi: ExtensionAPI): void {
+  pi.registerTool({
+    name: REPORT_TOOL_NAME,
+    label: "Submit Subagent Report",
+    description: "Submit the one final structured investigation report. Use exactly once as the last action after all investigation is complete.",
+    parameters: StructuredReportSchema,
+    async execute(_toolCallId, params) {
+      const output = JSON.stringify(params);
+      if (Buffer.byteLength(output, "utf8") > MAX_STRUCTURED_REPORT_BYTES) {
+        throw new Error(`Structured report exceeds ${MAX_STRUCTURED_REPORT_BYTES} UTF-8 bytes; reduce it and submit once more`);
+      }
+      return {
+        content: [{ type: "text", text: output }],
+        details: { structured: true, findingCount: params.findings.length },
+        terminate: true,
+      };
+    },
+  });
+
   let policy: ChildPolicy | undefined;
   let readyPath: string | undefined;
   let webExtensionPath: string | undefined;
@@ -186,6 +245,12 @@ export default function childGuard(pi: ExtensionAPI): void {
     }
 
     const tool = pi.getAllTools().find((candidate) => candidate.name === event.toolName);
+    if (event.toolName === REPORT_TOOL_NAME) {
+      if (canonicalSourcePath(tool?.sourceInfo?.path) !== canonicalSourcePath(CHILD_GUARD_SOURCE_PATH)) {
+        return { block: true, reason: "Structured report tool ownership changed", terminate: true };
+      }
+      return;
+    }
     if (FILE_TOOLS.has(event.toolName)) {
       if (tool?.sourceInfo?.source !== "builtin") {
         return { block: true, reason: `Tool ${event.toolName} ownership changed`, terminate: true };

@@ -3,7 +3,7 @@ import { mkdtemp, mkdir, readFile, rm, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { describe, test } from "node:test";
-import childGuard from "./child-guard.ts";
+import childGuard, { CHILD_GUARD_SOURCE_PATH } from "./child-guard.ts";
 import {
   ALLOWED_FILE_TOOLS,
   ALLOWED_WEB_TOOLS,
@@ -11,6 +11,7 @@ import {
   POLICY_ENV,
   READY_ENV,
   READY_MARKER,
+  REPORT_TOOL_NAME,
   WEB_EXTENSION_ENV,
 } from "./shared.ts";
 
@@ -43,6 +44,12 @@ async function createHarness(scope: string[], capability: "local" | "web" | "bot
     ...ALLOWED_WEB_TOOLS.map((name) => ({ name, sourceInfo: { source: "local", path: webExtension } })),
   ];
   const pi = {
+    registerTool(definition: any) {
+      tools.push({
+        ...definition,
+        sourceInfo: { source: "local", path: CHILD_GUARD_SOURCE_PATH },
+      });
+    },
     on(name: string, handler: Handler) {
       handlers.set(name, [...(handlers.get(name) ?? []), handler]);
     },
@@ -88,7 +95,7 @@ describe("pi-subagent child guard", () => {
     const harness = await createHarness(["allowed"], "both");
     try {
       await harness.emit("session_start");
-      assert.deepEqual(harness.getActiveTools(), [...ALLOWED_FILE_TOOLS, ...ALLOWED_WEB_TOOLS]);
+      assert.deepEqual(harness.getActiveTools(), [...ALLOWED_FILE_TOOLS, ...ALLOWED_WEB_TOOLS, REPORT_TOOL_NAME]);
       assert.equal(await readFile(harness.readyFile, "utf8"), READY_MARKER);
       const webTool = harness.tools.find((tool) => tool.name === "web_search")!;
       webTool.sourceInfo.path = join(harness.root, "other-extension.ts");
@@ -123,7 +130,7 @@ describe("pi-subagent child guard", () => {
     const harness = await createHarness(["allowed"], "local");
     try {
       await harness.emit("session_start");
-      assert.deepEqual(harness.getActiveTools(), [...ALLOWED_FILE_TOOLS]);
+      assert.deepEqual(harness.getActiveTools(), [...ALLOWED_FILE_TOOLS, REPORT_TOOL_NAME]);
       assert.equal(await harness.emit("tool_call", {
         toolName: "read",
         toolCallId: "inside",
@@ -142,6 +149,54 @@ describe("pi-subagent child guard", () => {
         input: { command: "pwd" },
       });
       assert.equal(bash.block, true);
+    } finally {
+      await harness.cleanup();
+    }
+  });
+
+  test("accepts one bounded structured report through the guard-owned terminating tool", async () => {
+    const harness = await createHarness(["allowed"], "local");
+    try {
+      await harness.emit("session_start");
+      const reportTool = harness.tools.find((tool) => tool.name === REPORT_TOOL_NAME)! as any;
+      assert.equal(await harness.emit("tool_call", {
+        toolName: REPORT_TOOL_NAME,
+        toolCallId: "report",
+        input: {},
+      }), undefined);
+      const findings = Array.from({ length: 10 }, (_, index) => ({
+        title: `Finding ${index + 1}`,
+        detail: "Material conclusion only",
+        evidence: ["allowed/inside.txt:1"],
+      }));
+      const result = await reportTool.execute("report", {
+        conclusion: "The bounded investigation is complete.",
+        findings,
+        alternatives: [],
+        uncertainties: [],
+        coverageGaps: [],
+      });
+      assert.equal(result.terminate, true);
+      assert.match(result.content[0].text, /Finding 10/);
+      assert.equal(result.details.findingCount, 10);
+      await assert.rejects(() => reportTool.execute("oversized-report", {
+        conclusion: "x".repeat(1200),
+        findings: Array.from({ length: 10 }, (_, index) => ({
+          title: `Finding ${index + 1}`,
+          detail: "d".repeat(700),
+          evidence: ["e".repeat(400), "f".repeat(400), "g".repeat(400)],
+        })),
+      }), /Structured report exceeds/);
+
+      reportTool.sourceInfo.path = join(harness.root, "replacement.ts");
+      await writeFile(reportTool.sourceInfo.path, "export default () => {};\n");
+      const changedOwner = await harness.emit("tool_call", {
+        toolName: REPORT_TOOL_NAME,
+        toolCallId: "changed-report",
+        input: {},
+      });
+      assert.equal(changedOwner.block, true);
+      assert.match(changedOwner.reason, /ownership changed/);
     } finally {
       await harness.cleanup();
     }
