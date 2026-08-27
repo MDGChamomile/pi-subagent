@@ -17,6 +17,7 @@ import {
   MAX_PARENT_ERROR_BYTES,
   MAX_SUBAGENT_CALLS,
   ModelInvocationGate,
+  normalizeInputPath,
   PRESET_NAMES,
   resolveWebExtensionPath,
   SUBAGENT_PRESETS,
@@ -75,6 +76,20 @@ describe("pi-subagent scope policy", () => {
       await assert.rejects(() => buildChildPolicy(workspace, ["escape"]), /inside the current working directory/);
       const policy = await buildChildPolicy(workspace, ["inside.txt"], "local");
       await assert.rejects(() => authorizeReadPath(policy, outside), /outside its explicit scope/);
+    } finally {
+      await rm(root, { recursive: true, force: true });
+    }
+  });
+
+  test("rejects a bare @ scope without changing explicit cwd and @file scopes", async () => {
+    const root = await mkdtemp(join(tmpdir(), "pi-subagent-test-"));
+    try {
+      await writeFile(join(root, "a.txt"), "a\n");
+      assert.throws(() => normalizeInputPath("@", root), /Scope path is empty/);
+      await assert.rejects(() => buildChildPolicy(root, ["@"], "local"), /Scope path is empty/);
+      assert.equal(normalizeInputPath("@a.txt", root), join(root, "a.txt"));
+      const cwdPolicy = await buildChildPolicy(root, ["."], "local");
+      assert.equal(cwdPolicy.roots[0]?.path, await realpath(root));
     } finally {
       await rm(root, { recursive: true, force: true });
     }

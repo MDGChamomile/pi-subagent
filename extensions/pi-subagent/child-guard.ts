@@ -2,6 +2,7 @@ import { lstatSync, readFileSync, realpathSync, writeFileSync } from "node:fs";
 import { dirname, resolve } from "node:path";
 import { fileURLToPath } from "node:url";
 import type { ExtensionAPI } from "@earendil-works/pi-coding-agent";
+import { cleanupPrivateRuntimeFiles, installParentLivenessMonitor } from "./parent-liveness.ts";
 import {
   ALLOWED_FILE_TOOLS,
   ALLOWED_WEB_TOOLS,
@@ -138,16 +139,46 @@ function validatePublicHttpUrl(raw: string): string | undefined {
   }
 }
 
+const WEB_INPUT_ALLOWLISTS: Record<string, ReadonlySet<string>> = {
+  web_search: new Set(["query", "queries", "numResults", "recencyFilter", "domainFilter", "workflow"]),
+  source_check: new Set(["claim", "queries", "numResults", "fetchContent", "recencyFilter", "domainFilter"]),
+  fetch_content: new Set(["url", "urls", "mode"]),
+  get_search_content: new Set([
+    "responseId", "query", "queryIndex", "url", "urlIndex", "offset", "limit", "findText", "findMode",
+  ]),
+};
+const MAX_WEB_QUERIES = 4;
+const MAX_WEB_RESULTS_PER_QUERY = 10;
+const MAX_FETCH_URLS = 5;
+
+function validateBoundedQueries(toolName: string, input: Record<string, unknown>): string | undefined {
+  if (Array.isArray(input.queries) && input.queries.length > MAX_WEB_QUERIES) {
+    return `${toolName} permits at most ${MAX_WEB_QUERIES} queries`;
+  }
+  if (typeof input.numResults === "number" && input.numResults > MAX_WEB_RESULTS_PER_QUERY) {
+    return `${toolName} permits at most ${MAX_WEB_RESULTS_PER_QUERY} results per query`;
+  }
+  return undefined;
+}
+
 function validateWebCall(toolName: string, input: Record<string, unknown>): string | undefined {
+  const allowed = WEB_INPUT_ALLOWLISTS[toolName];
+  if (!allowed) return `${toolName} is not supported in the subagent`;
+  const unknown = Object.keys(input).filter((key) => !allowed.has(key));
+  if (unknown.length > 0) return `${toolName} input ${unknown.sort().join(", ")} is not allowed in the subagent`;
+
   if (toolName === "web_search") {
+    const boundedError = validateBoundedQueries(toolName, input);
+    if (boundedError) return boundedError;
     input.workflow = "none";
     return undefined;
   }
-  if (toolName !== "fetch_content") return undefined;
-  if (input.auth !== undefined && input.auth !== false) {
-    return "Authenticated browser-cookie fetching is disabled in the subagent";
+  if (toolName === "source_check") return validateBoundedQueries(toolName, input);
+  if (toolName === "get_search_content") return undefined;
+  if (toolName !== "fetch_content") return `${toolName} is not supported in the subagent`;
+  if (input.mode !== undefined && input.mode !== "readable") {
+    return "fetch_content permits only readable mode in the subagent";
   }
-  if (input.forceClone === true) return "Forced large GitHub cloning is disabled in the subagent";
   const urls: string[] = [];
   if (typeof input.url === "string") urls.push(input.url);
   if (Array.isArray(input.urls)) {
@@ -155,6 +186,7 @@ function validateWebCall(toolName: string, input: Record<string, unknown>): stri
     urls.push(...input.urls as string[]);
   }
   if (urls.length === 0) return "fetch_content requires at least one HTTP(S) URL";
+  if (urls.length > MAX_FETCH_URLS) return `fetch_content permits at most ${MAX_FETCH_URLS} URLs`;
   for (const url of urls) {
     const error = validatePublicHttpUrl(url);
     if (error) return error;
@@ -162,7 +194,10 @@ function validateWebCall(toolName: string, input: Record<string, unknown>): stri
   return undefined;
 }
 
-export default function childGuard(pi: ExtensionAPI): void {
+export default function childGuard(
+  pi: ExtensionAPI,
+  installLiveness = installParentLivenessMonitor,
+): void {
   const mixedReportToolCallIds = new Set<string>();
 
   pi.registerTool({
@@ -184,12 +219,16 @@ export default function childGuard(pi: ExtensionAPI): void {
   });
 
   let policy: ChildPolicy | undefined;
+  let policyPath: string | undefined;
   let readyPath: string | undefined;
   let webExtensionPath: string | undefined;
   let policyError: string | undefined;
+  let stopParentLivenessMonitor: (() => void) | undefined;
   try {
+    stopParentLivenessMonitor = installLiveness(() => cleanupPrivateRuntimeFiles(policyPath, readyPath));
     const loaded = loadPolicy();
     policy = loaded.policy;
+    policyPath = loaded.policyPath;
     readyPath = loadReadyPath(loaded.policyPath);
     if (policy.capability !== "local") webExtensionPath = loadWebExtensionPath();
   } catch (error) {
@@ -206,6 +245,10 @@ export default function childGuard(pi: ExtensionAPI): void {
 
   pi.on("turn_end", () => {
     mixedReportToolCallIds.clear();
+  });
+
+  pi.on("session_shutdown", () => {
+    stopParentLivenessMonitor?.();
   });
 
   pi.on("session_start", () => {
@@ -275,7 +318,7 @@ export default function childGuard(pi: ExtensionAPI): void {
       const path = requestedPath(event.toolName, event.input);
       if (path === undefined) return { block: true, reason: `${event.toolName} requires a path`, terminate: true };
       try {
-        await authorizeReadPath(policy, path);
+        (event.input as Record<string, unknown>).path = await authorizeReadPath(policy, path);
       } catch (error) {
         return { block: true, reason: error instanceof Error ? error.message : String(error) };
       }

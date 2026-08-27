@@ -5,6 +5,7 @@ import { basename } from "node:path";
 import { StringDecoder } from "node:string_decoder";
 import { fileURLToPath } from "node:url";
 import type { Usage as PiUsage } from "@earendil-works/pi-ai";
+import { killProcessGroup, PARENT_LIVENESS_ENV, PARENT_LIVENESS_FD } from "./parent-liveness.ts";
 import {
   boundedParentError,
   buildChildPrompt,
@@ -350,17 +351,6 @@ function getPiInvocation(args: string[]): { command: string; args: string[] } {
   return { command: "pi", args };
 }
 
-function killProcessGroup(pid: number | undefined, signal: NodeJS.Signals): void {
-  if (!pid) return;
-  if (process.platform !== "win32") {
-    try {
-      process.kill(-pid, signal);
-      return;
-    } catch {}
-  }
-  try { process.kill(pid, signal); } catch {}
-}
-
 export async function assertChildReady(readyFile: string): Promise<void> {
   let marker: string;
   try {
@@ -413,6 +403,8 @@ export async function runChild(options: {
   const invocation = options.invocationOverride ?? getPiInvocation(args);
   const env: NodeJS.ProcessEnv = {
     ...process.env,
+    PI_OFFLINE: "1",
+    [PARENT_LIVENESS_ENV]: String(PARENT_LIVENESS_FD),
     [POLICY_ENV]: options.policyFile,
     [READY_ENV]: options.readyFile,
   };
@@ -438,18 +430,20 @@ export async function runChild(options: {
       env,
       detached: process.platform !== "win32",
       shell: false,
-      stdio: ["pipe", "pipe", "pipe"],
+      stdio: ["pipe", "pipe", "pipe", "pipe"],
     });
   } catch (error) {
     throw new Error(boundedParentError(error, { phase: "spawn", durationMs: Date.now() - startedAt }));
   }
-  if (!child.stdin || !child.stdout || !child.stderr) {
+  const parentLivenessPipe = child.stdio[PARENT_LIVENESS_FD];
+  if (!child.stdin || !child.stdout || !child.stderr || !parentLivenessPipe) {
     killProcessGroup(child.pid, "SIGKILL");
     throw new Error(boundedParentError("Subagent process pipes are unavailable", {
       phase: "spawn",
       durationMs: Date.now() - startedAt,
     }));
   }
+  parentLivenessPipe.on("error", () => undefined);
 
   let stderr = "";
   let stderrBytes = 0;

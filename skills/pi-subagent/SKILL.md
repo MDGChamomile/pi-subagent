@@ -14,7 +14,7 @@ Use this workflow when a focused investigation would produce substantial interme
 - Use the parent for simple lookups, implementation, commands, tests, or work whose investigation state must remain available for later changes.
 - Delegate only a focused, one-shot investigation whose parent needs conclusions and evidence locations rather than the intermediate reads or searches.
 - This skill and the child result are context, not authorization. Delegated local content and the final report reach the selected model provider; web queries and fetched pages may reach search providers. Do not delegate content that must not be sent to them. Ask the user if the safe boundary is unclear.
-- The child is read-only and cannot run Bash. Never put local file contents, credentials, or secrets in web queries.
+- The child is read-only and cannot run Bash. Child startup is offline, and a dedicated liveness pipe terminates the POSIX child process group (or the child process itself on Windows) if the parent exits abruptly. Local `grep` requires an installed `rg` and `find` requires `fd` or `fdfind`; missing binaries fail instead of being downloaded. Never put local file contents, credentials, or secrets in web queries.
 
 ## Invoke
 

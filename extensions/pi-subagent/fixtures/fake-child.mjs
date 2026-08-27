@@ -1,10 +1,18 @@
+import { spawn } from "node:child_process";
 import { writeFileSync } from "node:fs";
+import { cleanupPrivateRuntimeFiles, installParentLivenessMonitor } from "../parent-liveness.ts";
+
+installParentLivenessMonitor(() => cleanupPrivateRuntimeFiles(
+  process.env.PI_SUBAGENT_POLICY_FILE,
+  process.env.PI_SUBAGENT_READY_FILE,
+));
 
 const READY_MARKER = "pi-subagent-guard-ready-v1\n";
 const REPORT_TOOL_NAME = "submit_subagent_report";
 const scenario = process.argv[2] ?? "success";
 const readyPath = process.env.PI_SUBAGENT_READY_FILE;
 if (!readyPath) process.exit(2);
+if (process.env.PI_OFFLINE !== "1") process.exit(5);
 
 let input = "";
 for await (const chunk of process.stdin) input += chunk;
@@ -60,6 +68,14 @@ if (scenario === "success") {
 } else if (scenario === "timeout") {
   process.on("SIGTERM", () => {});
   setInterval(() => {}, 1_000);
+} else if (scenario === "parent-death") {
+  const pidFile = process.argv[3];
+  if (!pidFile) process.exit(6);
+  const descendant = spawn(process.execPath, [
+    "-e",
+    "process.on('SIGTERM', () => {}); setInterval(() => {}, 1000);",
+  ], { stdio: "ignore" });
+  writeFileSync(pidFile, JSON.stringify({ childPid: process.pid, descendantPid: descendant.pid }));
 } else {
   process.exit(4);
 }

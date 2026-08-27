@@ -1,5 +1,6 @@
 import assert from "node:assert/strict";
-import { mkdtemp, rm, writeFile } from "node:fs/promises";
+import { spawn } from "node:child_process";
+import { mkdtemp, readFile, rm, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { describe, test } from "node:test";
@@ -8,6 +9,7 @@ import { runChild } from "./subprocess.ts";
 import { buildChildPolicy, MAX_PARENT_ERROR_BYTES } from "./shared.ts";
 
 const FAKE_CHILD = fileURLToPath(new URL("./fixtures/fake-child.mjs", import.meta.url));
+const ABRUPT_PARENT = fileURLToPath(new URL("./fixtures/abrupt-parent.mjs", import.meta.url));
 
 async function withFixture<T>(scenario: string, run: (options: Parameters<typeof runChild>[0]) => Promise<T>): Promise<T> {
   const root = await mkdtemp(join(tmpdir(), "pi-subagent-integration-"));
@@ -23,13 +25,25 @@ async function withFixture<T>(scenario: string, run: (options: Parameters<typeof
       task: "Inspect the deterministic fixture and submit the requested report.",
       model: "test/fake",
       thinking: "low",
-      invocationOverride: { command: process.execPath, args: [FAKE_CHILD, scenario] },
+      invocationOverride: {
+        command: process.execPath,
+        args: ["--experimental-strip-types", FAKE_CHILD, scenario],
+      },
       timeoutMs: 2_000,
       killGraceMs: 50,
     });
   } finally {
     await rm(root, { recursive: true, force: true });
   }
+}
+
+async function waitForProcessExit(pid: number, timeoutMs = 3_000): Promise<void> {
+  const deadline = Date.now() + timeoutMs;
+  while (Date.now() < deadline) {
+    try { process.kill(pid, 0); } catch { return; }
+    await new Promise((resolve) => setTimeout(resolve, 20));
+  }
+  assert.fail(`process ${pid} remained alive after parent exit`);
 }
 
 describe("pi-subagent spawned-child integration", () => {
@@ -103,5 +117,47 @@ describe("pi-subagent spawned-child integration", () => {
         return true;
       },
     );
+  });
+
+  test("terminates the child process group when its parent exits abruptly", {
+    skip: process.platform === "win32",
+  }, async () => {
+    const root = await mkdtemp(join(tmpdir(), "pi-subagent-parent-exit-"));
+    const pidFile = join(root, "pids.json");
+    let childPid: number | undefined;
+    let descendantPid: number | undefined;
+    try {
+      let stderr = "";
+      const exitCode = await new Promise<number>((resolve, reject) => {
+        const helper = spawn(process.execPath, [
+          "--experimental-strip-types",
+          ABRUPT_PARENT,
+          root,
+          pidFile,
+        ], { stdio: ["ignore", "ignore", "pipe"] });
+        helper.stderr.on("data", (chunk: Buffer) => { stderr += chunk.toString("utf8"); });
+        helper.once("error", reject);
+        helper.once("close", (code) => resolve(code ?? 1));
+      });
+      assert.equal(exitCode, 0, stderr);
+      ({ childPid, descendantPid } = JSON.parse(await readFile(pidFile, "utf8")) as {
+        childPid: number;
+        descendantPid: number;
+      });
+      await Promise.all([
+        waitForProcessExit(childPid),
+        waitForProcessExit(descendantPid),
+      ]);
+      await assert.rejects(readFile(join(root, "policy.json"), "utf8"), { code: "ENOENT" });
+      await assert.rejects(readFile(join(root, "guard.ready"), "utf8"), { code: "ENOENT" });
+    } finally {
+      if (childPid) {
+        try { process.kill(-childPid, "SIGKILL"); } catch {}
+      }
+      if (descendantPid) {
+        try { process.kill(descendantPid, "SIGKILL"); } catch {}
+      }
+      await rm(root, { recursive: true, force: true });
+    }
   });
 });

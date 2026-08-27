@@ -1,5 +1,5 @@
 import assert from "node:assert/strict";
-import { mkdtemp, mkdir, readFile, rm, writeFile } from "node:fs/promises";
+import { mkdtemp, mkdir, readFile, rm, symlink, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { describe, test } from "node:test";
@@ -60,7 +60,7 @@ async function createHarness(scope: string[], capability: "local" | "web" | "bot
       activeTools = names;
     },
   };
-  childGuard(pi as any);
+  childGuard(pi as any, () => () => undefined);
 
   const emit = async (name: string, event: any = {}, ctx: any = {}) => {
     let result: any;
@@ -136,6 +136,15 @@ describe("pi-subagent child guard", () => {
         toolCallId: "inside",
         input: { path: "allowed/inside.txt" },
       }), undefined);
+      for (const toolName of ["grep", "find", "ls"]) {
+        const directoryInput: Record<string, unknown> = { path: "allowed" };
+        assert.equal(await harness.emit("tool_call", {
+          toolName,
+          toolCallId: `canonical-${toolName}`,
+          input: directoryInput,
+        }), undefined);
+        assert.equal(directoryInput.path, join(harness.workspace, "allowed"));
+      }
       const outside = await harness.emit("tool_call", {
         toolName: "read",
         toolCallId: "outside",
@@ -149,6 +158,28 @@ describe("pi-subagent child guard", () => {
         input: { command: "pwd" },
       });
       assert.equal(bash.block, true);
+    } finally {
+      await harness.cleanup();
+    }
+  });
+
+  test("executes file tools with the authorized canonical path", async () => {
+    const harness = await createHarness(["allowed"], "local");
+    const link = join(harness.workspace, "allowed", "link.txt");
+    try {
+      await symlink(join(harness.workspace, "allowed", "inside.txt"), link);
+      await harness.emit("session_start");
+      const input: Record<string, unknown> = { path: "allowed/link.txt" };
+      assert.equal(await harness.emit("tool_call", {
+        toolName: "read",
+        toolCallId: "canonical-read",
+        input,
+      }), undefined);
+      assert.equal(input.path, join(harness.workspace, "allowed", "inside.txt"));
+
+      await rm(link, { force: true });
+      await symlink(join(harness.workspace, "outside.txt"), link);
+      assert.equal(await readFile(input.path as string, "utf8"), "inside\n");
     } finally {
       await harness.cleanup();
     }
@@ -274,24 +305,47 @@ describe("pi-subagent child guard", () => {
       assert.equal(searchInput.workflow, "none");
 
       assert.equal(await harness.emit("tool_call", {
+        toolName: "source_check",
+        toolCallId: "source-check",
+        input: { claim: "Pi has a public manual", fetchContent: true },
+      }), undefined);
+      assert.equal(await harness.emit("tool_call", {
         toolName: "fetch_content",
         toolCallId: "https",
-        input: { url: "https://example.com/page" },
+        input: { urls: ["https://example.com/page", "https://example.org/page"], mode: "readable" },
+      }), undefined);
+      assert.equal(await harness.emit("tool_call", {
+        toolName: "get_search_content",
+        toolCallId: "stored-content",
+        input: { responseId: "response-1", findText: "manual" },
       }), undefined);
 
-      for (const input of [
-        { url: "./secret.txt" },
-        { url: "file:///etc/passwd" },
-        { url: "https://user:pass@example.com" },
-        { url: "https://example.com", auth: true },
-        { url: "https://github.com/example/huge", forceClone: true },
-      ]) {
+      const blockedCalls = [
+        ["web_search", { query: "test", proxy: "http://127.0.0.1:8888" }],
+        ["web_search", { query: "test", provider: "all" }],
+        ["web_search", { query: "test", includeContent: true }],
+        ["web_search", { queries: ["1", "2", "3", "4", "5"] }],
+        ["web_search", { query: "test", numResults: 11 }],
+        ["source_check", { claim: "test", proxy: "http://127.0.0.1:8888" }],
+        ["fetch_content", { url: "./secret.txt" }],
+        ["fetch_content", { url: "file:///etc/passwd" }],
+        ["fetch_content", { url: "https://user:pass@example.com" }],
+        ["fetch_content", { url: "https://example.com", auth: true }],
+        ["fetch_content", { url: "https://example.com", forceClone: true }],
+        ["fetch_content", { url: "https://example.com", proxy: "http://127.0.0.1:8888" }],
+        ["fetch_content", { url: "https://example.com", mode: "answer", prompt: "summarize" }],
+        ["fetch_content", { url: "https://example.com", model: "custom" }],
+        ["fetch_content", { url: "https://example.com", timestamp: "1:00", frames: 4 }],
+        ["fetch_content", { urls: Array.from({ length: 6 }, (_, index) => `https://example.com/${index}`) }],
+        ["get_search_content", { responseId: "response-1", unknownFutureOption: true }],
+      ] as const;
+      for (const [toolName, input] of blockedCalls) {
         const result = await harness.emit("tool_call", {
-          toolName: "fetch_content",
-          toolCallId: "blocked-fetch",
+          toolName,
+          toolCallId: `blocked-${toolName}`,
           input,
         });
-        assert.equal(result.block, true, JSON.stringify(input));
+        assert.equal(result.block, true, `${toolName}: ${JSON.stringify(input)}`);
       }
 
       const readWithoutScope = await harness.emit("tool_call", {

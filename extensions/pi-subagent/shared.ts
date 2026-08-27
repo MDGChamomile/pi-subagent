@@ -118,7 +118,7 @@ export async function makeCanonicalTempDirectory(prefix: string): Promise<string
 }
 
 export function normalizeInputPath(input: string, cwd: string): string {
-  if (!input || PATH_CONTROL_RE.test(input)) throw new Error("Scope path is empty or contains a control character");
+  if (!input || input === "@" || PATH_CONTROL_RE.test(input)) throw new Error("Scope path is empty or contains a control character");
   let normalized = input.replace(UNICODE_SPACES, " ");
   if (normalized.startsWith("@")) normalized = normalized.slice(1);
   if (normalized === "~") normalized = homedir();
