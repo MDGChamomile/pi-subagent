@@ -15,14 +15,14 @@ pi install npm:@mdgchamomile/pi-subagent
 Local investigations work with the package alone. Web investigations additionally require the exact reviewed web extension version:
 
 ```bash
-pi install npm:pi-web-access@v0.26.0
+pi install npm:pi-web-access@v0.27.0
 ```
 
 Restart Pi or run `/reload`. The model can then select the skill automatically, or you can invoke `/skill:pi-subagent`.
 
 ## Documentation and security
 
-Read the bundled [extension guide](extensions/pi-subagent/README.md) for the complete installation, runtime, data-flow, and security contract. The concise [skill guide](skills/pi-subagent/README.md) explains when delegation is appropriate.
+Read the [extension guide](https://github.com/MDGChamomile/pi-agent-kit/blob/v0.2.2/live/extensions/pi-subagent/README.md) for the complete installation, runtime, data-flow, and security contract. The concise [skill guide](https://github.com/MDGChamomile/pi-agent-kit/blob/v0.2.2/live/skills/pi-subagent/README.md) explains when delegation is appropriate.
 
 The child is read-only, but this is an application-level capability boundary rather than an OS or credential-isolated sandbox. Extensions execute with the current user's system permissions. Review the package source and its documented trust assumptions before installing it.
 

@@ -23,7 +23,7 @@ Requirements:
 - Pi 0.84.2 or later;
 - access to the configured Luna, Terra, and Sol child models;
 - `rg` for local `grep`, and `fd` or `fdfind` for local `find`;
-- [`pi-web-access` v0.26.0](https://github.com/nicobailon/pi-web-access) with its default tool names for web investigations.
+- [`pi-web-access` v0.27.0](https://github.com/nicobailon/pi-web-access) with its default tool names for web investigations.
 
 Install the extension and companion skill together from npm:
 
@@ -34,7 +34,7 @@ pi install npm:@mdgchamomile/pi-subagent
 For web investigations, also install the exact reviewed web extension version:
 
 ```bash
-pi install npm:pi-web-access@v0.26.0
+pi install npm:pi-web-access@v0.27.0
 ```
 
 Alternatively, install both components from a checkout:
@@ -50,7 +50,7 @@ ln -s "$PWD/live/skills/pi-subagent" ~/.pi/agent/skills/pi-subagent
 Restart Pi or run `/reload`. The model can then select the skill automatically, or the user can invoke `/skill:pi-subagent`.
 
 > [!NOTE]
-> Web runs specifically depend on the tested [`pi-web-access` v0.26.0](https://github.com/nicobailon/pi-web-access), installed with `pi install npm:pi-web-access@v0.26.0`. The guard verifies the package name, exact version, declared entry point, and tool provenance, so another version or extension exposing the same tool names does not satisfy this dependency. The exact pin prevents unreviewed code drift on reinstall; it does not by itself prove package safety. Without it, `local` runs remain available. Local child startup is forced offline and never downloads missing search binaries.
+> Web runs specifically depend on the tested [`pi-web-access` v0.27.0](https://github.com/nicobailon/pi-web-access), installed with `pi install npm:pi-web-access@v0.27.0`. The guard verifies the package name, exact version, declared entry point, and tool provenance, so another version or extension exposing the same tool names does not satisfy this dependency. The exact pin prevents unreviewed code drift on reinstall; it does not by itself prove package safety. Without it, `local` runs remain available. Local child startup is forced offline and never downloads missing search binaries.
 
 ## How it works
 

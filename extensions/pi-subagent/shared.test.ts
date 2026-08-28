@@ -257,12 +257,12 @@ describe("pi-subagent model invocation contract", () => {
       );
       await writeFile(join(root, "package.json"), JSON.stringify({
         name: "pi-web-access",
-        version: "0.25.0",
+        version: "0.26.0",
         pi: { extensions: ["./index.ts"] },
       }));
       await assert.rejects(
         () => resolveWebExtensionPath(tools),
-        /pi-web-access 0\.26\.0 package entry point/,
+        /pi-web-access 0\.27\.0 package entry point/,
       );
       await writeFile(join(root, "package.json"), JSON.stringify({
         name: "lookalike-web-extension",
@@ -271,7 +271,7 @@ describe("pi-subagent model invocation contract", () => {
       }));
       await assert.rejects(
         () => resolveWebExtensionPath(tools),
-        /installed pi-web-access 0\.26\.0 package entry point/,
+        /installed pi-web-access 0\.27\.0 package entry point/,
       );
     } finally {
       await rm(root, { recursive: true, force: true });
@@ -290,7 +290,7 @@ describe("pi-subagent public contract", () => {
     });
     assert.equal(LIFETIME_WEB_QUERY_LIMIT, 32);
     assert.equal(LIFETIME_WEB_FETCH_TARGET_LIMIT, 50);
-    assert.equal(PINNED_WEB_EXTENSION_VERSION, "0.26.0");
+    assert.equal(PINNED_WEB_EXTENSION_VERSION, "0.27.0");
     const expectedPresets = {
       "lookup-standard": { model: "openai-codex/gpt-5.6-luna", thinking: "low" },
       "analysis-standard": { model: "openai-codex/gpt-5.6-terra", thinking: "medium" },

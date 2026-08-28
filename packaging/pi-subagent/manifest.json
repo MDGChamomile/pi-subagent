@@ -1,6 +1,6 @@
 {
   "name": "@mdgchamomile/pi-subagent",
-  "version": "0.2.1",
+  "version": "0.2.2",
   "description": "A bounded Pi subagent extension and companion investigation skill",
   "type": "module",
   "license": "MIT",
@@ -35,6 +35,6 @@
     "skills": [
       "./skills/pi-subagent"
     ],
-    "image": "https://raw.githubusercontent.com/MDGChamomile/pi-agent-kit/v0.2.1/live/extensions/pi-subagent/assets/pi-subagent-complete.png"
+    "image": "https://raw.githubusercontent.com/MDGChamomile/pi-agent-kit/v0.2.2/live/extensions/pi-subagent/assets/pi-subagent-complete.png"
   }
 }

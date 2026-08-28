@@ -48,7 +48,7 @@ The three presets are:
 
 ## Requirements and installation
 
-This skill requires the companion global extension and Pi 0.84.2 or later. Web investigations also require the tested `pi-web-access` v0.26.0 with its default tool names.
+This skill requires the companion global extension and Pi 0.84.2 or later. Web investigations also require the tested `pi-web-access` v0.27.0 with its default tool names.
 
 Follow the extension's [requirements and installation guide](../../extensions/pi-subagent/README.md#requirements-and-installation) to install both components together.
 

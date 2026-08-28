@@ -13,6 +13,22 @@ assert.equal(manifest.private, undefined);
 assert.deepEqual(manifest.keywords.includes("pi-package"), true);
 assert.match(manifest.pi.image, new RegExp(`/v${manifest.version.replaceAll(".", "\\.")}/`));
 
+const topLevelReadme = await readFile(join(stagingDirectory, "README.md"), "utf8");
+const topLevelLinks = new Map(
+  [...topLevelReadme.matchAll(/\[([^\]]+)\]\(([^)]+)\)/g)].map(([, label, target]) => [label, target]),
+);
+const releaseRoot = `https://github.com/MDGChamomile/pi-agent-kit/blob/v${manifest.version}/live`;
+assert.equal(
+  topLevelLinks.get("extension guide"),
+  `${releaseRoot}/extensions/pi-subagent/README.md`,
+  "top-level extension guide must use the version-matched absolute GitHub URL",
+);
+assert.equal(
+  topLevelLinks.get("skill guide"),
+  `${releaseRoot}/skills/pi-subagent/README.md`,
+  "top-level skill guide must use the version-matched absolute GitHub URL",
+);
+
 for (const resource of [...manifest.pi.extensions, ...manifest.pi.skills]) {
   const info = await stat(join(stagingDirectory, resource));
   assert.equal(info.isFile() || info.isDirectory(), true, `missing Pi resource: ${resource}`);
