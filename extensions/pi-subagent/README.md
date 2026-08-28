@@ -1,71 +1,131 @@
-# Pi Subagent Prototype
+# Pi Subagent
 
-A foreground, model-invocable, single-run Pi subagent for isolating noisy local-file and public-web investigation from the parent context.
+A foreground, model-invocable Pi extension that runs focused local-file or public-web investigations outside the parent context.
+
+The companion [skill](../../skills/pi-subagent/README.md) decides when and how to delegate. This extension enforces the runtime boundary, launches the child, reports progress, and returns only the bounded final answer.
 
 ## In action
 
-The status and result below came from a real local lookup against this repository and were rendered without machine-specific paths or account details.
+These screenshots show a real local lookup against this repository. Machine-specific paths and account details were removed from the rendered output.
 
-**Running**
+**Running — elapsed time, child model, thinking level, and reported tokens**
 
 ![Pi Subagent reporting elapsed time, child model, thinking level, and reported tokens while running](assets/pi-subagent-running.png)
 
-**Complete**
+**Complete — completion time, injected context size, and expanded final answer**
 
 ![Pi Subagent reporting completion time, injected context size, and the expanded final answer](assets/pi-subagent-complete.png)
 
-## Contract
+## Requirements and installation
 
-- Activation: the model may select the visible `pi-subagent` skill or `pi_subagent` tool when a task matches; users may still invoke `/skill:pi-subagent`
-- Runs: one child call by default and up to three started calls per parent agent run for distinct, independent research tracks; separate local and web calls each count toward the limit, sibling calls execute in parallel, and one corrected retry is allowed only after preflight validation failure
-- Parent-owned validation gate: when the parent already holds edited files and evidence or may need follow-up fixes, final diff, audit, test, and retrieval validation stays in the parent rather than being delegated merely for an extra review pass
-- Child process: one ephemeral `pi --mode json --print --no-session` process per call; a dedicated parent-liveness pipe makes the child remove its private runtime files and terminate its POSIX process group (the child process itself on Windows) if the parent exits abruptly
-- Capabilities: `local` loads only Pi-owned `read`, `grep`, `find`, `ls`; `web` loads only web tools; local and web access never coexist in one child, so mixed-source work uses separate calls and parent synthesis
-- Local prerequisites: child startup is forced offline so Pi cannot auto-download search binaries; `grep` requires an installed `rg`, while `find` requires `fd` or `fdfind`
-- Web tools: `web_search`, `source_check`, `fetch_content`, `get_search_content` from the package-declared entry point of the installed `pi-web-access` package
-- Local scope: 0-8 existing files or directories inside the parent cwd; `local` requires a non-empty scope and `web` requires an empty scope; a bare `@` is rejected rather than expanding to the parent cwd
-- Web boundary: per-tool default-deny argument allowlists; non-interactive search with at most 4 queries and 10 results per query; readable HTTP(S) fetches of at most 5 URLs under the installed web extension's SSRF protection policy; no caller-selected provider/proxy, background content expansion, local-file fetch, browser-cookie auth, answer/model/media mode, embedded URL credentials, or forced GitHub clone; every denied input blocks only that call so the child may correct it
-- Resources disabled: all discovered extensions, Skills, prompt templates, context files, themes, and project trust. Only the child guard and resolved web extension are explicitly loaded
-- Readiness: the parent accepts a final answer only after the child guard validates policy and tool ownership and publishes a private readiness marker
-- Return: the parent discards intermediate assistant messages and tool results, retains only the last non-tool assistant answer, sanitizes it, and caps it at 12 KiB; if an agent run ends without a final answer, the guard disables tools and requests ordinary assistant text once
-- Progress: each running call reports its own `mm:ss · model (thinking) running · N reported tokens` status once per second
-- Result display: the settled TUI row reports `✓ Complete · 14.2s · Context injected: ~1,820 tokens` (or `⚠ Partial`), using Pi's conservative character-based token estimate; expanding the row reveals the answer
-- Timeout: 18 minutes of investigation followed by a two-minute text-finalization window within the existing 20-minute hard limit; at the soft deadline the child is steered to stop investigating, new tool calls are blocked, and a result completed in that window is runtime-labelled `partial`, while an unresponsive child is still terminated at the hard deadline
+Requirements:
 
-Three standard presets choose a proportionate child model without changing the main model's thinking:
+- Pi 0.84.2 or later;
+- access to the configured Luna, Terra, and Sol child models;
+- `rg` for local `grep`, and `fd` or `fdfind` for local `find`;
+- `pi-web-access` with its default tool names for public-web investigations.
 
-- `lookup-standard` → Luna/low
-- `analysis-standard` → Terra/medium
-- `review-standard` → Sol/medium
+Install both the extension and its companion skill from a checkout:
 
-Older stored calls with separate `profile` and `thinking` arguments, or with the former balanced/deep/exhaustive preset names, are translated by `prepareArguments()` to the matching standard preset before schema validation.
+```bash
+git clone https://github.com/MDGChamomile/pi-agent-kit.git
+cd pi-agent-kit
+pi install npm:pi-web-access
+mkdir -p ~/.pi/agent/extensions ~/.pi/agent/skills
+ln -s "$PWD/live/extensions/pi-subagent" ~/.pi/agent/extensions/pi-subagent
+ln -s "$PWD/live/skills/pi-subagent" ~/.pi/agent/skills/pi-subagent
+```
 
-The companion progressively disclosed workflow is `../../skills/pi-subagent/SKILL.md`.
+Restart Pi or run `/reload`. The model can then select the skill automatically, or the user can invoke `/skill:pi-subagent`.
+
+> [!NOTE]
+> `pi-web-access` is only needed for `web` runs. Local child startup is forced offline and never downloads missing search binaries.
+
+## How it works
+
+1. The parent calls `pi_subagent` with one focused task, a capability, an explicit scope, and a preset.
+2. The extension starts one ephemeral `pi --mode json --print --no-session` child process.
+3. A child guard validates tool ownership and applies the local or web boundary before publishing a private readiness marker.
+4. The parent discards intermediate child turns and tool results, then retains only the last valid non-tool assistant answer.
+5. The TUI reports per-call progress and, when settled, the elapsed time and estimated context injected into the parent.
+
+One child call is the default. Up to three distinct, independent calls may run in parallel during one parent agent run; local and web calls each count toward that limit and can multiply model, provider, and web-request usage. One corrected retry is allowed only after preflight validation fails.
+
+## Runtime contract
+
+### Capabilities and scope
+
+- `local` loads only Pi-owned `read`, `grep`, `find`, and `ls`. It requires 1-8 existing files or directories inside the parent working directory.
+- `web` loads only `web_search`, `source_check`, `fetch_content`, and `get_search_content` from the installed `pi-web-access` package. Its scope must be empty.
+- Local and web access never coexist in one child. Mixed-source work uses separate calls and parent-side synthesis.
+- A bare `@` is rejected rather than expanding to the parent working directory.
+- The child cannot write files, run Bash or tests, inspect sessions, recurse, run in the background, persist a child session, or load discovered extensions, Skills, prompt templates, context files, themes, or project trust.
+
+### Presets
+
+Each standard preset chooses a proportionate child model without changing the main model's thinking level:
+
+| Preset | Child profile | Use for |
+| --- | --- | --- |
+| `lookup-standard` | Luna / low | Bounded fact-finding |
+| `analysis-standard` | Terra / medium | Synthesis and causal comparison |
+| `review-standard` | Sol / medium | Adversarial review |
+
+Older stored calls with separate `profile` and `thinking` arguments, or with the former balanced/deep/exhaustive preset names, are translated to the matching standard preset before schema validation.
+
+### Result and lifecycle
+
+- The parent accepts a final answer only after the child guard validates policy and tool ownership and publishes its readiness marker.
+- Intermediate assistant turns and investigation tool results are discarded. The collector retains only the last assistant message containing non-empty text without a tool call or terminal model error, sanitizes it, and caps it at 12 KiB.
+- A tool-only ending gets one tool-disabled finalization follow-up. A zero-exit child that still has no final answer is rejected.
+- Each running call reports `mm:ss · model (thinking) running · N reported tokens` once per second.
+- A settled row reports `✓ Complete · 14.2s · Context injected: ~1,820 tokens`, or `⚠ Partial`; expanding it reveals the answer.
+- The investigation deadline is 18 minutes. The child then gets a two-minute text-finalization window within the 20-minute hard limit. Answers completed in that window are labelled `partial`; an unresponsive child is terminated at the hard deadline.
+- A dedicated parent-liveness pipe makes the child remove private runtime files and terminate its POSIX process group, or the child process itself on Windows, if the parent exits abruptly.
+- Final diff, audit, test, and retrieval validation stays with the parent when it holds the edited files or may need to make follow-up fixes.
 
 ## Security boundary
 
-The child guard canonicalizes every requested local path, replaces the tool input with that authorized canonical path, and blocks paths outside the explicit scope, including lexical, absolute, and symlink escapes. It independently checks that each enabled local tool is Pi-owned and each enabled web tool comes from the package-declared entry point of the installed `pi-web-access` package. The web extension loads before the guard so the guard is the final `tool_call` policy handler. Local runs do not resolve or load the web extension, and web runs have no file tools or local scope. If policy or ownership validation fails, no readiness marker is published and the parent rejects any assistant text the child may still produce.
+### Local runs
 
-Web access is deliberately narrower than the full `pi-web-access` surface and remains subject to that extension's SSRF protection policy. Each tool accepts only a pinned argument allowlist, so unknown future parameters fail closed for that call. Search uses the configured provider, disables curation and background content expansion, and enforces query/result caps. Fetching permits only bounded readable HTTP(S) URLs and rejects local paths, `file:` URLs, caller-selected proxies, authenticated browser-cookie fetches, answer/model/media options, URL credentials, and forced clones. A denied input does not weaken later validation: every corrected call is checked independently. The web extension may still make external provider requests and maintain its documented bounded cache or temporary files. Authorized local file contents, web tasks and queries, fetched public pages, and the final answer are sent to the applicable model or search providers.
+The child guard canonicalizes every requested path, replaces the tool input with that authorized canonical path, and blocks paths outside the explicit scope, including lexical, absolute, and symlink escapes. It independently verifies that every enabled local tool is Pi-owned. Local runs do not resolve or load the web extension.
 
-This is an application-level capability boundary, not an OS or network sandbox. The child and the trusted web extension still run as the current user. Do not use it for untrusted workloads requiring host isolation or for secrets that must not be sent to configured providers.
+### Web runs
 
-Intermediate child assistant turns and investigation tool results are discarded. The collector accepts only the last assistant message when it contains non-empty text without a tool call or terminal model error. A tool-only ending gets one tool-disabled finalization follow-up; a zero-exit child that still has no final answer is rejected. At 18 minutes Pi's native steering message asks the child to stop new investigation and answer from gathered evidence, and the guard blocks new tool calls. Every error reaching the parent is control-character-sanitized and capped at 4 KiB; child failures also reserve space for content-free diagnostics such as the failure phase, exit and stop state, assistant completion mode, and tool-error count. Child process stderr is discarded. Reported child usage is attached to the parent tool result on both success and failure. Tasks, paths, assistant text, and tool-result contents are never included in failure diagnostics.
+The web extension loads before the guard, making the guard the final `tool_call` policy handler. Every web tool uses a pinned, default-deny argument allowlist:
 
-The prototype does not support workspace writes, Bash, tests, session-history access, project-controlled resources, recursion, background runs, or child-session persistence. Parallelism is limited to three independent foreground child calls per parent agent run and can multiply model, provider, and web-request usage.
+- searches are non-interactive, use the configured provider, disable curation and background content expansion, and allow at most four queries with ten results each;
+- fetches allow at most five readable HTTP(S) URLs under the web extension's SSRF policy;
+- caller-selected providers or proxies, local files, browser-cookie authentication, answer/model/media modes, embedded URL credentials, and forced GitHub clones are rejected.
+
+A denied input blocks only that call, allowing the child to correct it. Every corrected call is validated independently.
+
+### Trust model and data flow
+
+If policy or ownership validation fails, no readiness marker is published and the parent rejects any assistant text the child may still produce. Errors returned to the parent are control-character-sanitized and capped at 4 KiB; failure diagnostics omit tasks, paths, assistant text, and tool-result contents. Child stderr is discarded, while reported child usage is attached to the parent tool result on success and failure.
+
+Authorized local file contents, web tasks and queries, fetched public pages, and the final answer are sent to the applicable model or search providers. The trusted web extension may maintain its documented bounded cache or temporary files.
+
+This is an application-level capability boundary, not an OS or network sandbox. The child and trusted web extension still run as the current user. Do not use it for untrusted workloads requiring host isolation or for secrets that must not be sent to configured providers.
 
 ## Evaluation
 
-`python3 scripts/context_isolation_eval.py --mode context` runs matched direct-parent versus subagent cases without creating sessions. The first plain-final-answer three-case run retained 100% fact recall in both arms while reducing mean maximum parent prompt tokens by 89.2% and parent investigative tool-result bytes by 100%; it produced no raw tool syntax or post-result parent investigation. Treat these single-run deterministic fixture figures as bounded checks, not universal production estimates.
+From the repository root, run:
+
+```bash
+python3 live/extensions/pi-subagent/scripts/context_isolation_eval.py --mode context
+```
+
+The first plain-final-answer three-case run retained 100% fact recall in both arms while reducing mean maximum parent prompt tokens by 89.2% and parent investigative tool-result bytes by 100%. It produced no raw tool syntax or post-result parent investigation. Treat these deterministic fixture results as bounded checks, not universal production estimates.
 
 ## Verification
 
 ```bash
-node --experimental-strip-types --test extensions/pi-subagent/*.test.ts
-python3 scripts/context_isolation_eval.py --mode smoke --capability local
-python3 scripts/context_isolation_eval.py --mode smoke --capability web
+npm --prefix live/extensions/pi-subagent test
+python3 live/extensions/pi-subagent/scripts/context_isolation_eval.py --mode smoke --capability local
+python3 live/extensions/pi-subagent/scripts/context_isolation_eval.py --mode smoke --capability web
 ```
 
-The web smoke test reproduces the normal loader arrangement: pi-web-access tools stay registered for provenance checks but are inactive in the parent model. It fails if the parent activates `load_web_tools` or calls a web tool directly.
+The web smoke test reproduces the normal loader arrangement: `pi-web-access` tools stay registered for provenance checks but remain inactive in the parent model. It fails if the parent activates `load_web_tools` or calls a web tool directly.
 
-The default test suite includes unit tests and deterministic spawned-child integration tests for final-answer isolation, complete and partial outcomes, the one-attempt tool-disabled finalization path, empty final answers, bounded provider errors, cancellation, timeout escalation, abrupt parent exit, successful and failed usage aggregation, scope, recoverable web denials, and tool ownership. Opt-in live smoke tests should additionally verify model-selected activation, three-call enforcement and parallel execution, fourth-call denial, an allowed local read, an out-of-scope denial, a public web search/fetch, local-file and auth-fetch denial, progress timer cleanup, and temporary-file cleanup.
+The default suite covers final-answer isolation, complete and partial outcomes, tool-disabled finalization, empty answers, bounded provider errors, cancellation, timeout escalation, abrupt parent exit, usage aggregation, scope, recoverable web denials, and tool ownership. Opt-in smoke tests additionally cover live model selection and the local/web runtime boundaries.
