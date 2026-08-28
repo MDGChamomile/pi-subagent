@@ -2,6 +2,18 @@
 
 A foreground, model-invocable, single-run Pi subagent for isolating noisy local-file and public-web investigation from the parent context.
 
+## In action
+
+The status and result below came from a real local lookup against this repository and were rendered without machine-specific paths or account details.
+
+**Running**
+
+![Pi Subagent reporting elapsed time, child model, thinking level, and reported tokens while running](assets/pi-subagent-running.png)
+
+**Complete**
+
+![Pi Subagent reporting completion time, injected context size, and the expanded final answer](assets/pi-subagent-complete.png)
+
 ## Contract
 
 - Activation: the model may select the visible `pi-subagent` skill or `pi_subagent` tool when a task matches; users may still invoke `/skill:pi-subagent`
