@@ -186,12 +186,44 @@ describe("pi-subagent model invocation contract", () => {
     assert.equal(gate.authorize("second-replacement"), false);
   });
 
+  test("releases calls blocked before execution without consuming the started-call limit", () => {
+    const gate = new ModelInvocationGate();
+    gate.startRun();
+    assert.equal(gate.releaseUnstarted("missing"), false);
+    for (let index = 0; index < MAX_SUBAGENT_CALLS + 1; index++) {
+      const id = `blocked-${index}`;
+      assert.equal(gate.authorize(id), true);
+      assert.equal(gate.releaseUnstarted(id), true);
+      assert.equal(gate.releaseUnstarted(id), false);
+    }
+
+    for (let index = 0; index < MAX_SUBAGENT_CALLS; index++) {
+      const id = `started-after-block-${index}`;
+      assert.equal(gate.authorize(id), true);
+      assert.equal(gate.commit(id), true);
+      assert.equal(gate.releaseUnstarted(id), false);
+    }
+    assert.equal(gate.authorize("over-started-limit"), false);
+  });
+
+  test("keeps a corrected preflight retry available when its replacement is blocked before execution", () => {
+    const gate = new ModelInvocationGate();
+    gate.startRun();
+    assert.equal(gate.authorize("invalid"), true);
+    assert.equal(gate.rejectPreflight("invalid"), true);
+    assert.equal(gate.authorize("blocked-replacement"), true);
+    assert.equal(gate.releaseUnstarted("blocked-replacement"), true);
+    assert.equal(gate.authorize("next-replacement"), true);
+    assert.equal(gate.commit("next-replacement"), true);
+  });
+
   test("skill is visible for model invocation", async () => {
     const skillPath = fileURLToPath(new URL("../../skills/pi-subagent/SKILL.md", import.meta.url));
     const skill = await readFile(skillPath, "utf8");
     assert.doesNotMatch(skill, /disable-model-invocation:\s*true/);
     assert.match(skill, /The model may select it automatically/);
-    assert.match(skill, /public-web investigation/);
+    assert.match(skill, /local-file or web investigation/);
+    assert.match(skill, /not a credential-isolated sandbox/);
     assert.match(skill, /separate `local` and `web` calls/);
     assert.match(skill, /concise conclusion with evidence locations/);
     assert.match(skill, /result marked `partial`/);

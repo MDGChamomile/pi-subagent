@@ -2,7 +2,7 @@
 
 A progressively disclosed workflow for deciding when and how Pi should delegate a focused investigation to the companion `pi_subagent` extension tool.
 
-The skill keeps noisy file reads or public-web searches out of the parent context. The child is read-only, returns only a bounded final answer, and leaves implementation and final validation with the parent.
+The skill keeps noisy file reads or web searches out of the parent context. The child is read-only, returns only a bounded final answer, and leaves implementation and final validation with the parent.
 
 ## In action
 
@@ -47,7 +47,7 @@ The three presets are:
 
 ## Requirements and installation
 
-This skill requires the companion global extension and Pi 0.84.2 or later. Public-web investigations also require `pi-web-access` with its default tool names.
+This skill requires the companion global extension and Pi 0.84.2 or later. Web investigations also require `pi-web-access` with its default tool names.
 
 Follow the extension's [requirements and installation guide](../../extensions/pi-subagent/README.md#requirements-and-installation) to install both components together.
 
@@ -59,6 +59,7 @@ Follow the extension's [requirements and installation guide](../../extensions/pi
 - The child cannot write files, run Bash, inspect sessions, or load project-controlled resources.
 - Local runs are restricted to explicitly scoped paths inside the parent working directory.
 - Web runs have no local-file tools and apply default-deny argument allowlists.
+- The `web` capability is not a credential-isolated sandbox; the trusted web extension may use host credentials and reach authenticated target sources.
 - Delegated content and the final answer reach the selected model provider; web queries and pages may also reach search providers.
 - This is an application-level capability boundary, not an OS sandbox.
 

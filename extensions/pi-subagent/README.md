@@ -1,6 +1,6 @@
 # Pi Subagent
 
-A foreground, model-invocable Pi extension that runs focused local-file or public-web investigations outside the parent context.
+A foreground, model-invocable Pi extension that runs focused local-file or web investigations outside the parent context.
 
 The companion [skill](../../skills/pi-subagent/README.md) decides when and how to delegate. This extension enforces the runtime boundary, launches the child, reports progress, and returns only the bounded final answer.
 
@@ -23,7 +23,7 @@ Requirements:
 - Pi 0.84.2 or later;
 - access to the configured Luna, Terra, and Sol child models;
 - `rg` for local `grep`, and `fd` or `fdfind` for local `find`;
-- [`pi-web-access`](https://github.com/nicobailon/pi-web-access) with its default tool names for public-web investigations.
+- [`pi-web-access`](https://github.com/nicobailon/pi-web-access) with its default tool names for web investigations.
 
 Install both the extension and its companion skill from a checkout:
 
@@ -39,7 +39,7 @@ ln -s "$PWD/live/skills/pi-subagent" ~/.pi/agent/skills/pi-subagent
 Restart Pi or run `/reload`. The model can then select the skill automatically, or the user can invoke `/skill:pi-subagent`.
 
 > [!NOTE]
-> Public-web runs specifically depend on [`pi-web-access`](https://github.com/nicobailon/pi-web-access), which can be installed with `pi install npm:pi-web-access`. The guard verifies that each web tool comes from the installed package's declared entry point, so another extension exposing the same tool names does not satisfy this dependency. Without it, `local` runs remain available. Local child startup is forced offline and never downloads missing search binaries.
+> Web runs specifically depend on [`pi-web-access`](https://github.com/nicobailon/pi-web-access), which can be installed with `pi install npm:pi-web-access`. The guard verifies that each web tool comes from the installed package's declared entry point, so another extension exposing the same tool names does not satisfy this dependency. Without it, `local` runs remain available. Local child startup is forced offline and never downloads missing search binaries.
 
 ## How it works
 
@@ -104,9 +104,9 @@ A denied input blocks only that call, allowing the child to correct it. Every co
 
 If policy or ownership validation fails, no readiness marker is published and the parent rejects any assistant text the child may still produce. Errors returned to the parent are control-character-sanitized and capped at 4 KiB; failure diagnostics omit tasks, paths, assistant text, and tool-result contents. Child stderr is discarded, while reported child usage is attached to the parent tool result on success and failure.
 
-Authorized local file contents, web tasks and queries, fetched public pages, and the final answer are sent to the applicable model or search providers. The trusted web extension may maintain its documented bounded cache or temporary files.
+Authorized local file contents, web tasks and queries, fetched web pages, and the final answer are sent to the applicable model or search providers. The trusted web extension may maintain its documented bounded cache or temporary files.
 
-This is an application-level capability boundary, not an OS or network sandbox. The child and trusted web extension still run as the current user. Do not use it for untrusted workloads requiring host isolation or for secrets that must not be sent to configured providers.
+This is an application-level capability boundary, not an OS or network sandbox. The child and trusted web extension still run as the current user. The `web` capability restricts the available tool names and arguments; it does not guarantee anonymous, public-only target access or isolate host GitHub, Git, SSH, or browser credentials that the trusted web extension may use. Do not use it for untrusted workloads requiring host isolation or for secrets that must not be sent to configured providers.
 
 ## Evaluation
 
@@ -121,6 +121,7 @@ The first plain-final-answer three-case run retained 100% fact recall in both ar
 ## Verification
 
 ```bash
+npm --prefix live/extensions/pi-subagent ci
 npm --prefix live/extensions/pi-subagent test
 python3 live/extensions/pi-subagent/scripts/context_isolation_eval.py --mode smoke --capability local
 python3 live/extensions/pi-subagent/scripts/context_isolation_eval.py --mode smoke --capability web

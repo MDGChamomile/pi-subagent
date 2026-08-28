@@ -1,0 +1,34 @@
+name: pi-subagent-canary
+
+on:
+  schedule:
+    - cron: "23 7 * * 1"
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  latest-pi:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 10
+    continue-on-error: true
+    defaults:
+      run:
+        working-directory: live/extensions/pi-subagent
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: "22.22.0"
+          cache: npm
+          cache-dependency-path: live/extensions/pi-subagent/package-lock.json
+      - run: npm ci --ignore-scripts
+      - name: Select latest Pi packages
+        run: |
+          npm install --no-save --package-lock=false --ignore-scripts \
+            @earendil-works/pi-agent-core@latest \
+            @earendil-works/pi-ai@latest \
+            @earendil-works/pi-coding-agent@latest \
+            @earendil-works/pi-tui@latest
+      - run: npm test

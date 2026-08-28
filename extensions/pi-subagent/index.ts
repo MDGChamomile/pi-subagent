@@ -28,7 +28,7 @@ const PresetSchema = StringEnum(PRESET_NAMES, {
   description: "Child model preset: lookup-standard for fact-finding, analysis-standard for synthesis, or review-standard for adversarial review",
 });
 const CapabilitySchema = StringEnum(["local", "web"] as const, {
-  description: "local=files only, web=public web only; use separate calls when both sources are needed",
+  description: "local=files only, web=web research tools only (not a credential-isolated sandbox); use separate calls when both sources are needed",
 });
 const Parameters = Type.Object({
   task: Type.String({ minLength: 1, maxLength: 12_000, description: "One focused local or web investigation and required deliverable" }),
@@ -201,6 +201,11 @@ export default function piSubagentExtension(pi: ExtensionAPI): void {
     const usage = failedUsage.get(event.toolCallId);
     failedUsage.delete(event.toolCallId);
     if (usage) return { usage };
+  });
+  pi.on("tool_execution_end", (event) => {
+    if (event.toolName !== TOOL_NAME) return;
+    authorizedCalls.delete(event.toolCallId);
+    gate.releaseUnstarted(event.toolCallId);
   });
   pi.on("agent_settled", clearRun);
   pi.on("session_shutdown", clearRun);

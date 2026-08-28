@@ -317,6 +317,12 @@ export class ModelInvocationGate {
     if (this.replacementToolCallId === toolCallId) this.replacementToolCallId = undefined;
     return true;
   }
+
+  releaseUnstarted(toolCallId: string): boolean {
+    if (!this.authorizedToolCallIds.delete(toolCallId)) return false;
+    if (this.replacementToolCallId === toolCallId) this.replacementToolCallId = undefined;
+    return true;
+  }
 }
 
 export function sanitizeDisplayText(text: string): string {
