@@ -5,6 +5,7 @@
   "scripts": {
     "typecheck": "tsc -p tsconfig.json",
     "test": "node --experimental-strip-types --test *.test.ts",
+    "package:check": "node ../../../packaging/pi-subagent/check.mjs",
     "eval:context": "python3 scripts/context_isolation_eval.py --mode context",
     "test:live:local": "python3 scripts/context_isolation_eval.py --mode smoke --capability local",
     "test:live:web": "python3 scripts/context_isolation_eval.py --mode smoke --capability web"

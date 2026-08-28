@@ -1,0 +1,40 @@
+{
+  "name": "@mdgchamomile/pi-subagent",
+  "version": "0.2.1",
+  "description": "A bounded Pi subagent extension and companion investigation skill",
+  "type": "module",
+  "license": "MIT",
+  "keywords": [
+    "pi-package",
+    "pi-coding-agent",
+    "agent-skill",
+    "subagent"
+  ],
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/MDGChamomile/pi-agent-kit.git"
+  },
+  "homepage": "https://github.com/MDGChamomile/pi-agent-kit/tree/main/live/extensions/pi-subagent",
+  "bugs": {
+    "url": "https://github.com/MDGChamomile/pi-agent-kit/issues"
+  },
+  "publishConfig": {
+    "access": "public",
+    "registry": "https://registry.npmjs.org/"
+  },
+  "peerDependencies": {
+    "@earendil-works/pi-ai": "*",
+    "@earendil-works/pi-coding-agent": "*",
+    "@earendil-works/pi-tui": "*",
+    "typebox": "*"
+  },
+  "pi": {
+    "extensions": [
+      "./extensions/pi-subagent/index.ts"
+    ],
+    "skills": [
+      "./skills/pi-subagent"
+    ],
+    "image": "https://raw.githubusercontent.com/MDGChamomile/pi-agent-kit/v0.2.1/live/extensions/pi-subagent/assets/pi-subagent-complete.png"
+  }
+}

@@ -25,12 +25,23 @@ Requirements:
 - `rg` for local `grep`, and `fd` or `fdfind` for local `find`;
 - [`pi-web-access` v0.26.0](https://github.com/nicobailon/pi-web-access) with its default tool names for web investigations.
 
-Install both the extension and its companion skill from a checkout:
+Install the extension and companion skill together from npm:
+
+```bash
+pi install npm:@mdgchamomile/pi-subagent
+```
+
+For web investigations, also install the exact reviewed web extension version:
+
+```bash
+pi install npm:pi-web-access@v0.26.0
+```
+
+Alternatively, install both components from a checkout:
 
 ```bash
 git clone https://github.com/MDGChamomile/pi-agent-kit.git
 cd pi-agent-kit
-pi install npm:pi-web-access@v0.26.0
 mkdir -p ~/.pi/agent/extensions ~/.pi/agent/skills
 ln -s "$PWD/live/extensions/pi-subagent" ~/.pi/agent/extensions/pi-subagent
 ln -s "$PWD/live/skills/pi-subagent" ~/.pi/agent/skills/pi-subagent
@@ -127,6 +138,7 @@ The first plain-final-answer three-case run retained 100% fact recall in both ar
 npm --prefix live/extensions/pi-subagent ci --include=dev
 npm --prefix live/extensions/pi-subagent run typecheck
 npm --prefix live/extensions/pi-subagent test
+npm --prefix live/extensions/pi-subagent run package:check
 python3 live/extensions/pi-subagent/scripts/context_isolation_eval.py --mode smoke --capability local
 python3 live/extensions/pi-subagent/scripts/context_isolation_eval.py --mode smoke --capability web
 ```
