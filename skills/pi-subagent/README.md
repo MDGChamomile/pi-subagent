@@ -31,7 +31,7 @@ Keep the work in the parent for simple lookups, implementation, commands, tests,
 
 ## How it works
 
-1. Pi loads [`SKILL.md`](SKILL.md) automatically when the task matches, or the user invokes `/skill:pi-subagent`.
+1. The model may load [`SKILL.md`](SKILL.md) when the task matches, or the user can invoke `/skill:pi-subagent` to load it explicitly.
 2. The workflow selects `local` or `web`, an explicit scope, and the least capable standard preset.
 3. The companion extension starts one ephemeral, read-only child Pi process. Local and web access never coexist in the same child.
 4. Intermediate child turns and tool results stay outside the parent context; only the final bounded answer returns.
