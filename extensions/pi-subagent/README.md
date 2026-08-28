@@ -23,7 +23,7 @@ Requirements:
 - Pi 0.84.2 or later;
 - access to the configured Luna, Terra, and Sol child models;
 - `rg` for local `grep`, and `fd` or `fdfind` for local `find`;
-- `pi-web-access` with its default tool names for public-web investigations.
+- [`pi-web-access`](https://github.com/nicobailon/pi-web-access) with its default tool names for public-web investigations.
 
 Install both the extension and its companion skill from a checkout:
 
@@ -39,7 +39,7 @@ ln -s "$PWD/live/skills/pi-subagent" ~/.pi/agent/skills/pi-subagent
 Restart Pi or run `/reload`. The model can then select the skill automatically, or the user can invoke `/skill:pi-subagent`.
 
 > [!NOTE]
-> `pi-web-access` is only needed for `web` runs. Local child startup is forced offline and never downloads missing search binaries.
+> Public-web runs specifically depend on [`pi-web-access`](https://github.com/nicobailon/pi-web-access), which can be installed with `pi install npm:pi-web-access`. The guard verifies that each web tool comes from the installed package's declared entry point, so another extension exposing the same tool names does not satisfy this dependency. Without it, `local` runs remain available. Local child startup is forced offline and never downloads missing search binaries.
 
 ## How it works
 
