@@ -11,8 +11,11 @@ import {
   buildChildPrompt,
   CHILD_FINALIZATION_GRACE_MS,
   CHILD_TIMEOUT_MS,
+  MAX_FETCH_URLS,
   MAX_FINAL_BYTES,
   MAX_JSON_LINE_BYTES,
+  MAX_WEB_QUERIES,
+  MAX_WEB_RESULTS_PER_QUERY,
   POLICY_ENV,
   READY_ENV,
   READY_MARKER,
@@ -21,6 +24,7 @@ import {
   toolsForCapability,
   truncateUtf8,
   WEB_EXTENSION_ENV,
+  WEB_INPUT_KEYS,
   type ChildPolicy,
   type ResultStatus,
   type SubagentFailureDiagnostics,
@@ -32,7 +36,7 @@ const CHILD_GUARD_PATH = fileURLToPath(new URL("./child-guard.ts", import.meta.u
 function childSystemPrompt(policy: ChildPolicy): string {
   const tools = toolsForCapability(policy.capability).join(", ");
   const boundedWebInputs = policy.capability === "web"
-    ? `\nFor web_search, use only query or queries, numResults up to 10, recencyFilter, domainFilter, and workflow \"none\"; do not send includeContent, provider, or proxy. For source_check, do not send provider or proxy. For fetch_content, use at most five public HTTP(S) url or urls values and only mode \"readable\"; do not request raw, answer, forceClone, auth, proxy, model, or media options.`
+    ? `\nFor web_search, use only ${WEB_INPUT_KEYS.web_search.join(", ")}, with at most ${MAX_WEB_QUERIES} queries and ${MAX_WEB_RESULTS_PER_QUERY} results per query; workflow must be \"none\". For source_check, use only ${WEB_INPUT_KEYS.source_check.join(", ")}. For fetch_content, use only ${WEB_INPUT_KEYS.fetch_content.join(", ")}, with at most ${MAX_FETCH_URLS} public HTTP(S) URLs and mode \"readable\".`
     : "";
   return `You are a focused investigation subagent.
 Use only the available ${tools} tools. Stay inside the explicit local scope enforced by the runtime.

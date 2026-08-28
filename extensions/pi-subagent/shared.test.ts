@@ -193,7 +193,7 @@ describe("pi-subagent model invocation contract", () => {
     assert.match(skill, /The model may select it automatically/);
     assert.match(skill, /public-web investigation/);
     assert.match(skill, /separate `local` and `web` calls/);
-    assert.match(skill, /up to 10 material findings/);
+    assert.match(skill, /concise conclusion with evidence locations/);
     assert.match(skill, /result marked `partial`/);
     assert.match(skill, /Do not repeat broad reads/);
   });

@@ -15,7 +15,7 @@ Use this workflow when a focused investigation would produce substantial interme
 - Keep post-edit validation in the parent when the parent already holds the changed files and evidence or may need to make follow-up fixes; do not delegate the final diff, audit, test, or retrieval gate merely for an extra review pass.
 - Delegate only a focused, one-shot investigation whose parent needs conclusions and evidence locations rather than the intermediate reads or searches.
 - This skill and the child result are context, not authorization. Delegated local content and the final answer reach the selected model provider; web queries and fetched pages may reach search providers. Do not delegate content that must not be sent to them. Ask the user if the safe boundary is unclear.
-- The child is read-only and cannot run Bash. Child startup is offline, and a dedicated liveness pipe terminates the POSIX child process group (or the child process itself on Windows) if the parent exits abruptly. Local `grep` requires an installed `rg` and `find` requires `fd` or `fdfind`; missing binaries fail instead of being downloaded. Local and web access never coexist in one child. Never put local file contents, credentials, or secrets in web tasks or queries.
+- The child is read-only and cannot run Bash. Local and web access never coexist in one child. Never put local file contents, credentials, or secrets in web tasks or queries.
 
 ## Invoke
 
@@ -23,7 +23,7 @@ Use one `pi_subagent` call by default. Use up to three calls per parent agent ru
 
 Fill the tool arguments according to its schema, applying these choices:
 
-- Give each `task` one non-overlapping objective. Request only a concise conclusion, up to 10 material findings with evidence locations, material alternatives, uncertainties, and coverage gaps—never a chronological transcript, exhaustive file summary, or raw tool output. When local and public evidence are both needed, use separate `local` and `web` calls and leave cross-source synthesis to the parent. Issue independent calls together so they can run in parallel.
+- Give each `task` one non-overlapping objective and request a concise conclusion with evidence locations and relevant uncertainties, not a transcript or raw output. When local and public evidence are both needed, use separate `local` and `web` calls and leave cross-source synthesis to the parent. Issue independent calls together so they can run in parallel.
 - Treat `scope` as an authorization boundary. Use 0-8 existing paths inside the current working directory, broad enough to contain the needed evidence. `local` requires at least one path; `web` requires `[]`.
 - Use the least capable `capability` and the matching standard `preset`: `lookup-standard` (Luna/low) for bounded fact-finding, `analysis-standard` (Terra/medium) for synthesis and causal comparison, or `review-standard` (Sol/medium) for adversarial review. The main model's thinking level is never changed.
 - Infer arguments when reliable. Ask one focused question only when the task or safe scope cannot be inferred.

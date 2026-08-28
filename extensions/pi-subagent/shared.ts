@@ -6,6 +6,17 @@ import { fileURLToPath } from "node:url";
 export const TOOL_NAME = "pi_subagent";
 export const ALLOWED_FILE_TOOLS = ["read", "grep", "find", "ls"] as const;
 export const ALLOWED_WEB_TOOLS = ["web_search", "source_check", "fetch_content", "get_search_content"] as const;
+export const WEB_INPUT_KEYS = {
+  web_search: ["query", "queries", "numResults", "recencyFilter", "domainFilter", "workflow"],
+  source_check: ["claim", "queries", "numResults", "fetchContent", "recencyFilter", "domainFilter"],
+  fetch_content: ["url", "urls", "mode"],
+  get_search_content: [
+    "responseId", "query", "queryIndex", "url", "urlIndex", "offset", "limit", "findText", "findMode",
+  ],
+} as const satisfies Record<(typeof ALLOWED_WEB_TOOLS)[number], readonly string[]>;
+export const MAX_WEB_QUERIES = 4;
+export const MAX_WEB_RESULTS_PER_QUERY = 10;
+export const MAX_FETCH_URLS = 5;
 export const MAX_SCOPE_ROOTS = 8;
 export const MAX_SUBAGENT_CALLS = 3;
 export const MAX_FINAL_BYTES = 12 * 1024;
@@ -190,7 +201,7 @@ export function buildChildPrompt(task: string, policy: ChildPolicy): string {
     "Authorized local scope (runtime enforced)",
     ...(visibleRoots.length > 0 ? visibleRoots : ["- (none; web-only investigation)"]),
     "",
-    "Use only the listed local paths and their authorized descendants. Web research may use only the available web tools and HTTP(S) access allowed by the installed web extension's SSRF policy. Return only the requested deliverable.",
+    "Stay within this runtime-enforced capability and scope. Return only the requested deliverable.",
   ].join("\n");
 }
 

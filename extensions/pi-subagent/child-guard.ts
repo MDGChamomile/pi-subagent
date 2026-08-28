@@ -7,13 +7,17 @@ import {
   ALLOWED_WEB_TOOLS,
   authorizeReadPath,
   isWithin,
+  MAX_FETCH_URLS,
   MAX_SCOPE_ROOTS,
+  MAX_WEB_QUERIES,
+  MAX_WEB_RESULTS_PER_QUERY,
   POLICY_ENV,
   READY_ENV,
   READY_MARKER,
   SOFT_DEADLINE_ENV,
   toolsForCapability,
   WEB_EXTENSION_ENV,
+  WEB_INPUT_KEYS,
   type ChildPolicy,
 } from "./shared.ts";
 
@@ -113,17 +117,9 @@ function validatePublicHttpUrl(raw: string): string | undefined {
   }
 }
 
-const WEB_INPUT_ALLOWLISTS: Record<string, ReadonlySet<string>> = {
-  web_search: new Set(["query", "queries", "numResults", "recencyFilter", "domainFilter", "workflow"]),
-  source_check: new Set(["claim", "queries", "numResults", "fetchContent", "recencyFilter", "domainFilter"]),
-  fetch_content: new Set(["url", "urls", "mode"]),
-  get_search_content: new Set([
-    "responseId", "query", "queryIndex", "url", "urlIndex", "offset", "limit", "findText", "findMode",
-  ]),
-};
-const MAX_WEB_QUERIES = 4;
-const MAX_WEB_RESULTS_PER_QUERY = 10;
-const MAX_FETCH_URLS = 5;
+const WEB_INPUT_ALLOWLISTS: Record<string, ReadonlySet<string>> = Object.fromEntries(
+  Object.entries(WEB_INPUT_KEYS).map(([toolName, keys]) => [toolName, new Set(keys)]),
+);
 
 function validateBoundedQueries(toolName: string, input: Record<string, unknown>): string | undefined {
   if (Array.isArray(input.queries) && input.queries.length > MAX_WEB_QUERIES) {
