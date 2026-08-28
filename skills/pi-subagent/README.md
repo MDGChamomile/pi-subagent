@@ -35,7 +35,8 @@ Keep the work in the parent for simple lookups, implementation, commands, tests,
 2. The workflow selects `local` or `web`, an explicit scope, and the least capable standard preset.
 3. The companion extension starts one ephemeral, read-only child Pi process. Local and web access never coexist in the same child.
 4. Intermediate child turns and tool results stay outside the parent context; only the final bounded answer returns.
-5. The parent verifies decisive claims and performs any implementation or final validation itself.
+5. A lifetime tool budget gives one soft warning, then returns the best available answer as `partial` if a hard tool-call or web query/fetch limit is reached.
+6. The parent verifies decisive claims and performs any implementation or final validation itself.
 
 The three presets are:
 
@@ -47,7 +48,7 @@ The three presets are:
 
 ## Requirements and installation
 
-This skill requires the companion global extension and Pi 0.84.2 or later. Web investigations also require `pi-web-access` with its default tool names.
+This skill requires the companion global extension and Pi 0.84.2 or later. Web investigations also require the tested `pi-web-access` v0.26.0 with its default tool names.
 
 Follow the extension's [requirements and installation guide](../../extensions/pi-subagent/README.md#requirements-and-installation) to install both components together.
 

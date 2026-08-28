@@ -10,6 +10,7 @@ import {
   formatElapsed,
   formatProgress,
   formatResultSummary,
+  readBudgetTelemetry,
 } from "./subprocess.ts";
 import { MAX_JSON_LINE_BYTES, READY_MARKER, sanitizeDisplayText } from "./shared.ts";
 
@@ -206,6 +207,33 @@ describe("child completion boundary", () => {
       await assert.rejects(() => assertChildReady(readyFile), /marker is invalid/);
       await writeFile(readyFile, READY_MARKER);
       await assert.doesNotReject(() => assertChildReady(readyFile));
+    } finally {
+      await rm(root, { recursive: true, force: true });
+    }
+  });
+
+  test("accepts only content-free budget telemetry fields", async () => {
+    const root = await mkdtemp(join(tmpdir(), "pi-subagent-budget-test-"));
+    try {
+      const telemetryFile = join(root, "budget.json");
+      const telemetry = {
+        version: 1,
+        toolCallsAttempted: 12,
+        toolCallsExecuted: 10,
+        deniedCalls: 2,
+        queryCount: 4,
+        fetchTargetCount: 5,
+        softLimitReached: false,
+        hardLimitReached: true,
+        partialReason: "tool_budget",
+      };
+      await writeFile(telemetryFile, JSON.stringify(telemetry));
+      assert.deepEqual(await readBudgetTelemetry(telemetryFile), telemetry);
+
+      await writeFile(telemetryFile, JSON.stringify({ ...telemetry, task: "private task" }));
+      await assert.rejects(() => readBudgetTelemetry(telemetryFile), /malformed/);
+      await writeFile(telemetryFile, JSON.stringify({ ...telemetry, queryCount: -1 }));
+      await assert.rejects(() => readBudgetTelemetry(telemetryFile), /malformed/);
     } finally {
       await rm(root, { recursive: true, force: true });
     }

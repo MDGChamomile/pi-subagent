@@ -4,7 +4,7 @@ import { join } from "node:path";
 import type { ExtensionAPI } from "@earendil-works/pi-coding-agent";
 import { StringEnum } from "@earendil-works/pi-ai";
 import { Text } from "@earendil-works/pi-tui";
-import { Type } from "typebox";
+import { Type, type Static } from "typebox";
 import {
   boundedParentError,
   buildChildPolicy,
@@ -62,12 +62,16 @@ export default function piSubagentExtension(pi: ExtensionAPI): void {
     description: "Run one bounded investigation in an isolated child context. Use one by default and up to three parallel calls only for distinct, independent research tracks; use the parent for simple lookups, implementation, or tests.",
     parameters: Parameters,
     prepareArguments(args) {
-      if (!args || typeof args !== "object") return args;
-      const input = args as Record<string, unknown>;
-      const preset = normalizePreset(input.preset, input.profile);
-      if (!preset) return args;
-      const { profile: _profile, thinking: _thinking, preset: _preset, ...rest } = input;
-      return { ...rest, preset };
+      let prepared = args;
+      if (args && typeof args === "object") {
+        const input = args as Record<string, unknown>;
+        const preset = normalizePreset(input.preset, input.profile);
+        if (preset) {
+          const { profile: _profile, thinking: _thinking, preset: _preset, ...rest } = input;
+          prepared = { ...rest, preset };
+        }
+      }
+      return prepared as Static<typeof Parameters>;
     },
     async execute(toolCallId, params, signal, onUpdate, ctx) {
       try {
@@ -109,12 +113,14 @@ export default function piSubagentExtension(pi: ExtensionAPI): void {
           await chmod(tempDir, 0o700);
           const policyFile = join(tempDir, "policy.json");
           const readyFile = join(tempDir, "guard.ready");
+          const budgetTelemetryFile = join(tempDir, "budget-telemetry.json");
           await writeFile(policyFile, JSON.stringify(policy), { encoding: "utf8", mode: 0o600, flag: "wx" });
           childStarted = true;
           const result = await runChild({
             policy,
             policyFile,
             readyFile,
+            budgetTelemetryFile,
             webExtensionPath,
             task: params.task,
             model,
@@ -132,6 +138,14 @@ export default function piSubagentExtension(pi: ExtensionAPI): void {
               scopeRoots: policy.roots.length,
               webEnabled: capability === "web",
               status: result.status,
+              partialReason: result.partialReason,
+              toolCallsAttempted: result.budget.toolCallsAttempted,
+              toolCallsExecuted: result.budget.toolCallsExecuted,
+              deniedCalls: result.budget.deniedCalls,
+              queryCount: result.budget.queryCount,
+              fetchTargetCount: result.budget.fetchTargetCount,
+              softLimitReached: result.budget.softLimitReached,
+              hardLimitReached: result.budget.hardLimitReached,
               durationMs: result.durationMs,
               exitCode: result.exitCode,
               stopReason: result.stopReason,

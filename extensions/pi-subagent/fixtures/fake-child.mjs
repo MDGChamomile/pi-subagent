@@ -5,18 +5,32 @@ import { cleanupPrivateRuntimeFiles, installParentLivenessMonitor } from "../par
 installParentLivenessMonitor(() => cleanupPrivateRuntimeFiles(
   process.env.PI_SUBAGENT_POLICY_FILE,
   process.env.PI_SUBAGENT_READY_FILE,
+  process.env.PI_SUBAGENT_BUDGET_TELEMETRY_FILE,
 ));
 
 const READY_MARKER = "pi-subagent-guard-ready-v1\n";
 const scenario = process.argv[2] ?? "success";
 const readyPath = process.env.PI_SUBAGENT_READY_FILE;
-if (!readyPath) process.exit(2);
+const budgetTelemetryPath = process.env.PI_SUBAGENT_BUDGET_TELEMETRY_FILE;
+if (!readyPath || !budgetTelemetryPath) process.exit(2);
 if (process.env.PI_OFFLINE !== "1") process.exit(5);
 
 let input = "";
 for await (const chunk of process.stdin) input += chunk;
 if (!input.includes("Objective") || !input.includes("Authorized local scope")) process.exit(3);
 writeFileSync(readyPath, READY_MARKER, { encoding: "utf8", mode: 0o600, flag: "wx" });
+const budget = {
+  version: 1,
+  toolCallsAttempted: 0,
+  toolCallsExecuted: 0,
+  deniedCalls: 0,
+  queryCount: 0,
+  fetchTargetCount: 0,
+  softLimitReached: false,
+  hardLimitReached: false,
+  ...(scenario === "budget-partial" ? { hardLimitReached: true, partialReason: "tool_budget" } : {}),
+};
+writeFileSync(budgetTelemetryPath, JSON.stringify(budget), { encoding: "utf8", mode: 0o600, flag: "wx" });
 
 const usage = {
   input: 10,
@@ -78,6 +92,13 @@ if (scenario === "success") {
   emit({
     role: "assistant",
     content: [{ type: "text", text: "The completed portion remains useful. Coverage is incomplete." }],
+    usage,
+    stopReason: "stop",
+  });
+} else if (scenario === "budget-partial") {
+  emit({
+    role: "assistant",
+    content: [{ type: "text", text: "Budget-limited final answer with explicit coverage gaps." }],
     usage,
     stopReason: "stop",
   });

@@ -12,12 +12,14 @@ if (!root || !pidFile) process.exit(2);
 const policy = await buildChildPolicy(root, ["."], "local");
 const policyFile = join(root, "policy.json");
 const readyFile = join(root, "guard.ready");
+const budgetTelemetryFile = join(root, "budget-telemetry.json");
 await writeFile(policyFile, JSON.stringify(policy), { encoding: "utf8", mode: 0o600 });
 
 void runChild({
   policy,
   policyFile,
   readyFile,
+  budgetTelemetryFile,
   task: "Wait for the deterministic parent-death fixture.",
   model: "test/fake",
   thinking: "low",

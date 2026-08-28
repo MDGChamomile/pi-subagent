@@ -49,7 +49,11 @@ function assistantToolCall(toolCallId: string): AssistantMessage {
 
 function oneMessageStream(message: AssistantMessage) {
   const stream = createAssistantMessageEventStream();
-  queueMicrotask(() => stream.push({ type: "done", reason: message.stopReason, message }));
+  const reason = message.stopReason;
+  if (reason === "pending" || reason === "error" || reason === "aborted") {
+    throw new Error(`Cannot complete a message stream with stop reason: ${reason}`);
+  }
+  queueMicrotask(() => stream.push({ type: "done", reason, message }));
   return stream;
 }
 

@@ -23,14 +23,14 @@ Requirements:
 - Pi 0.84.2 or later;
 - access to the configured Luna, Terra, and Sol child models;
 - `rg` for local `grep`, and `fd` or `fdfind` for local `find`;
-- [`pi-web-access`](https://github.com/nicobailon/pi-web-access) with its default tool names for web investigations.
+- [`pi-web-access` v0.26.0](https://github.com/nicobailon/pi-web-access) with its default tool names for web investigations.
 
 Install both the extension and its companion skill from a checkout:
 
 ```bash
 git clone https://github.com/MDGChamomile/pi-agent-kit.git
 cd pi-agent-kit
-pi install npm:pi-web-access
+pi install npm:pi-web-access@v0.26.0
 mkdir -p ~/.pi/agent/extensions ~/.pi/agent/skills
 ln -s "$PWD/live/extensions/pi-subagent" ~/.pi/agent/extensions/pi-subagent
 ln -s "$PWD/live/skills/pi-subagent" ~/.pi/agent/skills/pi-subagent
@@ -39,7 +39,7 @@ ln -s "$PWD/live/skills/pi-subagent" ~/.pi/agent/skills/pi-subagent
 Restart Pi or run `/reload`. The model can then select the skill automatically, or the user can invoke `/skill:pi-subagent`.
 
 > [!NOTE]
-> Web runs specifically depend on [`pi-web-access`](https://github.com/nicobailon/pi-web-access), which can be installed with `pi install npm:pi-web-access`. The guard verifies that each web tool comes from the installed package's declared entry point, so another extension exposing the same tool names does not satisfy this dependency. Without it, `local` runs remain available. Local child startup is forced offline and never downloads missing search binaries.
+> Web runs specifically depend on the tested [`pi-web-access` v0.26.0](https://github.com/nicobailon/pi-web-access), installed with `pi install npm:pi-web-access@v0.26.0`. The guard verifies the package name, exact version, declared entry point, and tool provenance, so another version or extension exposing the same tool names does not satisfy this dependency. The exact pin prevents unreviewed code drift on reinstall; it does not by itself prove package safety. Without it, `local` runs remain available. Local child startup is forced offline and never downloads missing search binaries.
 
 ## How it works
 
@@ -81,6 +81,9 @@ Older stored calls with separate `profile` and `thinking` arguments, or with the
 - Each running call reports `mm:ss · model (thinking) running · N reported tokens` once per second.
 - A settled row reports `✓ Complete · 14.2s · Context injected: ~1,820 tokens`, or `⚠ Partial`; expanding it reveals the answer.
 - The investigation deadline is 18 minutes. The child then gets a two-minute text-finalization window within the 20-minute hard limit. Answers completed in that window are labelled `partial`; an unresponsive child is terminated at the hard deadline.
+- Each child has a lifetime tool-call budget. `local` warns at 36 attempts and stops before attempt 49; `web` warns at 30 and stops before attempt 41. Allowed and denied attempts both count. A soft warning is sent once and later calls remain available; a hard stop disables tools, reuses text finalization, and returns a `partial` result with `partialReason: "tool_budget"`.
+- Web children additionally allow at most 32 executed queries and 50 executed fetch/content targets over their lifetime. Valid calls reserve their full cost synchronously during sequential Pi tool preflight, before parallel execution: `web_search` charges its normalized `query`/`queries`; `source_check` charges its effective queries and, with `fetchContent: true`, conservatively up to five result pages (`min(5, queries × results per query)`); `fetch_content` charges its normalized unique `url`/`urls`; and each `get_search_content` retrieval charges one content target. A batch that would cross either limit does not execute or consume query/fetch counters.
+- Parent tool-result details include only numeric/boolean budget telemetry (`toolCallsAttempted`, `toolCallsExecuted`, `deniedCalls`, `queryCount`, `fetchTargetCount`, `softLimitReached`, and `hardLimitReached`), plus the machine-readable partial reason when applicable. They never include tasks, queries, URLs, paths, or tool content.
 - A dedicated parent-liveness pipe makes the child remove private runtime files and terminate its POSIX process group, or the child process itself on Windows, if the parent exits abruptly.
 - Final diff, audit, test, and retrieval validation stays with the parent when it holds the edited files or may need to make follow-up fixes.
 
@@ -121,7 +124,8 @@ The first plain-final-answer three-case run retained 100% fact recall in both ar
 ## Verification
 
 ```bash
-npm --prefix live/extensions/pi-subagent ci
+npm --prefix live/extensions/pi-subagent ci --include=dev
+npm --prefix live/extensions/pi-subagent run typecheck
 npm --prefix live/extensions/pi-subagent test
 python3 live/extensions/pi-subagent/scripts/context_isolation_eval.py --mode smoke --capability local
 python3 live/extensions/pi-subagent/scripts/context_isolation_eval.py --mode smoke --capability web

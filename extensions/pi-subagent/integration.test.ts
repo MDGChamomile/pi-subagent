@@ -17,11 +17,13 @@ async function withFixture<T>(scenario: string, run: (options: Parameters<typeof
     const policy = await buildChildPolicy(root, ["."], "local");
     const policyFile = join(root, "policy.json");
     const readyFile = join(root, "guard.ready");
+    const budgetTelemetryFile = join(root, "budget-telemetry.json");
     await writeFile(policyFile, JSON.stringify(policy), { encoding: "utf8", mode: 0o600 });
     return await run({
       policy,
       policyFile,
       readyFile,
+      budgetTelemetryFile,
       task: "Inspect the deterministic fixture and return the requested final answer.",
       model: "test/fake",
       thinking: "low",
@@ -63,7 +65,17 @@ describe("pi-subagent spawned-child integration", () => {
       killGraceMs: 50,
     }));
     assert.equal(result.status, "partial");
+    assert.equal(result.partialReason, undefined);
     assert.equal(result.output, "The completed portion remains useful. Coverage is incomplete.");
+  });
+
+  test("passes a budget termination to the parent as partial with numeric telemetry", async () => {
+    const result = await withFixture("budget-partial", (options) => runChild(options));
+    assert.equal(result.status, "partial");
+    assert.equal(result.partialReason, "tool_budget");
+    assert.equal(result.budget.hardLimitReached, true);
+    assert.equal(result.budget.toolCallsAttempted, 0);
+    assert.equal(result.output, "Budget-limited final answer with explicit coverage gaps.");
   });
 
   test("sanitizes and truncates a large plain final answer at the parent boundary", async () => {
@@ -192,6 +204,7 @@ describe("pi-subagent spawned-child integration", () => {
       ]);
       await assert.rejects(readFile(join(root, "policy.json"), "utf8"), { code: "ENOENT" });
       await assert.rejects(readFile(join(root, "guard.ready"), "utf8"), { code: "ENOENT" });
+      await assert.rejects(readFile(join(root, "budget-telemetry.json"), "utf8"), { code: "ENOENT" });
     } finally {
       if (childPid) {
         try { process.kill(-childPid, "SIGKILL"); } catch {}

@@ -14,9 +14,18 @@ export const WEB_INPUT_KEYS = {
     "responseId", "query", "queryIndex", "url", "urlIndex", "offset", "limit", "findText", "findMode",
   ],
 } as const satisfies Record<(typeof ALLOWED_WEB_TOOLS)[number], readonly string[]>;
-export const MAX_WEB_QUERIES = 4;
+export const MAX_WEB_QUERIES_PER_CALL = 4;
+export const DEFAULT_WEB_RESULTS_PER_QUERY = 5;
 export const MAX_WEB_RESULTS_PER_QUERY = 10;
-export const MAX_FETCH_URLS = 5;
+export const MAX_FETCH_URLS_PER_CALL = 5;
+export const MAX_SOURCE_CHECK_FETCH_TARGETS_PER_CALL = 5;
+export const LIFETIME_TOOL_CALL_LIMITS = {
+  local: { soft: 36, hard: 48 },
+  web: { soft: 30, hard: 40 },
+} as const;
+export const LIFETIME_WEB_QUERY_LIMIT = 32;
+export const LIFETIME_WEB_FETCH_TARGET_LIMIT = 50;
+export const PINNED_WEB_EXTENSION_VERSION = "0.26.0";
 export const MAX_SCOPE_ROOTS = 8;
 export const MAX_SUBAGENT_CALLS = 3;
 export const MAX_FINAL_BYTES = 12 * 1024;
@@ -27,6 +36,7 @@ export const CHILD_FINALIZATION_GRACE_MS = 2 * 60 * 1000;
 export const POLICY_ENV = "PI_SUBAGENT_POLICY_FILE";
 export const READY_ENV = "PI_SUBAGENT_READY_FILE";
 export const READY_MARKER = "pi-subagent-guard-ready-v1\n";
+export const BUDGET_TELEMETRY_ENV = "PI_SUBAGENT_BUDGET_TELEMETRY_FILE";
 export const WEB_EXTENSION_ENV = "PI_SUBAGENT_WEB_EXTENSION_PATH";
 export const SOFT_DEADLINE_ENV = "PI_SUBAGENT_SOFT_DEADLINE_EPOCH_MS";
 
@@ -66,6 +76,18 @@ export function normalizePreset(preset: unknown, profile: unknown): Preset | und
 
 export type Capability = "local" | "web";
 export type ResultStatus = "complete" | "partial";
+export type PartialReason = "tool_budget";
+export type BudgetTelemetry = {
+  version: 1;
+  toolCallsAttempted: number;
+  toolCallsExecuted: number;
+  deniedCalls: number;
+  queryCount: number;
+  fetchTargetCount: number;
+  softLimitReached: boolean;
+  hardLimitReached: boolean;
+  partialReason?: PartialReason;
+};
 export type ScopeRoot = { path: string; kind: "file" | "directory" };
 export type ChildPolicy = { version: 1; cwd: string; capability: Capability; roots: ScopeRoot[] };
 
@@ -215,9 +237,14 @@ async function verifyWebPackageEntrypoint(canonical: string): Promise<boolean> {
     try {
       const manifest = JSON.parse(await readFile(join(directory, "package.json"), "utf8")) as {
         name?: unknown;
+        version?: unknown;
         pi?: { extensions?: unknown };
       };
-      if (manifest.name !== "pi-web-access" || !Array.isArray(manifest.pi?.extensions)) return false;
+      if (
+        manifest.name !== "pi-web-access"
+        || manifest.version !== PINNED_WEB_EXTENSION_VERSION
+        || !Array.isArray(manifest.pi?.extensions)
+      ) return false;
       for (const entry of manifest.pi.extensions) {
         if (typeof entry !== "string") continue;
         try {
@@ -257,7 +284,7 @@ export async function resolveWebExtensionPath(tools: readonly ToolSourceDescript
       // Try the source base directory fallback.
     }
   }
-  throw new Error("Web tools must come from the installed pi-web-access package entry point");
+  throw new Error(`Web tools must come from the installed pi-web-access ${PINNED_WEB_EXTENSION_VERSION} package entry point`);
 }
 
 export class ModelInvocationGate {

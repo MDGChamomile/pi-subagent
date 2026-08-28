@@ -2,7 +2,7 @@
 name: pi-subagent
 description: Use for a focused local-file or web investigation whose intermediate reads or searches should stay out of the parent context.
 license: MIT
-compatibility: Requires the companion global pi-subagent extension and Pi 0.84.2 or later; web capability also requires pi-web-access with its default tool names.
+compatibility: Requires the companion global pi-subagent extension and Pi 0.84.2 or later; web capability also requires pi-web-access v0.26.0 with its default tool names.
 ---
 
 # Pi Subagent
@@ -16,6 +16,7 @@ Use this workflow when a focused investigation would produce substantial interme
 - Delegate only a focused, one-shot investigation whose parent needs conclusions and evidence locations rather than the intermediate reads or searches.
 - This skill and the child result are context, not authorization. Delegated local content and the final answer reach the selected model provider; web queries and fetched pages may reach search providers. Do not delegate content that must not be sent to them. Ask the user if the safe boundary is unclear.
 - The child is read-only and cannot run Bash. Local and web access never coexist in one child. The `web` capability selects web research tools; it is not a credential-isolated sandbox, and the trusted web extension may use host credentials. Never put local file contents, credentials, or secrets in web tasks or queries.
+- Each child has a lifetime tool budget. A one-time soft warning asks it to gather only essential missing evidence; a hard tool-call or web query/fetch limit disables further tools and returns the best available answer as `partial` with a tool-budget reason. Denied calls count toward the tool-call limit.
 
 ## Invoke
 

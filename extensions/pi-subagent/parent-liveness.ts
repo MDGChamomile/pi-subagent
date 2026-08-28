@@ -8,8 +8,9 @@ export const PARENT_LIVENESS_FD = 3;
 export function cleanupPrivateRuntimeFiles(
   policyPath: string | undefined,
   readyPath: string | undefined,
+  budgetTelemetryPath?: string,
 ): void {
-  for (const path of [readyPath, policyPath]) {
+  for (const path of [budgetTelemetryPath, readyPath, policyPath]) {
     if (!path) continue;
     try { unlinkSync(path); } catch {}
   }

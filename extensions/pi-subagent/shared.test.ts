@@ -13,9 +13,13 @@ import {
   CHILD_FINALIZATION_GRACE_MS,
   CHILD_TIMEOUT_MS,
   invocationLimitBlock,
+  LIFETIME_TOOL_CALL_LIMITS,
+  LIFETIME_WEB_FETCH_TARGET_LIMIT,
+  LIFETIME_WEB_QUERY_LIMIT,
   makeCanonicalTempDirectory,
   MAX_PARENT_ERROR_BYTES,
   MAX_SUBAGENT_CALLS,
+  PINNED_WEB_EXTENSION_VERSION,
   ModelInvocationGate,
   normalizeInputPath,
   normalizePreset,
@@ -237,6 +241,7 @@ describe("pi-subagent model invocation contract", () => {
       await writeFile(entry, "export default () => {};\n");
       await writeFile(join(root, "package.json"), JSON.stringify({
         name: "pi-web-access",
+        version: PINNED_WEB_EXTENSION_VERSION,
         pi: { extensions: ["./index.ts"] },
       }));
       const tools = ALLOWED_WEB_TOOLS.map((name) => ({
@@ -249,12 +254,22 @@ describe("pi-subagent model invocation contract", () => {
         /requires enabled tools/,
       );
       await writeFile(join(root, "package.json"), JSON.stringify({
-        name: "lookalike-web-extension",
+        name: "pi-web-access",
+        version: "0.25.0",
         pi: { extensions: ["./index.ts"] },
       }));
       await assert.rejects(
         () => resolveWebExtensionPath(tools),
-        /installed pi-web-access package entry point/,
+        /pi-web-access 0\.26\.0 package entry point/,
+      );
+      await writeFile(join(root, "package.json"), JSON.stringify({
+        name: "lookalike-web-extension",
+        version: PINNED_WEB_EXTENSION_VERSION,
+        pi: { extensions: ["./index.ts"] },
+      }));
+      await assert.rejects(
+        () => resolveWebExtensionPath(tools),
+        /installed pi-web-access 0\.26\.0 package entry point/,
       );
     } finally {
       await rm(root, { recursive: true, force: true });
@@ -267,6 +282,13 @@ describe("pi-subagent public contract", () => {
     assert.equal(CHILD_TIMEOUT_MS, 20 * 60 * 1000);
     assert.equal(CHILD_FINALIZATION_GRACE_MS, 2 * 60 * 1000);
     assert.equal(MAX_SUBAGENT_CALLS, 3);
+    assert.deepEqual(LIFETIME_TOOL_CALL_LIMITS, {
+      local: { soft: 36, hard: 48 },
+      web: { soft: 30, hard: 40 },
+    });
+    assert.equal(LIFETIME_WEB_QUERY_LIMIT, 32);
+    assert.equal(LIFETIME_WEB_FETCH_TARGET_LIMIT, 50);
+    assert.equal(PINNED_WEB_EXTENSION_VERSION, "0.26.0");
     const expectedPresets = {
       "lookup-standard": { model: "openai-codex/gpt-5.6-luna", thinking: "low" },
       "analysis-standard": { model: "openai-codex/gpt-5.6-terra", thinking: "medium" },
