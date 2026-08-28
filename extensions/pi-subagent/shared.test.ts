@@ -10,18 +10,18 @@ import {
   boundedParentError,
   buildChildPolicy,
   buildChildPrompt,
+  CHILD_FINALIZATION_GRACE_MS,
   CHILD_TIMEOUT_MS,
   invocationLimitBlock,
-  legacyPreset,
   makeCanonicalTempDirectory,
   MAX_PARENT_ERROR_BYTES,
   MAX_SUBAGENT_CALLS,
   ModelInvocationGate,
   normalizeInputPath,
+  normalizePreset,
   PRESET_NAMES,
   resolveWebExtensionPath,
   SUBAGENT_PRESETS,
-  THINKING_LEVELS,
   truncateUtf8,
 } from "./shared.ts";
 
@@ -57,6 +57,7 @@ describe("pi-subagent scope policy", () => {
       assert.equal(localPolicy.capability, "local");
       await assert.rejects(() => buildChildPolicy(root, [], "local"), /requires at least one local scope/);
       await assert.rejects(() => buildChildPolicy(root, ["local.txt"], "web"), /requires an empty local scope/);
+      await assert.rejects(() => buildChildPolicy(root, ["local.txt"], "both" as any), /must be local or web/);
     } finally {
       await rm(root, { recursive: true, force: true });
     }
@@ -191,7 +192,9 @@ describe("pi-subagent model invocation contract", () => {
     assert.doesNotMatch(skill, /disable-model-invocation:\s*true/);
     assert.match(skill, /The model may select it automatically/);
     assert.match(skill, /public-web investigation/);
+    assert.match(skill, /separate `local` and `web` calls/);
     assert.match(skill, /up to 10 material findings/);
+    assert.match(skill, /result marked `partial`/);
     assert.match(skill, /Do not repeat broad reads/);
   });
 
@@ -228,34 +231,24 @@ describe("pi-subagent model invocation contract", () => {
 });
 
 describe("pi-subagent public contract", () => {
-  test("exposes bounded runtime and quality-tested model presets", () => {
+  test("exposes bounded runtime and three standard model presets", () => {
     assert.equal(CHILD_TIMEOUT_MS, 20 * 60 * 1000);
-    assert.deepEqual(PRESET_NAMES, [
-      "lookup-standard",
-      "lookup-balanced",
-      "lookup-deep",
-      "analysis-standard",
-      "analysis-deep",
-      "review-standard",
-      "review-deep",
-      "review-exhaustive",
-    ]);
-    assert.deepEqual(SUBAGENT_PRESETS["lookup-standard"], {
-      model: "openai-codex/gpt-5.6-luna",
-      thinking: "low",
-    });
-    assert.deepEqual(SUBAGENT_PRESETS["analysis-deep"], {
-      model: "openai-codex/gpt-5.6-terra",
-      thinking: "xhigh",
-    });
-    assert.deepEqual(SUBAGENT_PRESETS["review-exhaustive"], {
-      model: "openai-codex/gpt-5.6-sol",
-      thinking: "max",
-    });
-    assert.equal(legacyPreset("lookup", "medium"), "lookup-balanced");
-    assert.equal(legacyPreset("analysis", "max"), "analysis-deep");
-    assert.equal(legacyPreset("review", "max"), "review-exhaustive");
-    assert.deepEqual(THINKING_LEVELS, ["low", "medium", "high", "xhigh", "max"]);
+    assert.equal(CHILD_FINALIZATION_GRACE_MS, 2 * 60 * 1000);
+    assert.equal(MAX_SUBAGENT_CALLS, 3);
+    const expectedPresets = {
+      "lookup-standard": { model: "openai-codex/gpt-5.6-luna", thinking: "low" },
+      "analysis-standard": { model: "openai-codex/gpt-5.6-terra", thinking: "medium" },
+      "review-standard": { model: "openai-codex/gpt-5.6-sol", thinking: "medium" },
+    };
+    assert.deepEqual(SUBAGENT_PRESETS, expectedPresets);
+    assert.deepEqual(PRESET_NAMES, Object.keys(expectedPresets));
+    assert.equal(normalizePreset(undefined, "lookup"), "lookup-standard");
+    assert.equal(normalizePreset(undefined, "analysis"), "analysis-standard");
+    assert.equal(normalizePreset(undefined, "review"), "review-standard");
+    assert.equal(normalizePreset("lookup-balanced", undefined), "lookup-standard");
+    assert.equal(normalizePreset("analysis-deep", undefined), "analysis-standard");
+    assert.equal(normalizePreset("review-exhaustive", undefined), "review-standard");
+    assert.equal(normalizePreset("unknown", "analysis"), undefined);
   });
 
   test("UTF-8 output truncation stays within its byte budget", () => {
@@ -276,25 +269,22 @@ describe("pi-subagent public contract", () => {
 
   test("reserves room for content-free failure diagnostics under the same error bound", () => {
     const result = boundedParentError(`provider failed ${"가".repeat(MAX_PARENT_ERROR_BYTES)}`, {
-      phase: "report",
+      phase: "output",
       exitCode: 0,
       stopReason: "stop\u202eunsafe",
       durationMs: 123.6,
       assistantMessages: 4,
       lastAssistantMode: "text",
-      reportAttempts: 1,
-      reportSuccesses: 0,
-      reportErrors: 1,
       toolErrors: 2,
-      lastToolError: "submit_subagent_report\u001b[31m",
+      lastToolError: "read\u001b[31m",
     });
     assert.ok(Buffer.byteLength(result, "utf8") <= MAX_PARENT_ERROR_BYTES);
     assert.doesNotMatch(result, /\u001b|\u202e/);
     assert.equal(result.includes("�"), false);
     assert.match(result, /Subagent error truncated/);
     assert.match(result, /Subagent diagnostics/);
-    assert.match(result, /"phase":"report"/);
+    assert.match(result, /"phase":"output"/);
     assert.match(result, /"durationMs":124/);
-    assert.match(result, /"reportErrors":1/);
+    assert.match(result, /"toolErrors":2/);
   });
 });

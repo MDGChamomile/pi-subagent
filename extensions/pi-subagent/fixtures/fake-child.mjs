@@ -8,7 +8,6 @@ installParentLivenessMonitor(() => cleanupPrivateRuntimeFiles(
 ));
 
 const READY_MARKER = "pi-subagent-guard-ready-v1\n";
-const REPORT_TOOL_NAME = "submit_subagent_report";
 const scenario = process.argv[2] ?? "success";
 const readyPath = process.env.PI_SUBAGENT_READY_FILE;
 if (!readyPath) process.exit(2);
@@ -25,14 +24,17 @@ const usage = {
   cacheRead: 3,
   cacheWrite: 1,
   totalTokens: 16,
-  cost: { input: 0, output: 0, cacheRead: 0, cacheWrite: 0, total: 0 },
+  cost: { input: 0.01, output: 0.02, cacheRead: 0.003, cacheWrite: 0.001, total: 0.034 },
 };
 const emit = (message) => process.stdout.write(`${JSON.stringify({ type: "message_end", message })}\n`);
 
 if (scenario === "success") {
   emit({
     role: "assistant",
-    content: [{ type: "text", text: "intermediate text that must be discarded" }],
+    content: [
+      { type: "text", text: "intermediate text that must be discarded" },
+      { type: "toolCall", id: "read-1", name: "read", arguments: { path: "." } },
+    ],
     usage,
     stopReason: "toolUse",
   });
@@ -44,16 +46,22 @@ if (scenario === "success") {
     usage,
   });
   emit({
-    role: "toolResult",
-    toolName: REPORT_TOOL_NAME,
-    content: [{ type: "text", text: JSON.stringify({ conclusion: "Only this structured report may reach the parent.", findings: [] }) }],
-    isError: false,
+    role: "assistant",
+    content: [{ type: "text", text: "Only this final assistant answer may reach the parent." }],
     usage,
+    stopReason: "stop",
   });
-} else if (scenario === "missing-report") {
+} else if (scenario === "empty-output") {
   emit({
     role: "assistant",
-    content: [{ type: "text", text: "to=read code: malformed final" }],
+    content: [],
+    usage,
+    stopReason: "stop",
+  });
+} else if (scenario === "oversized-output") {
+  emit({
+    role: "assistant",
+    content: [{ type: "text", text: "가".repeat(8_000) }],
     usage,
     stopReason: "stop",
   });
@@ -65,7 +73,26 @@ if (scenario === "success") {
     stopReason: "error",
     errorMessage: `provider\u001b[31m\u202efailed ${"x".repeat(64 * 1024)}`,
   });
-} else if (scenario === "timeout") {
+} else if (scenario === "partial-success") {
+  await new Promise((resolve) => setTimeout(resolve, 300));
+  emit({
+    role: "assistant",
+    content: [{ type: "text", text: "The completed portion remains useful. Coverage is incomplete." }],
+    usage,
+    stopReason: "stop",
+  });
+} else if (scenario === "process-error") {
+  process.stderr.write("private child stderr must not reach the parent\n");
+  process.exitCode = 7;
+} else if (scenario === "timeout" || scenario === "timeout-after-usage") {
+  if (scenario === "timeout-after-usage") {
+    emit({
+      role: "assistant",
+      content: [{ type: "text", text: "Partial work before the hard timeout." }],
+      usage,
+      stopReason: "toolUse",
+    });
+  }
   process.on("SIGTERM", () => {});
   setInterval(() => {}, 1_000);
 } else if (scenario === "parent-death") {

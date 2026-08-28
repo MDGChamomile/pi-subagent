@@ -1,6 +1,5 @@
 import { lstatSync, readFileSync, realpathSync, writeFileSync } from "node:fs";
 import { dirname, resolve } from "node:path";
-import { fileURLToPath } from "node:url";
 import type { ExtensionAPI } from "@earendil-works/pi-coding-agent";
 import { cleanupPrivateRuntimeFiles, installParentLivenessMonitor } from "./parent-liveness.ts";
 import {
@@ -8,53 +7,15 @@ import {
   ALLOWED_WEB_TOOLS,
   authorizeReadPath,
   isWithin,
-  MAX_STRUCTURED_REPORT_BYTES,
+  MAX_SCOPE_ROOTS,
   POLICY_ENV,
   READY_ENV,
   READY_MARKER,
-  REPORT_TOOL_NAME,
+  SOFT_DEADLINE_ENV,
   toolsForCapability,
   WEB_EXTENSION_ENV,
   type ChildPolicy,
 } from "./shared.ts";
-
-export const CHILD_GUARD_SOURCE_PATH = fileURLToPath(import.meta.url);
-
-const FindingSchema = {
-  type: "object",
-  properties: {
-    title: { type: "string", minLength: 1, maxLength: 120 },
-    detail: { type: "string", minLength: 1, maxLength: 700 },
-    evidence: {
-      type: "array",
-      items: { type: "string", minLength: 1, maxLength: 400 },
-      maxItems: 3,
-    },
-  },
-  required: ["title", "detail", "evidence"],
-  additionalProperties: false,
-} as const;
-
-const boundedList = (maxItems: number) => ({
-  type: "array",
-  items: { type: "string", minLength: 1, maxLength: 500 },
-  maxItems,
-}) as const;
-
-// Pi consumes TypeBox-compatible JSON Schema at runtime. Keeping the literal
-// local avoids adding a child-only package dependency solely for schema builders.
-const StructuredReportSchema = {
-  type: "object",
-  properties: {
-    conclusion: { type: "string", minLength: 1, maxLength: 1200 },
-    findings: { type: "array", items: FindingSchema, maxItems: 10 },
-    alternatives: boundedList(4),
-    uncertainties: boundedList(4),
-    coverageGaps: boundedList(4),
-  },
-  required: ["conclusion", "findings"],
-  additionalProperties: false,
-} as any;
 
 const FILE_TOOLS = new Set<string>(ALLOWED_FILE_TOOLS);
 const WEB_TOOLS = new Set<string>(ALLOWED_WEB_TOOLS);
@@ -76,12 +37,12 @@ function loadPolicy(): { policy: ChildPolicy; policyPath: string } {
     parsed.version !== 1 ||
     typeof parsed.cwd !== "string" ||
     !Array.isArray(parsed.roots) ||
-    (parsed.capability !== "local" && parsed.capability !== "web" && parsed.capability !== "both")
+    (parsed.capability !== "local" && parsed.capability !== "web")
   ) {
     throw new Error("child policy is malformed");
   }
   const cwd = realpathSync(parsed.cwd);
-  if (cwd !== parsed.cwd || parsed.roots.length > 8) throw new Error("child policy has invalid roots");
+  if (cwd !== parsed.cwd || parsed.roots.length > MAX_SCOPE_ROOTS) throw new Error("child policy has invalid roots");
   const roots = parsed.roots.map((root) => {
     if (!root || typeof root.path !== "string" || (root.kind !== "file" && root.kind !== "directory")) {
       throw new Error("child policy root is malformed");
@@ -99,6 +60,15 @@ function loadReadyPath(policyPath: string): string {
   const resolved = resolve(raw);
   if (dirname(resolved) !== dirname(policyPath)) throw new Error("child readiness path must accompany the policy file");
   return resolved;
+}
+
+function loadSoftDeadline(): number | undefined {
+  const raw = process.env[SOFT_DEADLINE_ENV];
+  if (raw === undefined) return undefined;
+  if (!/^\d+$/.test(raw)) throw new Error("child soft deadline is malformed");
+  const deadline = Number(raw);
+  if (!Number.isSafeInteger(deadline) || deadline <= 0) throw new Error("child soft deadline is malformed");
+  return deadline;
 }
 
 function loadWebExtensionPath(): string {
@@ -131,8 +101,12 @@ function canonicalSourcePath(raw: unknown): string | undefined {
 function validatePublicHttpUrl(raw: string): string | undefined {
   try {
     const url = new URL(raw);
-    if (url.protocol !== "http:" && url.protocol !== "https:") return "fetch_content permits only HTTP(S) URLs";
-    if (url.username || url.password) return "fetch_content URLs must not contain embedded credentials";
+    if (url.protocol !== "http:" && url.protocol !== "https:") {
+      return "fetch_content permits only HTTP(S) URLs";
+    }
+    if (url.username || url.password) {
+      return "fetch_content URLs must not contain embedded credentials";
+    }
     return undefined;
   } catch {
     return "fetch_content received an invalid URL";
@@ -165,7 +139,9 @@ function validateWebCall(toolName: string, input: Record<string, unknown>): stri
   const allowed = WEB_INPUT_ALLOWLISTS[toolName];
   if (!allowed) return `${toolName} is not supported in the subagent`;
   const unknown = Object.keys(input).filter((key) => !allowed.has(key));
-  if (unknown.length > 0) return `${toolName} input ${unknown.sort().join(", ")} is not allowed in the subagent`;
+  if (unknown.length > 0) {
+    return `${toolName} input ${unknown.sort().join(", ")} is not allowed in the subagent`;
+  }
 
   if (toolName === "web_search") {
     const boundedError = validateBoundedQueries(toolName, input);
@@ -182,14 +158,16 @@ function validateWebCall(toolName: string, input: Record<string, unknown>): stri
   const urls: string[] = [];
   if (typeof input.url === "string") urls.push(input.url);
   if (Array.isArray(input.urls)) {
-    if (!input.urls.every((value) => typeof value === "string")) return "fetch_content URLs must be strings";
+    if (!input.urls.every((value) => typeof value === "string")) {
+      return "fetch_content URLs must be strings";
+    }
     urls.push(...input.urls as string[]);
   }
   if (urls.length === 0) return "fetch_content requires at least one HTTP(S) URL";
   if (urls.length > MAX_FETCH_URLS) return `fetch_content permits at most ${MAX_FETCH_URLS} URLs`;
   for (const url of urls) {
-    const error = validatePublicHttpUrl(url);
-    if (error) return error;
+    const violation = validatePublicHttpUrl(url);
+    if (violation) return violation;
   }
   return undefined;
 }
@@ -198,67 +176,88 @@ export default function childGuard(
   pi: ExtensionAPI,
   installLiveness = installParentLivenessMonitor,
 ): void {
-  const mixedReportToolCallIds = new Set<string>();
-
-  pi.registerTool({
-    name: REPORT_TOOL_NAME,
-    label: "Submit Subagent Report",
-    description: `Submit the one final structured investigation report as the only tool call in the final turn. Exactly one successful submission is required. The aggregate limit is ${MAX_STRUCTURED_REPORT_BYTES} UTF-8 bytes; a size-rejected submission does not count and may be reduced and retried.`,
-    parameters: StructuredReportSchema,
-    async execute(_toolCallId, params) {
-      const output = JSON.stringify(params);
-      if (Buffer.byteLength(output, "utf8") > MAX_STRUCTURED_REPORT_BYTES) {
-        throw new Error(`Structured report exceeds ${MAX_STRUCTURED_REPORT_BYTES} UTF-8 bytes; reduce it and retry. A size-rejected submission does not count as the successful final report`);
-      }
-      return {
-        content: [{ type: "text", text: output }],
-        details: { structured: true, findingCount: params.findings.length },
-        terminate: true,
-      };
-    },
-  });
-
   let policy: ChildPolicy | undefined;
   let policyPath: string | undefined;
   let readyPath: string | undefined;
   let webExtensionPath: string | undefined;
+  let softDeadline: number | undefined;
+  let softDeadlineTimer: ReturnType<typeof setTimeout> | undefined;
+  let finalAnswerSeen = false;
+  let finalizationRequested = false;
   let policyError: string | undefined;
   let stopParentLivenessMonitor: (() => void) | undefined;
+
+  const timeLimitReached = () => softDeadline !== undefined && Date.now() >= softDeadline;
+  const requestFinalAnswer = (content: string, deliverAs: "steer" | "followUp") => {
+    if (finalAnswerSeen || finalizationRequested) return;
+    finalizationRequested = true;
+    pi.setActiveTools([]);
+    try {
+      pi.sendUserMessage(`${content}\n\nDo not call tools. Return the concise final answer as ordinary assistant text.`, { deliverAs });
+    } catch (error) {
+      policy = undefined;
+      policyError = `could not request the final answer: ${error instanceof Error ? error.message : String(error)}`;
+    }
+  };
+  const requestPartialAnswer = () => {
+    requestFinalAnswer(
+      "The investigation time limit has been reached. Stop investigating and answer now using only evidence already gathered. Clearly identify unfinished work and coverage gaps; the runtime will mark the result as partial.",
+      "steer",
+    );
+  };
+
   try {
     stopParentLivenessMonitor = installLiveness(() => cleanupPrivateRuntimeFiles(policyPath, readyPath));
     const loaded = loadPolicy();
     policy = loaded.policy;
     policyPath = loaded.policyPath;
     readyPath = loadReadyPath(loaded.policyPath);
-    if (policy.capability !== "local") webExtensionPath = loadWebExtensionPath();
+    softDeadline = loadSoftDeadline();
+    if (policy.capability === "web") webExtensionPath = loadWebExtensionPath();
   } catch (error) {
     policyError = error instanceof Error ? error.message : String(error);
   }
 
-  pi.on("message_end", (event) => {
-    if (event.message.role !== "assistant") return;
-    const toolCalls = event.message.content.filter((part) => part.type === "toolCall");
-    const reportCalls = toolCalls.filter((part) => part.name === REPORT_TOOL_NAME);
-    if (reportCalls.length === 0 || toolCalls.length === 1) return;
-    for (const reportCall of reportCalls) mixedReportToolCallIds.add(reportCall.id);
+  pi.on("turn_end", (event) => {
+    const content = event.message.content;
+    const hasToolCall = content.some((part) => part.type === "toolCall");
+    const hasText = content.some((part) => part.type === "text" && part.text.trim().length > 0);
+    finalAnswerSeen = hasText
+      && !hasToolCall
+      && event.message.stopReason !== "error"
+      && event.message.stopReason !== "aborted"
+      && event.message.stopReason !== "toolUse";
   });
 
-  pi.on("turn_end", () => {
-    mixedReportToolCallIds.clear();
+  pi.on("agent_start", () => {
+    finalAnswerSeen = false;
+  });
+
+  pi.on("agent_end", () => {
+    if (!policy || finalAnswerSeen || finalizationRequested) return;
+    if (timeLimitReached()) {
+      requestPartialAnswer();
+      return;
+    }
+    requestFinalAnswer(
+      "The investigation ended without a final answer. Do not investigate further; answer using only evidence already gathered and state any uncertainty or coverage gap.",
+      "followUp",
+    );
   });
 
   pi.on("session_shutdown", () => {
+    if (softDeadlineTimer) clearTimeout(softDeadlineTimer);
     stopParentLivenessMonitor?.();
   });
 
   pi.on("session_start", () => {
-    if (!policy || !readyPath || (policy.capability !== "local" && !webExtensionPath)) {
+    if (!policy || !readyPath || (policy.capability === "web" && !webExtensionPath)) {
       pi.setActiveTools([]);
       return;
     }
     const tools = pi.getAllTools();
     const activeTools = toolsForCapability(policy.capability);
-    if (policy.capability !== "web") {
+    if (policy.capability === "local") {
       for (const name of ALLOWED_FILE_TOOLS) {
         const tool = tools.find((candidate) => candidate.name === name);
         if (!tool || tool.sourceInfo?.source !== "builtin") {
@@ -269,7 +268,7 @@ export default function childGuard(
         }
       }
     }
-    if (policy.capability !== "local") {
+    if (policy.capability === "web") {
       for (const name of ALLOWED_WEB_TOOLS) {
         const tool = tools.find((candidate) => candidate.name === name);
         const sourcePath = canonicalSourcePath(tool?.sourceInfo?.path);
@@ -290,33 +289,36 @@ export default function childGuard(
       return;
     }
     pi.setActiveTools(activeTools);
+    if (softDeadline !== undefined) {
+      softDeadlineTimer = setTimeout(requestPartialAnswer, Math.max(0, softDeadline - Date.now()));
+      softDeadlineTimer.unref?.();
+    }
   });
 
   pi.on("tool_call", async (event) => {
-    if (!policy || (policy.capability !== "local" && !webExtensionPath)) {
+    if (!policy || (policy.capability === "web" && !webExtensionPath)) {
       return { block: true, reason: `Subagent policy is unavailable: ${policyError ?? "unknown error"}`, terminate: true };
+    }
+    const deadlineExpired = timeLimitReached();
+    if (deadlineExpired) requestPartialAnswer();
+    if (deadlineExpired || finalizationRequested) {
+      return { block: true, reason: "Finalization has started; return the final answer without further tool calls" };
     }
     const allowed = new Set(toolsForCapability(policy.capability));
     if (!allowed.has(event.toolName)) {
-      return { block: true, reason: `Tool ${event.toolName} is not allowed in the subagent`, terminate: true };
+      return {
+        block: true,
+        reason: `Tool ${event.toolName} is not allowed in the subagent. Use an available tool or return the final answer`,
+      };
     }
 
     const tool = pi.getAllTools().find((candidate) => candidate.name === event.toolName);
-    if (event.toolName === REPORT_TOOL_NAME) {
-      if (canonicalSourcePath(tool?.sourceInfo?.path) !== canonicalSourcePath(CHILD_GUARD_SOURCE_PATH)) {
-        return { block: true, reason: "Structured report tool ownership changed", terminate: true };
-      }
-      if (mixedReportToolCallIds.delete(event.toolCallId)) {
-        return { block: true, reason: "Submit the structured report as the only tool call in a final turn; finish any other investigation first, then retry the report alone" };
-      }
-      return;
-    }
     if (FILE_TOOLS.has(event.toolName)) {
       if (tool?.sourceInfo?.source !== "builtin") {
         return { block: true, reason: `Tool ${event.toolName} ownership changed`, terminate: true };
       }
       const path = requestedPath(event.toolName, event.input);
-      if (path === undefined) return { block: true, reason: `${event.toolName} requires a path`, terminate: true };
+      if (path === undefined) return { block: true, reason: `${event.toolName} requires a path` };
       try {
         (event.input as Record<string, unknown>).path = await authorizeReadPath(policy, path);
       } catch (error) {
@@ -330,8 +332,10 @@ export default function childGuard(
         return { block: true, reason: `Tool ${event.toolName} ownership changed`, terminate: true };
       }
       const input = event.input && typeof event.input === "object" ? event.input as Record<string, unknown> : {};
-      const error = validateWebCall(event.toolName, input);
-      if (error) return { block: true, reason: error, terminate: true };
+      const violation = validateWebCall(event.toolName, input);
+      if (violation) {
+        return { block: true, reason: `${violation}. Retry with allowed bounded inputs or return the final answer.` };
+      }
       return;
     }
   });

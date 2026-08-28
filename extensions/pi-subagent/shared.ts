@@ -4,22 +4,20 @@ import { dirname, isAbsolute, join, relative, resolve, sep } from "node:path";
 import { fileURLToPath } from "node:url";
 
 export const TOOL_NAME = "pi_subagent";
-export const REPORT_TOOL_NAME = "submit_subagent_report";
 export const ALLOWED_FILE_TOOLS = ["read", "grep", "find", "ls"] as const;
 export const ALLOWED_WEB_TOOLS = ["web_search", "source_check", "fetch_content", "get_search_content"] as const;
-export const ALLOWED_CHILD_TOOLS = [...ALLOWED_FILE_TOOLS, ...ALLOWED_WEB_TOOLS] as const;
 export const MAX_SCOPE_ROOTS = 8;
 export const MAX_SUBAGENT_CALLS = 3;
 export const MAX_FINAL_BYTES = 12 * 1024;
-export const MAX_STRUCTURED_REPORT_BYTES = 8 * 1024;
 export const MAX_PARENT_ERROR_BYTES = 4 * 1024;
-export const MAX_STDERR_BYTES = 64 * 1024;
 export const MAX_JSON_LINE_BYTES = 2 * 1024 * 1024;
 export const CHILD_TIMEOUT_MS = 20 * 60 * 1000;
+export const CHILD_FINALIZATION_GRACE_MS = 2 * 60 * 1000;
 export const POLICY_ENV = "PI_SUBAGENT_POLICY_FILE";
 export const READY_ENV = "PI_SUBAGENT_READY_FILE";
 export const READY_MARKER = "pi-subagent-guard-ready-v1\n";
 export const WEB_EXTENSION_ENV = "PI_SUBAGENT_WEB_EXTENSION_PATH";
+export const SOFT_DEADLINE_ENV = "PI_SUBAGENT_SOFT_DEADLINE_EPOCH_MS";
 
 export function invocationLimitBlock(): { block: true; reason: string } {
   return {
@@ -28,40 +26,35 @@ export function invocationLimitBlock(): { block: true; reason: string } {
   };
 }
 
-export const THINKING_LEVELS = ["low", "medium", "high", "xhigh", "max"] as const;
-export type Thinking = (typeof THINKING_LEVELS)[number];
+export type Thinking = "low" | "medium";
 
 export const SUBAGENT_PRESETS = {
   "lookup-standard": { model: "openai-codex/gpt-5.6-luna", thinking: "low" },
-  "lookup-balanced": { model: "openai-codex/gpt-5.6-luna", thinking: "medium" },
-  "lookup-deep": { model: "openai-codex/gpt-5.6-luna", thinking: "high" },
-  "analysis-standard": { model: "openai-codex/gpt-5.6-terra", thinking: "high" },
-  "analysis-deep": { model: "openai-codex/gpt-5.6-terra", thinking: "xhigh" },
-  "review-standard": { model: "openai-codex/gpt-5.6-sol", thinking: "high" },
-  "review-deep": { model: "openai-codex/gpt-5.6-sol", thinking: "xhigh" },
-  "review-exhaustive": { model: "openai-codex/gpt-5.6-sol", thinking: "max" },
+  "analysis-standard": { model: "openai-codex/gpt-5.6-terra", thinking: "medium" },
+  "review-standard": { model: "openai-codex/gpt-5.6-sol", thinking: "medium" },
 } as const satisfies Record<string, { model: string; thinking: Thinking }>;
 export type Preset = keyof typeof SUBAGENT_PRESETS;
 export const PRESET_NAMES = Object.keys(SUBAGENT_PRESETS) as Preset[];
 
-export function legacyPreset(profile: unknown, thinking: unknown): Preset | undefined {
-  if (profile === "lookup") {
-    if (thinking === "low") return "lookup-standard";
-    if (thinking === "medium") return "lookup-balanced";
-    if (thinking === "high" || thinking === "xhigh" || thinking === "max") return "lookup-deep";
-  }
-  if (profile === "analysis") {
-    if (thinking === "xhigh" || thinking === "max") return "analysis-deep";
-    if (THINKING_LEVELS.includes(thinking as Thinking)) return "analysis-standard";
-  }
-  if (profile === "review") {
-    if (thinking === "max") return "review-exhaustive";
-    if (thinking === "xhigh") return "review-deep";
-    if (THINKING_LEVELS.includes(thinking as Thinking)) return "review-standard";
-  }
-  return undefined;
+const LEGACY_PRESETS: Readonly<Record<string, Preset>> = {
+  "lookup-standard": "lookup-standard",
+  "lookup-balanced": "lookup-standard",
+  "lookup-deep": "lookup-standard",
+  "analysis-standard": "analysis-standard",
+  "analysis-deep": "analysis-standard",
+  "analysis-exhaustive": "analysis-standard",
+  "review-standard": "review-standard",
+  "review-deep": "review-standard",
+  "review-exhaustive": "review-standard",
+};
+
+export function normalizePreset(preset: unknown, profile: unknown): Preset | undefined {
+  if (preset !== undefined) return typeof preset === "string" ? LEGACY_PRESETS[preset] : undefined;
+  return typeof profile === "string" ? LEGACY_PRESETS[`${profile}-standard`] : undefined;
 }
-export type Capability = "local" | "web" | "both";
+
+export type Capability = "local" | "web";
+export type ResultStatus = "complete" | "partial";
 export type ScopeRoot = { path: string; kind: "file" | "directory" };
 export type ChildPolicy = { version: 1; cwd: string; capability: Capability; roots: ScopeRoot[] };
 
@@ -75,7 +68,6 @@ export type SubagentFailurePhase =
   | "process"
   | "readiness"
   | "model"
-  | "report"
   | "output"
   | "cleanup";
 
@@ -86,17 +78,12 @@ export type SubagentFailureDiagnostics = {
   durationMs?: number;
   assistantMessages?: number;
   lastAssistantMode?: "none" | "empty" | "text" | "tool" | "mixed";
-  reportAttempts?: number;
-  reportSuccesses?: number;
-  reportErrors?: number;
   toolErrors?: number;
   lastToolError?: string;
 };
 
 export function toolsForCapability(capability: Capability): string[] {
-  if (capability === "local") return [...ALLOWED_FILE_TOOLS, REPORT_TOOL_NAME];
-  if (capability === "web") return [...ALLOWED_WEB_TOOLS, REPORT_TOOL_NAME];
-  return [...ALLOWED_CHILD_TOOLS, REPORT_TOOL_NAME];
+  return capability === "local" ? [...ALLOWED_FILE_TOOLS] : [...ALLOWED_WEB_TOOLS];
 }
 
 const PATH_CONTROL_RE = /[\u0000-\u001f\u007f-\u009f\u202a-\u202e\u2066-\u2069]/;
@@ -136,16 +123,19 @@ export function normalizeInputPath(input: string, cwd: string): string {
 export async function buildChildPolicy(
   cwdInput: string,
   scopeInputs: readonly string[],
-  capability: Capability = "both",
+  capability: Capability = "local",
 ): Promise<ChildPolicy> {
+  if (capability !== "local" && capability !== "web") {
+    throw new Error("capability must be local or web");
+  }
   if (scopeInputs.length > MAX_SCOPE_ROOTS) {
     throw new Error(`scope must contain 0-${MAX_SCOPE_ROOTS} paths`);
   }
   if (capability === "web" && scopeInputs.length !== 0) {
     throw new Error("web capability requires an empty local scope");
   }
-  if ((capability === "local" || capability === "both") && scopeInputs.length === 0) {
-    throw new Error(`${capability} capability requires at least one local scope path`);
+  if (capability === "local" && scopeInputs.length === 0) {
+    throw new Error("local capability requires at least one local scope path");
   }
   const cwd = await realpath(resolve(cwdInput));
   const cwdInfo = await stat(cwd);
@@ -352,9 +342,6 @@ function failureDiagnosticSuffix(diagnostics: SubagentFailureDiagnostics): strin
     ...(Number.isFinite(diagnostics.durationMs) ? { durationMs: Math.max(0, Math.round(diagnostics.durationMs!)) } : {}),
     ...(Number.isInteger(diagnostics.assistantMessages) ? { assistantMessages: diagnostics.assistantMessages } : {}),
     ...(diagnostics.lastAssistantMode ? { lastAssistantMode: diagnostics.lastAssistantMode } : {}),
-    ...(Number.isInteger(diagnostics.reportAttempts) ? { reportAttempts: diagnostics.reportAttempts } : {}),
-    ...(Number.isInteger(diagnostics.reportSuccesses) ? { reportSuccesses: diagnostics.reportSuccesses } : {}),
-    ...(Number.isInteger(diagnostics.reportErrors) ? { reportErrors: diagnostics.reportErrors } : {}),
     ...(Number.isInteger(diagnostics.toolErrors) ? { toolErrors: diagnostics.toolErrors } : {}),
     ...(diagnostics.lastToolError ? { lastToolError: safeDiagnosticText(diagnostics.lastToolError) } : {}),
   };

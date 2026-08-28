@@ -3,7 +3,7 @@ import { mkdtemp, mkdir, readFile, rm, symlink, writeFile } from "node:fs/promis
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { describe, test } from "node:test";
-import childGuard, { CHILD_GUARD_SOURCE_PATH } from "./child-guard.ts";
+import childGuard from "./child-guard.ts";
 import {
   ALLOWED_FILE_TOOLS,
   ALLOWED_WEB_TOOLS,
@@ -11,13 +11,17 @@ import {
   POLICY_ENV,
   READY_ENV,
   READY_MARKER,
-  REPORT_TOOL_NAME,
+  SOFT_DEADLINE_ENV,
   WEB_EXTENSION_ENV,
 } from "./shared.ts";
 
 type Handler = (...args: any[]) => any;
 
-async function createHarness(scope: string[], capability: "local" | "web" | "both" = "both") {
+async function createHarness(
+  scope: string[],
+  capability: "local" | "web" = "local",
+  softDeadline = Date.now() + 60_000,
+) {
   const root = await mkdtemp(join(tmpdir(), "pi-subagent-guard-test-"));
   const workspace = join(root, "workspace");
   await mkdir(join(workspace, "allowed"), { recursive: true });
@@ -33,23 +37,20 @@ async function createHarness(scope: string[], capability: "local" | "web" | "bot
   const previousPolicy = process.env[POLICY_ENV];
   const previousReady = process.env[READY_ENV];
   const previousWeb = process.env[WEB_EXTENSION_ENV];
+  const previousDeadline = process.env[SOFT_DEADLINE_ENV];
   process.env[POLICY_ENV] = policyFile;
   process.env[READY_ENV] = readyFile;
   process.env[WEB_EXTENSION_ENV] = webExtension;
+  process.env[SOFT_DEADLINE_ENV] = String(softDeadline);
 
   const handlers = new Map<string, Handler[]>();
+  const sentUserMessages: Array<{ content: string; options: unknown }> = [];
   let activeTools: string[] = [];
   const tools = [
     ...ALLOWED_FILE_TOOLS.map((name) => ({ name, sourceInfo: { source: "builtin", path: `<builtin:${name}>` } })),
     ...ALLOWED_WEB_TOOLS.map((name) => ({ name, sourceInfo: { source: "local", path: webExtension } })),
   ];
   const pi = {
-    registerTool(definition: any) {
-      tools.push({
-        ...definition,
-        sourceInfo: { source: "local", path: CHILD_GUARD_SOURCE_PATH },
-      });
-    },
     on(name: string, handler: Handler) {
       handlers.set(name, [...(handlers.get(name) ?? []), handler]);
     },
@@ -58,6 +59,9 @@ async function createHarness(scope: string[], capability: "local" | "web" | "bot
     },
     setActiveTools(names: string[]) {
       activeTools = names;
+    },
+    sendUserMessage(content: string, options: unknown) {
+      sentUserMessages.push({ content, options });
     },
   };
   childGuard(pi as any, () => () => undefined);
@@ -78,24 +82,28 @@ async function createHarness(scope: string[], capability: "local" | "web" | "bot
     tools,
     emit,
     getActiveTools: () => activeTools,
+    getSentUserMessages: () => sentUserMessages,
     async cleanup() {
+      await emit("session_shutdown");
       if (previousPolicy === undefined) delete process.env[POLICY_ENV];
       else process.env[POLICY_ENV] = previousPolicy;
       if (previousReady === undefined) delete process.env[READY_ENV];
       else process.env[READY_ENV] = previousReady;
       if (previousWeb === undefined) delete process.env[WEB_EXTENSION_ENV];
       else process.env[WEB_EXTENSION_ENV] = previousWeb;
+      if (previousDeadline === undefined) delete process.env[SOFT_DEADLINE_ENV];
+      else process.env[SOFT_DEADLINE_ENV] = previousDeadline;
       await rm(root, { recursive: true, force: true });
     },
   };
 }
 
 describe("pi-subagent child guard", () => {
-  test("activates only the owned local and web tool allowlist", async () => {
-    const harness = await createHarness(["allowed"], "both");
+  test("activates only the owned web tool allowlist", async () => {
+    const harness = await createHarness([], "web");
     try {
       await harness.emit("session_start");
-      assert.deepEqual(harness.getActiveTools(), [...ALLOWED_FILE_TOOLS, ...ALLOWED_WEB_TOOLS, REPORT_TOOL_NAME]);
+      assert.deepEqual(harness.getActiveTools(), [...ALLOWED_WEB_TOOLS]);
       assert.equal(await readFile(harness.readyFile, "utf8"), READY_MARKER);
       const webTool = harness.tools.find((tool) => tool.name === "web_search")!;
       webTool.sourceInfo.path = join(harness.root, "other-extension.ts");
@@ -106,6 +114,7 @@ describe("pi-subagent child guard", () => {
         input: { query: "test" },
       });
       assert.equal(changedOwner.block, true);
+      assert.equal(changedOwner.terminate, true);
       assert.match(changedOwner.reason, /ownership changed/);
     } finally {
       await harness.cleanup();
@@ -126,11 +135,11 @@ describe("pi-subagent child guard", () => {
     }
   });
 
-  test("allows scoped reads and blocks local path escapes", async () => {
+  test("allows scoped reads and keeps ordinary denials recoverable", async () => {
     const harness = await createHarness(["allowed"], "local");
     try {
       await harness.emit("session_start");
-      assert.deepEqual(harness.getActiveTools(), [...ALLOWED_FILE_TOOLS, REPORT_TOOL_NAME]);
+      assert.deepEqual(harness.getActiveTools(), [...ALLOWED_FILE_TOOLS]);
       assert.equal(await harness.emit("tool_call", {
         toolName: "read",
         toolCallId: "inside",
@@ -158,6 +167,12 @@ describe("pi-subagent child guard", () => {
         input: { command: "pwd" },
       });
       assert.equal(bash.block, true);
+      assert.equal(bash.terminate, undefined);
+      assert.equal(await harness.emit("tool_call", {
+        toolName: "read",
+        toolCallId: "inside-after-denials",
+        input: { path: "allowed/inside.txt" },
+      }), undefined);
     } finally {
       await harness.cleanup();
     }
@@ -185,114 +200,107 @@ describe("pi-subagent child guard", () => {
     }
   });
 
-  test("accepts one bounded structured report through the guard-owned terminating tool", async () => {
+  test("requests final assistant text once after a tool-only ending", async () => {
     const harness = await createHarness(["allowed"], "local");
+    const toolOnlyTurn = {
+      message: {
+        role: "assistant",
+        stopReason: "toolUse",
+        content: [{ type: "toolCall", id: "last-tool", name: "read", arguments: { path: "allowed/inside.txt" } }],
+      },
+    };
     try {
       await harness.emit("session_start");
-      const reportTool = harness.tools.find((tool) => tool.name === REPORT_TOOL_NAME)! as any;
-      assert.equal(await harness.emit("tool_call", {
-        toolName: REPORT_TOOL_NAME,
-        toolCallId: "report",
-        input: {},
-      }), undefined);
-      const findings = Array.from({ length: 10 }, (_, index) => ({
-        title: `Finding ${index + 1}`,
-        detail: "Material conclusion only",
-        evidence: ["allowed/inside.txt:1"],
-      }));
-      const result = await reportTool.execute("report", {
-        conclusion: "The bounded investigation is complete.",
-        findings,
-        alternatives: [],
-        uncertainties: [],
-        coverageGaps: [],
-      });
-      assert.equal(result.terminate, true);
-      assert.match(result.content[0].text, /Finding 10/);
-      assert.equal(result.details.findingCount, 10);
-      await assert.rejects(() => reportTool.execute("oversized-report", {
-        conclusion: "x".repeat(1200),
-        findings: Array.from({ length: 10 }, (_, index) => ({
-          title: `Finding ${index + 1}`,
-          detail: "d".repeat(700),
-          evidence: ["e".repeat(400), "f".repeat(400), "g".repeat(400)],
-        })),
-      }), /Structured report exceeds.*does not count/);
+      await harness.emit("agent_start");
+      await harness.emit("turn_end", toolOnlyTurn);
+      await harness.emit("agent_end", { messages: [] });
+      assert.equal(harness.getSentUserMessages().length, 1);
+      assert.match(harness.getSentUserMessages()[0]!.content, /ended without a final answer/);
+      assert.match(harness.getSentUserMessages()[0]!.content, /ordinary assistant text/);
+      assert.deepEqual(harness.getSentUserMessages()[0]!.options, { deliverAs: "followUp" });
+      assert.deepEqual(harness.getActiveTools(), []);
 
-      reportTool.sourceInfo.path = join(harness.root, "replacement.ts");
-      await writeFile(reportTool.sourceInfo.path, "export default () => {};\n");
-      const changedOwner = await harness.emit("tool_call", {
-        toolName: REPORT_TOOL_NAME,
-        toolCallId: "changed-report",
-        input: {},
+      await harness.emit("agent_start");
+      await harness.emit("turn_end", toolOnlyTurn);
+      await harness.emit("agent_end", { messages: [] });
+      assert.equal(harness.getSentUserMessages().length, 1);
+
+      const blockedRead = await harness.emit("tool_call", {
+        toolName: "read",
+        toolCallId: "post-finalization-read",
+        input: { path: "allowed/inside.txt" },
       });
-      assert.equal(changedOwner.block, true);
-      assert.match(changedOwner.reason, /ownership changed/);
+      assert.equal(blockedRead.block, true);
+      assert.match(blockedRead.reason, /Finalization has started/);
     } finally {
       await harness.cleanup();
     }
   });
 
-  test("requires the structured report to be the only tool call in its final turn", async () => {
+  test("accepts an ordinary final answer without requesting another turn", async () => {
     const harness = await createHarness(["allowed"], "local");
     try {
       await harness.emit("session_start");
-
-      for (const reportFirst of [true, false]) {
-        const suffix = reportFirst ? "report-first" : "read-first";
-        const reportCall = { type: "toolCall", id: `report-${suffix}`, name: REPORT_TOOL_NAME, arguments: {} };
-        const readCall = { type: "toolCall", id: `read-${suffix}`, name: "read", arguments: { path: "allowed/inside.txt" } };
-        await harness.emit("message_end", {
-          message: { role: "assistant", content: reportFirst ? [reportCall, readCall] : [readCall, reportCall] },
-        });
-
-        const calls = reportFirst ? [reportCall, readCall] : [readCall, reportCall];
-        for (const call of calls) {
-          const result = await harness.emit("tool_call", {
-            toolName: call.name,
-            toolCallId: call.id,
-            input: call.arguments,
-          });
-          if (call.name === REPORT_TOOL_NAME) {
-            assert.equal(result.block, true);
-            assert.match(result.reason, /only tool call/);
-            assert.equal(result.terminate, undefined);
-          } else {
-            assert.equal(result, undefined);
-          }
-        }
-      }
-
-      const firstReport = { type: "toolCall", id: "duplicate-report-1", name: REPORT_TOOL_NAME, arguments: {} };
-      const secondReport = { type: "toolCall", id: "duplicate-report-2", name: REPORT_TOOL_NAME, arguments: {} };
-      await harness.emit("message_end", {
-        message: { role: "assistant", content: [firstReport, secondReport] },
+      await harness.emit("agent_start");
+      await harness.emit("turn_end", {
+        message: {
+          role: "assistant",
+          stopReason: "stop",
+          content: [{ type: "text", text: "Concise conclusion with evidence." }],
+        },
       });
-      for (const call of [firstReport, secondReport]) {
-        const result = await harness.emit("tool_call", {
-          toolName: call.name,
-          toolCallId: call.id,
-          input: call.arguments,
-        });
-        assert.equal(result.block, true);
-        assert.match(result.reason, /only tool call/);
-      }
-
-      const standaloneReport = { type: "toolCall", id: "standalone-report", name: REPORT_TOOL_NAME, arguments: {} };
-      await harness.emit("message_end", {
-        message: { role: "assistant", content: [standaloneReport] },
-      });
-      assert.equal(await harness.emit("tool_call", {
-        toolName: standaloneReport.name,
-        toolCallId: standaloneReport.id,
-        input: standaloneReport.arguments,
-      }), undefined);
+      await harness.emit("agent_end", { messages: [] });
+      assert.equal(harness.getSentUserMessages().length, 0);
+      assert.deepEqual(harness.getActiveTools(), [...ALLOWED_FILE_TOOLS]);
     } finally {
       await harness.cleanup();
     }
   });
 
-  test("enforces bounded HTTP(S) web calls and non-interactive search", async () => {
+  test("steers one text finalization and blocks new tools after the soft deadline", async () => {
+    const harness = await createHarness(["allowed"], "local", Date.now() - 1);
+    try {
+      await harness.emit("session_start");
+      await new Promise((resolve) => setTimeout(resolve, 10));
+      assert.equal(harness.getSentUserMessages().length, 1);
+      assert.match(harness.getSentUserMessages()[0]!.content, /time limit has been reached/);
+      assert.match(harness.getSentUserMessages()[0]!.content, /coverage gaps/);
+      assert.deepEqual(harness.getSentUserMessages()[0]!.options, { deliverAs: "steer" });
+      assert.deepEqual(harness.getActiveTools(), []);
+
+      const blockedRead = await harness.emit("tool_call", {
+        toolName: "read",
+        toolCallId: "late-read",
+        input: { path: "allowed/inside.txt" },
+      });
+      assert.equal(blockedRead.block, true);
+      assert.match(blockedRead.reason, /Finalization has started/);
+      await harness.emit("agent_end", { messages: [] });
+      assert.equal(harness.getSentUserMessages().length, 1);
+    } finally {
+      await harness.cleanup();
+    }
+  });
+
+  test("enforces bounded web calls while allowing correction after every denied input", async () => {
+    const deniedCalls = [
+      ["web_search", { query: "test", includeContent: true }],
+      ["web_search", { queries: ["1", "2", "3", "4", "5"] }],
+      ["web_search", { query: "test", numResults: 11 }],
+      ["web_search", { query: "test", proxy: "http://127.0.0.1:8888" }],
+      ["web_search", { query: "test", provider: "all" }],
+      ["source_check", { claim: "test", numResults: 11 }],
+      ["source_check", { claim: "test", proxy: "http://127.0.0.1:8888" }],
+      ["fetch_content", { url: "https://example.com", forceClone: true }],
+      ["fetch_content", { url: "https://example.com", mode: "raw" }],
+      ["fetch_content", { url: "./secret.txt" }],
+      ["fetch_content", { url: "file:///etc/passwd" }],
+      ["fetch_content", { url: "https://user:pass@example.com" }],
+      ["fetch_content", { url: "https://example.com", auth: true }],
+      ["fetch_content", { urls: Array.from({ length: 6 }, (_, index) => `https://example.com/${index}`) }],
+      ["get_search_content", { responseId: "response-1", unknownFutureOption: true }],
+    ] as const;
+
     const harness = await createHarness([], "web");
     try {
       await harness.emit("session_start");
@@ -303,7 +311,6 @@ describe("pi-subagent child guard", () => {
         input: searchInput,
       }), undefined);
       assert.equal(searchInput.workflow, "none");
-
       assert.equal(await harness.emit("tool_call", {
         toolName: "source_check",
         toolCallId: "source-check",
@@ -320,40 +327,21 @@ describe("pi-subagent child guard", () => {
         input: { responseId: "response-1", findText: "manual" },
       }), undefined);
 
-      const blockedCalls = [
-        ["web_search", { query: "test", proxy: "http://127.0.0.1:8888" }],
-        ["web_search", { query: "test", provider: "all" }],
-        ["web_search", { query: "test", includeContent: true }],
-        ["web_search", { queries: ["1", "2", "3", "4", "5"] }],
-        ["web_search", { query: "test", numResults: 11 }],
-        ["source_check", { claim: "test", proxy: "http://127.0.0.1:8888" }],
-        ["fetch_content", { url: "./secret.txt" }],
-        ["fetch_content", { url: "file:///etc/passwd" }],
-        ["fetch_content", { url: "https://user:pass@example.com" }],
-        ["fetch_content", { url: "https://example.com", auth: true }],
-        ["fetch_content", { url: "https://example.com", forceClone: true }],
-        ["fetch_content", { url: "https://example.com", proxy: "http://127.0.0.1:8888" }],
-        ["fetch_content", { url: "https://example.com", mode: "answer", prompt: "summarize" }],
-        ["fetch_content", { url: "https://example.com", model: "custom" }],
-        ["fetch_content", { url: "https://example.com", timestamp: "1:00", frames: 4 }],
-        ["fetch_content", { urls: Array.from({ length: 6 }, (_, index) => `https://example.com/${index}`) }],
-        ["get_search_content", { responseId: "response-1", unknownFutureOption: true }],
-      ] as const;
-      for (const [toolName, input] of blockedCalls) {
+      for (const [toolName, input] of deniedCalls) {
         const result = await harness.emit("tool_call", {
           toolName,
-          toolCallId: `blocked-${toolName}`,
+          toolCallId: `denied-${toolName}`,
           input,
         });
         assert.equal(result.block, true, `${toolName}: ${JSON.stringify(input)}`);
+        assert.equal(result.terminate, undefined);
+        assert.match(result.reason, /Retry with allowed bounded inputs/);
+        assert.equal(await harness.emit("tool_call", {
+          toolName: "web_search",
+          toolCallId: `retry-after-${toolName}`,
+          input: { query: "still open" },
+        }), undefined);
       }
-
-      const readWithoutScope = await harness.emit("tool_call", {
-        toolName: "read",
-        toolCallId: "no-scope",
-        input: { path: "." },
-      });
-      assert.equal(readWithoutScope.block, true);
     } finally {
       await harness.cleanup();
     }

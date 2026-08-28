@@ -5,7 +5,6 @@
   "scripts": {
     "test": "node --experimental-strip-types --test *.test.ts",
     "eval:context": "python3 scripts/context_isolation_eval.py --mode context",
-    "eval:quality": "python3 scripts/context_isolation_eval.py --mode quality",
     "test:live:local": "python3 scripts/context_isolation_eval.py --mode smoke --capability local",
     "test:live:web": "python3 scripts/context_isolation_eval.py --mode smoke --capability web"
   }

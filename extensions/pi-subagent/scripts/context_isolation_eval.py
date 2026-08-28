@@ -23,13 +23,6 @@ WEB_TOOL_LOADER = AGENT_ROOT / "extensions" / "web-tool-loader.ts"
 WEB_TOOL_NAMES = {"web_search", "source_check", "fetch_content", "get_search_content"}
 INVESTIGATION_TOOLS = {"read", "grep", "find", "ls", "web_search", "fetch_content", "get_search_content", "source_check"}
 TOOL_SYNTAX_RE = re.compile(r"(?:^|\s)(?:to=|functions\.)\w+", re.I)
-PRESETS_BY_PROFILE = {
-    "lookup": ("lookup-standard", "lookup-balanced", "lookup-deep"),
-    "analysis": ("analysis-standard", "analysis-deep"),
-    "review": ("review-standard", "review-deep", "review-exhaustive"),
-}
-DEFAULT_PRESET = {profile: presets[0] for profile, presets in PRESETS_BY_PROFILE.items()}
-ALL_PRESETS = tuple(preset for presets in PRESETS_BY_PROFILE.values() for preset in presets)
 EVIDENCE_RE = re.compile(r"(?:fixture[/\\][^\s`:]+(?::\d+(?:-\d+)?)?|(?:incident|metrics|production|transfer)\.[a-z]+(?::\d+(?:-\d+)?)?)", re.I)
 
 
@@ -171,9 +164,9 @@ def run_pi(
     main_thinking: str,
     case: EvalCase,
     arm: str,
-    child_preset: str,
     timeout_seconds: int,
 ) -> dict[str, Any]:
+    child_preset = f"{case.profile}-standard"
     common = base_command(main_model, main_thinking)
     if arm == "direct":
         command = [*common, "--tools", "read,grep,find,ls"]
@@ -190,7 +183,7 @@ def run_pi(
         prompt = (
             "Use pi_subagent exactly once for the investigation. Pass capability=local, scope=[\"fixture\"], "
             f"and preset={child_preset}. Do not broadly re-read the delegated scope after "
-            f"the report; only synthesize it.\n\nObjective:\n{case.task}"
+            f"the result; only synthesize it.\n\nObjective:\n{case.task}"
         )
     started = time.monotonic()
     completed = subprocess.run(
@@ -213,7 +206,7 @@ def run_pi(
     investigative_calls = 0
     post_subagent_investigative_calls = 0
     subagent_finished = False
-    report_text = ""
+    result_text = ""
     final_text = ""
     for event in json_events(completed.stdout):
         if event.get("type") != "message_end" or not isinstance(event.get("message"), dict):
@@ -247,9 +240,9 @@ def run_pi(
             if message.get("toolName") == "pi_subagent":
                 subagent_finished = True
                 if not message.get("isError"):
-                    report_text = body
+                    result_text = body
 
-    quality_text = report_text if arm == "subagent" and report_text else final_text
+    quality_text = result_text if arm == "subagent" and result_text else final_text
     normalize = lambda value: " ".join(re.sub(r"[^0-9a-z가-힣]+", " ", value.casefold()).split())
     normalized_quality = normalize(quality_text)
     matched = sum(any(normalize(candidate) in normalized_quality for candidate in group) for group in case.expected_groups)
@@ -264,15 +257,15 @@ def run_pi(
         "parent_investigative_tool_result_bytes": investigative_tool_result_bytes,
         "parent_investigative_calls": investigative_calls,
         "post_subagent_investigative_calls": post_subagent_investigative_calls,
-        "report_bytes": len(report_text.encode("utf-8")),
+        "result_bytes": len(result_text.encode("utf-8")),
         "final_bytes": len(final_text.encode("utf-8")),
         "expected_facts_matched": matched,
         "expected_facts_total": len(case.expected_groups),
         "fact_recall": round(matched / len(case.expected_groups), 3),
         "has_evidence_location": bool(EVIDENCE_RE.search(quality_text)),
         "has_raw_tool_syntax": bool(TOOL_SYNTAX_RE.search(quality_text)),
-        "subagent_report_received": bool(report_text),
-        "report_text": report_text,
+        "subagent_result_received": bool(result_text),
+        "result_text": result_text,
     }
 
 
@@ -286,7 +279,7 @@ def run_smoke(args: argparse.Namespace) -> int:
         cwd = Path(temporary)
         command = [*base_command(args.main_model, args.main_thinking), "--extension", str(EXTENSION_ENTRY)]
         if args.capability == "local":
-            (cwd / "fixture.txt").write_text("SMOKE_MARKER=structured-local-report\n", encoding="utf-8")
+            (cwd / "fixture.txt").write_text("SMOKE_MARKER=plain-final-answer\n", encoding="utf-8")
             command += ["--tools", "pi_subagent"]
             prompt = (
                 "Call pi_subagent exactly once with capability=local, scope=[\"fixture.txt\"], "
@@ -316,7 +309,7 @@ def run_smoke(args: argparse.Namespace) -> int:
         diagnostic = re.sub(r"\s+", " ", completed.stderr).strip()[:500]
         raise SystemExit(f"live smoke process failed with {completed.returncode}: {diagnostic}")
 
-    reports: list[str] = []
+    answers: list[str] = []
     errors: list[str] = []
     parent_web_calls: list[str] = []
     for event in json_events(completed.stdout):
@@ -332,21 +325,17 @@ def run_smoke(args: argparse.Namespace) -> int:
                     parent_web_calls.append(str(name))
         elif message.get("role") == "toolResult" and message.get("toolName") == "pi_subagent":
             body = text_content(message.get("content"))
-            (errors if message.get("isError") else reports).append(body[:500] if message.get("isError") else body)
+            (errors if message.get("isError") else answers).append(body[:500] if message.get("isError") else body)
 
-    try:
-        structured = json.loads(reports[0]) if len(reports) == 1 else None
-    except json.JSONDecodeError:
-        structured = None
     checks = {
-        "exactly_one_report": len(reports) == 1,
+        "exactly_one_result": len(answers) == 1,
         "no_tool_error": not errors,
-        "structured_report": isinstance(structured, dict) and isinstance(structured.get("conclusion"), str) and isinstance(structured.get("findings"), list),
-        "within_8_kib": len(reports) == 1 and len(reports[0].encode("utf-8")) <= 8 * 1024,
-        "no_raw_tool_syntax": len(reports) == 1 and not TOOL_SYNTAX_RE.search(reports[0]),
-        "expected_fact": len(reports) == 1 and (
-            (args.capability == "local" and "structured-local-report" in reports[0])
-            or (args.capability == "web" and "example domain" in reports[0].casefold())
+        "non_empty_answer": len(answers) == 1 and bool(answers[0].strip()),
+        "within_12_kib": len(answers) == 1 and len(answers[0].encode("utf-8")) <= 12 * 1024,
+        "no_raw_tool_syntax": len(answers) == 1 and not TOOL_SYNTAX_RE.search(answers[0]),
+        "expected_fact": len(answers) == 1 and (
+            (args.capability == "local" and "plain-final-answer" in answers[0])
+            or (args.capability == "web" and "example domain" in answers[0].casefold())
         ),
         "no_parent_web_activation_or_calls": not parent_web_calls,
     }
@@ -355,7 +344,7 @@ def run_smoke(args: argparse.Namespace) -> int:
         "capability": args.capability,
         "status": "pass" if passed else "fail",
         "checks": checks,
-        "report_bytes": len(reports[0].encode("utf-8")) if len(reports) == 1 else 0,
+        "result_bytes": len(answers[0].encode("utf-8")) if len(answers) == 1 else 0,
         "errors": errors,
         "parent_web_calls": parent_web_calls,
     }, ensure_ascii=False, indent=2))
@@ -384,7 +373,7 @@ def summarize(results: list[dict[str, Any]]) -> dict[str, Any]:
             "direct": mean("parent_investigative_tool_result_bytes", direct),
             "subagent": mean("parent_investigative_tool_result_bytes", subagent),
         },
-        "subagent_reports_received": sum(bool(row["subagent_report_received"]) for row in subagent),
+        "subagent_results_received": sum(bool(row["subagent_result_received"]) for row in subagent),
         "raw_tool_syntax_results": sum(bool(row["has_raw_tool_syntax"]) for row in results),
         "post_subagent_investigative_calls": sum(int(row["post_subagent_investigative_calls"]) for row in subagent),
     }
@@ -399,15 +388,14 @@ def summarize(results: list[dict[str, Any]]) -> dict[str, Any]:
 
 def parse_args() -> argparse.Namespace:
     parser = argparse.ArgumentParser(description=__doc__)
-    parser.add_argument("--mode", choices=("context", "quality", "smoke"), default="context")
+    parser.add_argument("--mode", choices=("context", "smoke"), default="context")
     parser.add_argument("--main-model", default=f"{os.getenv('PI_PROVIDER', '')}/{os.getenv('PI_MODEL', '')}".strip("/"))
     parser.add_argument("--main-thinking", default=os.getenv("PI_REASONING_LEVEL", "high"))
     parser.add_argument("--case", choices=("all", *(case.name for case in CASES)), default="all")
     parser.add_argument("--capability", choices=("local", "web"), default="local")
-    parser.add_argument("--preset", action="append", choices=ALL_PRESETS)
     parser.add_argument("--repetitions", type=int, default=1)
     parser.add_argument("--timeout-seconds", type=int, default=1200)
-    parser.add_argument("--include-reports", action="store_true", help="include deterministic fixture reports for evaluator diagnostics")
+    parser.add_argument("--include-results", action="store_true", help="include deterministic fixture results for evaluator diagnostics")
     return parser.parse_args()
 
 
@@ -424,47 +412,27 @@ def main() -> int:
     with tempfile.TemporaryDirectory(prefix="pi-subagent-ab-") as temporary:
         cwd = Path(temporary)
         write_fixture(cwd)
-        if args.mode == "context":
-            for _ in range(args.repetitions):
-                for case in selected:
-                    results.append(run_pi(
-                        cwd=cwd,
-                        main_model=args.main_model,
-                        main_thinking=args.main_thinking,
-                        case=case,
-                        arm="direct",
-                        child_preset=DEFAULT_PRESET[case.profile],
-                        timeout_seconds=args.timeout_seconds,
-                    ))
-                    results.append(run_pi(
-                        cwd=cwd,
-                        main_model=args.main_model,
-                        main_thinking=args.main_thinking,
-                        case=case,
-                        arm="subagent",
-                        child_preset=DEFAULT_PRESET[case.profile],
-                        timeout_seconds=args.timeout_seconds,
-                    ))
-        else:
-            for _ in range(args.repetitions):
-                for case in selected:
-                    presets = args.preset or list(PRESETS_BY_PROFILE[case.profile])
-                    invalid = [preset for preset in presets if preset not in PRESETS_BY_PROFILE[case.profile]]
-                    if invalid:
-                        raise SystemExit(f"presets do not match {case.profile} case: {', '.join(invalid)}")
-                    for preset in presets:
-                        results.append(run_pi(
-                            cwd=cwd,
-                            main_model=args.main_model,
-                            main_thinking=args.main_thinking,
-                            case=case,
-                            arm="subagent",
-                            child_preset=preset,
-                            timeout_seconds=args.timeout_seconds,
-                        ))
-    if not args.include_reports:
+        for _ in range(args.repetitions):
+            for case in selected:
+                results.append(run_pi(
+                    cwd=cwd,
+                    main_model=args.main_model,
+                    main_thinking=args.main_thinking,
+                    case=case,
+                    arm="direct",
+                    timeout_seconds=args.timeout_seconds,
+                ))
+                results.append(run_pi(
+                    cwd=cwd,
+                    main_model=args.main_model,
+                    main_thinking=args.main_thinking,
+                    case=case,
+                    arm="subagent",
+                    timeout_seconds=args.timeout_seconds,
+                ))
+    if not args.include_results:
         for result in results:
-            result.pop("report_text", None)
+            result.pop("result_text", None)
     print(json.dumps({"scope": {
         "mode": args.mode,
         "main_model": args.main_model,

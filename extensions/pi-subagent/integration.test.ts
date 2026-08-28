@@ -5,8 +5,8 @@ import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { describe, test } from "node:test";
 import { fileURLToPath } from "node:url";
-import { runChild } from "./subprocess.ts";
-import { buildChildPolicy, MAX_PARENT_ERROR_BYTES } from "./shared.ts";
+import { ChildRunError, runChild } from "./subprocess.ts";
+import { buildChildPolicy, MAX_FINAL_BYTES, MAX_PARENT_ERROR_BYTES } from "./shared.ts";
 
 const FAKE_CHILD = fileURLToPath(new URL("./fixtures/fake-child.mjs", import.meta.url));
 const ABRUPT_PARENT = fileURLToPath(new URL("./fixtures/abrupt-parent.mjs", import.meta.url));
@@ -22,7 +22,7 @@ async function withFixture<T>(scenario: string, run: (options: Parameters<typeof
       policy,
       policyFile,
       readyFile,
-      task: "Inspect the deterministic fixture and submit the requested report.",
+      task: "Inspect the deterministic fixture and return the requested final answer.",
       model: "test/fake",
       thinking: "low",
       invocationOverride: {
@@ -47,29 +47,44 @@ async function waitForProcessExit(pid: number, timeoutMs = 3_000): Promise<void>
 }
 
 describe("pi-subagent spawned-child integration", () => {
-  test("returns only the structured report from a real child process", async () => {
+  test("returns only the final assistant answer from a real child process", async () => {
     const result = await withFixture("success", (options) => runChild(options));
-    assert.deepEqual(JSON.parse(result.output), {
-      conclusion: "Only this structured report may reach the parent.",
-      findings: [],
-    });
+    assert.equal(result.output, "Only this final assistant answer may reach the parent.");
+    assert.equal(result.status, "complete");
     assert.doesNotMatch(result.output, /intermediate|noisy child/);
+    assert.equal(result.contextTokens, Math.ceil(result.output.length / 4));
     assert.equal(result.usage.totalTokens, 48);
   });
 
-  test("records bounded diagnostics when a zero-exit child never submits the report tool", async () => {
+  test("runtime-labels an answer completed after the soft deadline as partial", async () => {
+    const result = await withFixture("partial-success", (options) => runChild({
+      ...options,
+      timeoutMs: 500,
+      killGraceMs: 50,
+    }));
+    assert.equal(result.status, "partial");
+    assert.equal(result.output, "The completed portion remains useful. Coverage is incomplete.");
+  });
+
+  test("sanitizes and truncates a large plain final answer at the parent boundary", async () => {
+    const result = await withFixture("oversized-output", (options) => runChild(options));
+    assert.equal(result.outputTruncated, true);
+    assert.ok(Buffer.byteLength(result.output, "utf8") <= MAX_FINAL_BYTES);
+    assert.equal(result.output.includes("�"), false);
+    assert.match(result.output, /Subagent output truncated/);
+  });
+
+  test("records bounded diagnostics when a zero-exit child has no final answer", async () => {
     await assert.rejects(
-      () => withFixture("missing-report", (options) => runChild(options)),
+      () => withFixture("empty-output", (options) => runChild(options)),
       (error: unknown) => {
         const message = error instanceof Error ? error.message : String(error);
-        assert.match(message, /exactly one structured final report; received 0/);
+        assert.match(message, /finished without a final assistant answer/);
         assert.match(message, /Subagent diagnostics/);
-        assert.match(message, /"phase":"report"/);
+        assert.match(message, /"phase":"output"/);
         assert.match(message, /"exitCode":0/);
         assert.match(message, /"stopReason":"stop"/);
-        assert.match(message, /"lastAssistantMode":"text"/);
-        assert.match(message, /"reportAttempts":0/);
-        assert.match(message, /"reportSuccesses":0/);
+        assert.match(message, /"lastAssistantMode":"empty"/);
         return true;
       },
     );
@@ -91,6 +106,19 @@ describe("pi-subagent spawned-child integration", () => {
     assert.match(message, /"stopReason":"error"/);
   });
 
+  test("discards child stderr on process failure", async () => {
+    await assert.rejects(
+      () => withFixture("process-error", (options) => runChild(options)),
+      (error: unknown) => {
+        const message = error instanceof Error ? error.message : String(error);
+        assert.match(message, /Subagent exited with code 7/);
+        assert.match(message, /"phase":"process"/);
+        assert.doesNotMatch(message, /private child stderr/);
+        return true;
+      },
+    );
+  });
+
   test("terminates a child process that ignores the timeout SIGTERM", async () => {
     const startedAt = Date.now();
     await assert.rejects(
@@ -103,6 +131,20 @@ describe("pi-subagent spawned-child integration", () => {
       },
     );
     assert.ok(Date.now() - startedAt < 2_000);
+  });
+
+  test("preserves reported usage when a started child later times out", async () => {
+    await assert.rejects(
+      () => withFixture("timeout-after-usage", (options) => runChild({ ...options, timeoutMs: 200, killGraceMs: 50 })),
+      (error: unknown) => {
+        assert.ok(error instanceof ChildRunError);
+        assert.equal(error.usage.totalTokens, 16);
+        assert.equal(error.usage.input, 10);
+        assert.equal(error.usage.cost.total, 0.034);
+        assert.match(error.message, /"phase":"timeout"/);
+        return true;
+      },
+    );
   });
 
   test("terminates a running child when the parent aborts", async () => {

@@ -3,16 +3,17 @@ import { tmpdir } from "node:os";
 import { join } from "node:path";
 import type { ExtensionAPI } from "@earendil-works/pi-coding-agent";
 import { StringEnum } from "@earendil-works/pi-ai";
+import { Text } from "@earendil-works/pi-tui";
 import { Type } from "typebox";
 import {
   boundedParentError,
   buildChildPolicy,
   MAX_SCOPE_ROOTS,
   invocationLimitBlock,
-  legacyPreset,
   makeCanonicalTempDirectory,
   MAX_SUBAGENT_CALLS,
   ModelInvocationGate,
+  normalizePreset,
   PRESET_NAMES,
   resolveWebExtensionPath,
   SUBAGENT_PRESETS,
@@ -21,16 +22,16 @@ import {
   type ChildPolicy,
   type Preset,
 } from "./shared.ts";
-import { runChild } from "./subprocess.ts";
+import { ChildRunError, formatResultSummary, runChild } from "./subprocess.ts";
 
 const PresetSchema = StringEnum(PRESET_NAMES, {
-  description: "Validated child model+thinking preset: lookup=luna, analysis=terra, review=sol; standard/balanced/deep/exhaustive select thinking depth",
+  description: "Child model preset: lookup-standard for fact-finding, analysis-standard for synthesis, or review-standard for adversarial review",
 });
-const CapabilitySchema = StringEnum(["local", "web", "both"] as const, {
-  description: "local=files only, web=public web only, both=files and public web",
+const CapabilitySchema = StringEnum(["local", "web"] as const, {
+  description: "local=files only, web=public web only; use separate calls when both sources are needed",
 });
 const Parameters = Type.Object({
-  task: Type.String({ minLength: 1, maxLength: 12_000, description: "One focused local and/or web investigation and required deliverable" }),
+  task: Type.String({ minLength: 1, maxLength: 12_000, description: "One focused local or web investigation and required deliverable" }),
   scope: Type.Array(Type.String({ minLength: 1, maxLength: 4096 }), {
     minItems: 0,
     maxItems: MAX_SCOPE_ROOTS,
@@ -43,12 +44,15 @@ const Parameters = Type.Object({
 export default function piSubagentExtension(pi: ExtensionAPI): void {
   const gate = new ModelInvocationGate();
   const authorizedCalls = new Set<string>();
+  // Pi turns thrown tool errors into fresh results; reattach the child's nested usage in tool_result.
+  const failedUsage = new Map<string, ChildRunError["usage"]>();
   let ownSourcePath: string | undefined;
 
   const currentOwnSource = () => pi.getAllTools().find((tool) => tool.name === TOOL_NAME)?.sourceInfo?.path;
   const clearRun = () => {
     gate.endRun();
     authorizedCalls.clear();
+    failedUsage.clear();
   };
 
   pi.registerTool({
@@ -60,10 +64,9 @@ export default function piSubagentExtension(pi: ExtensionAPI): void {
     prepareArguments(args) {
       if (!args || typeof args !== "object") return args;
       const input = args as Record<string, unknown>;
-      if (typeof input.preset === "string") return args;
-      const preset = legacyPreset(input.profile, input.thinking);
+      const preset = normalizePreset(input.preset, input.profile);
       if (!preset) return args;
-      const { profile: _profile, thinking: _thinking, ...rest } = input;
+      const { profile: _profile, thinking: _thinking, preset: _preset, ...rest } = input;
       return { ...rest, preset };
     },
     async execute(toolCallId, params, signal, onUpdate, ctx) {
@@ -84,7 +87,7 @@ export default function piSubagentExtension(pi: ExtensionAPI): void {
           if (params.task.includes("\0")) throw new Error("task must not contain NUL bytes");
           const [provider, modelId] = model.split("/", 2);
           if (!ctx.modelRegistry.find(provider!, modelId!)) throw new Error(`Configured subagent model is unavailable: ${model}`);
-          if (capability !== "local") webExtensionPath = await resolveWebExtensionPath(pi.getAllTools());
+          if (capability === "web") webExtensionPath = await resolveWebExtensionPath(pi.getAllTools());
           policy = await buildChildPolicy(ctx.cwd, params.scope, capability);
         } catch (error) {
           gate.rejectPreflight(toolCallId);
@@ -127,11 +130,13 @@ export default function piSubagentExtension(pi: ExtensionAPI): void {
               model,
               thinking,
               scopeRoots: policy.roots.length,
-              webEnabled: capability !== "local",
+              webEnabled: capability === "web",
+              status: result.status,
               durationMs: result.durationMs,
               exitCode: result.exitCode,
               stopReason: result.stopReason,
               outputTruncated: result.outputTruncated,
+              contextTokens: result.contextTokens,
               usage: result.usage,
             },
             usage: result.usage,
@@ -150,8 +155,27 @@ export default function piSubagentExtension(pi: ExtensionAPI): void {
           }
         }
       } catch (error) {
+        if (error instanceof ChildRunError) failedUsage.set(toolCallId, error.usage);
         throw new Error(boundedParentError(error));
       }
+    },
+    renderResult(result, { expanded, isPartial }, theme) {
+      const text = result.content.find((part) => part.type === "text");
+      const output = text?.type === "text" ? text.text : "";
+      if (isPartial) return new Text(theme.fg("muted", output), 0, 0);
+
+      const details = result.details as {
+        status?: "complete" | "partial";
+        durationMs?: number;
+        contextTokens?: number;
+      } | undefined;
+      if (!details?.status || details.durationMs === undefined || details.contextTokens === undefined) {
+        return new Text(output, 0, 0);
+      }
+
+      const summary = formatResultSummary(details.status, details.durationMs, details.contextTokens);
+      const styled = theme.fg(details.status === "partial" ? "warning" : "success", summary);
+      return new Text(expanded && output ? `${styled}\n\n${output}` : styled, 0, 0);
     },
   });
 
@@ -161,6 +185,7 @@ export default function piSubagentExtension(pi: ExtensionAPI): void {
   });
   pi.on("agent_start", () => {
     authorizedCalls.clear();
+    failedUsage.clear();
     gate.startRun();
   });
   pi.on("tool_call", (event) => {
@@ -170,6 +195,12 @@ export default function piSubagentExtension(pi: ExtensionAPI): void {
       return invocationLimitBlock();
     }
     authorizedCalls.add(event.toolCallId);
+  });
+  pi.on("tool_result", (event) => {
+    if (event.toolName !== TOOL_NAME) return;
+    const usage = failedUsage.get(event.toolCallId);
+    failedUsage.delete(event.toolCallId);
+    if (usage) return { usage };
   });
   pi.on("agent_settled", clearRun);
   pi.on("session_shutdown", clearRun);
