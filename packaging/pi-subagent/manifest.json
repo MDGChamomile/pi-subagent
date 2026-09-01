@@ -1,7 +1,7 @@
 {
   "name": "@mdgchamomile/pi-subagent",
   "version": "0.2.2",
-  "description": "A bounded Pi subagent extension and companion investigation skill",
+  "description": "Run bounded, read-only Pi subagents without filling the parent context with intermediate investigation output",
   "type": "module",
   "license": "MIT",
   "keywords": [

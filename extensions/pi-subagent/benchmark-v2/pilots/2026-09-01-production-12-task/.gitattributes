@@ -1,0 +1,2 @@
+# Preserve the exact frozen prompt bytes, including the Arm-B separator space.
+prompts/*.txt whitespace=-trailing-space

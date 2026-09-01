@@ -1,0 +1,13 @@
+# Local model-visible snapshots and raw execution artifacts.
+raw/
+normalized/
+logs/
+snapshots/
+
+# Exact generated launch commands contain machine-local absolute paths. Keep
+# their pre-run digest, but do not publish the commands themselves.
+commands/
+
+# Full local archive manifest includes ignored execution artifacts. A separate
+# PUBLIC_SHA256SUMS covers the publishable pilot bundle.
+SHA256SUMS

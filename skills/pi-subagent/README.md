@@ -42,7 +42,7 @@ The three presets are:
 
 | Preset | Child profile | Use for |
 | --- | --- | --- |
-| `lookup-standard` | Luna / low | Bounded fact-finding |
+| `lookup-standard` | Luna / medium | Bounded fact-finding |
 | `analysis-standard` | Terra / medium | Synthesis and causal comparison |
 | `review-standard` | Sol / medium | Adversarial review |
 

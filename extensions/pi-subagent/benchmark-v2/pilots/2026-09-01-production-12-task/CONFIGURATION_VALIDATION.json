@@ -1,0 +1,48 @@
+{
+  "assigned_parent_runs": 72,
+  "expected": {
+    "analysis": {
+      "model": "openai-codex/gpt-5.6-terra",
+      "preset": "analysis-standard",
+      "thinking": "medium"
+    },
+    "lookup": {
+      "model": "openai-codex/gpt-5.6-luna",
+      "preset": "lookup-standard",
+      "thinking": "medium"
+    },
+    "review": {
+      "model": "openai-codex/gpt-5.6-sol",
+      "preset": "review-standard",
+      "thinking": "medium"
+    }
+  },
+  "mismatches": [],
+  "observed": [
+    {
+      "model": "openai-codex/gpt-5.6-terra",
+      "preset": "analysis-standard",
+      "profile": "analysis",
+      "runs": 12,
+      "thinking": "medium"
+    },
+    {
+      "model": "openai-codex/gpt-5.6-luna",
+      "preset": "lookup-standard",
+      "profile": "lookup",
+      "runs": 12,
+      "thinking": "medium"
+    },
+    {
+      "model": "openai-codex/gpt-5.6-sol",
+      "preset": "review-standard",
+      "profile": "review",
+      "runs": 12,
+      "thinking": "medium"
+    }
+  ],
+  "status": "pass",
+  "validated_delegated_runs": 36,
+  "validated_direct_runs": 36,
+  "validator_sha256": "75bd8785993f9dda240857bff41441cbe765cf9b81ff7d75aa32166ceabb6c15"
+}
