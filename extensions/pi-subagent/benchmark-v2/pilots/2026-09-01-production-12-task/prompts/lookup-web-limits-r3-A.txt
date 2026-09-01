@@ -1,0 +1,18 @@
+Arm instruction: Investigate directly with the available local read-only tools. Do not use or delegate to any subagent.
+
+Objective: Report the exact provenance checks required before enabling web child tools and the per-call and lifetime query/fetch limits. Include the pinned package version and describe what happens when a request would exceed a lifetime limit. Cite the implementation.
+
+Use only the frozen files visible in this snapshot. Do not modify files, run tests, invoke shell commands, or use the web. Answer in English.
+
+Return only this format:
+Conclusion
+<concise conclusion>
+
+Findings
+- <material claim>
+
+Evidence
+- path/to/file.ext:LINE[-LINE] — <what this supports>
+
+Uncertainties
+- <material uncertainty, or None>

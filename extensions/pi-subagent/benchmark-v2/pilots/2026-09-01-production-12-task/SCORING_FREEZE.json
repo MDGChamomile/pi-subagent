@@ -1,0 +1,1 @@
+{"frozen_utc":"2026-09-01T02:20:06.417365+00:00","note":"The first output was inspected only to validate orchestration and child telemetry; this makes all quality scoring exploratory.","outputs_inspected_before_freeze":["lookup-presets-r2-B"],"score_script_sha256":"99294b0e064e2fcbef137b0e56d19ddd31c3b8eae1365808d86ba29c3bc0e890","status":"frozen_before_bulk_output_inspection"}

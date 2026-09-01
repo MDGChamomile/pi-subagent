@@ -1,0 +1,266 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://github.com/MDGChamomile/pi-agent-kit/pi-subagent-benchmark-v2/task.schema.json",
+  "title": "Pi Subagent Benchmark v2 Task",
+  "type": "object",
+  "additionalProperties": false,
+  "required": [
+    "schema_version",
+    "task_id",
+    "profile",
+    "provenance",
+    "source",
+    "scope",
+    "objective",
+    "required_claims",
+    "evidence",
+    "judge_anchors",
+    "task_sha256"
+  ],
+  "properties": {
+    "schema_version": { "const": 1 },
+    "task_id": {
+      "type": "string",
+      "pattern": "^(lookup|analysis|review)-[a-z0-9][a-z0-9._-]{2,63}$"
+    },
+    "profile": { "enum": ["lookup", "analysis", "review"] },
+    "provenance": { "enum": ["historical_fix", "injected"] },
+    "source": { "$ref": "#/$defs/source" },
+    "scope": { "$ref": "#/$defs/scope" },
+    "objective": { "type": "string", "minLength": 20, "maxLength": 12000 },
+    "required_claims": {
+      "type": "array",
+      "minItems": 1,
+      "maxItems": 12,
+      "items": { "$ref": "#/$defs/claim" }
+    },
+    "evidence": {
+      "type": "array",
+      "minItems": 1,
+      "maxItems": 20,
+      "items": { "$ref": "#/$defs/evidence" }
+    },
+    "judge_anchors": { "$ref": "#/$defs/judgeAnchors" },
+    "task_sha256": { "$ref": "#/$defs/sha256" }
+  },
+  "allOf": [
+    {
+      "if": {
+        "properties": { "provenance": { "const": "historical_fix" } },
+        "required": ["provenance"]
+      },
+      "then": {
+        "properties": {
+          "source": { "required": ["oracle_commit"] }
+        }
+      }
+    },
+    {
+      "if": {
+        "properties": { "provenance": { "const": "injected" } },
+        "required": ["provenance"]
+      },
+      "then": {
+        "properties": {
+          "source": { "required": ["injection_patch_sha256"] }
+        }
+      }
+    }
+  ],
+  "$defs": {
+    "sha256": {
+      "type": "string",
+      "pattern": "^[0-9a-f]{64}$"
+    },
+    "commit": {
+      "type": "string",
+      "pattern": "^[0-9a-f]{40,64}$"
+    },
+    "source": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "repository_url",
+        "license_spdx",
+        "language",
+        "base_commit",
+        "snapshot_sha256"
+      ],
+      "properties": {
+        "repository_url": {
+          "type": "string",
+          "pattern": "^https://"
+        },
+        "license_spdx": { "type": "string", "minLength": 1, "maxLength": 80 },
+        "language": { "type": "string", "minLength": 1, "maxLength": 40 },
+        "base_commit": { "$ref": "#/$defs/commit" },
+        "oracle_commit": { "$ref": "#/$defs/commit" },
+        "snapshot_sha256": { "$ref": "#/$defs/sha256" },
+        "injection_patch_sha256": { "$ref": "#/$defs/sha256" }
+      }
+    },
+    "scope": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "roots",
+        "file_count",
+        "byte_count",
+        "size_tier",
+        "noise_tier",
+        "evidence_layout"
+      ],
+      "properties": {
+        "roots": {
+          "type": "array",
+          "minItems": 1,
+          "maxItems": 8,
+          "uniqueItems": true,
+          "items": {
+            "type": "string",
+            "minLength": 1,
+            "maxLength": 4096,
+            "not": { "pattern": "(^/)|(^|/)\\.\\.(/|$)|(^|/)\\.git(/|$)" }
+          }
+        },
+        "file_count": { "type": "integer", "minimum": 1, "maximum": 250 },
+        "byte_count": { "type": "integer", "minimum": 1, "maximum": 5242880 },
+        "size_tier": { "enum": ["small", "medium", "large"] },
+        "noise_tier": { "enum": ["low", "medium", "high"] },
+        "evidence_layout": { "enum": ["single_file", "multi_file"] }
+      }
+    },
+    "claim": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["claim_id", "description", "weight", "matcher", "evidence_ids"],
+      "properties": {
+        "claim_id": {
+          "type": "string",
+          "pattern": "^[a-z][a-z0-9_-]{1,31}$"
+        },
+        "description": { "type": "string", "minLength": 3, "maxLength": 500 },
+        "weight": { "type": "integer", "minimum": 1, "maximum": 40 },
+        "matcher": {
+          "oneOf": [
+            { "$ref": "#/$defs/textMatcher" },
+            { "$ref": "#/$defs/numberMatcher" },
+            { "$ref": "#/$defs/relationMatcher" }
+          ]
+        },
+        "evidence_ids": {
+          "type": "array",
+          "minItems": 1,
+          "maxItems": 8,
+          "uniqueItems": true,
+          "items": {
+            "type": "string",
+            "pattern": "^[a-z][a-z0-9_-]{1,31}$"
+          }
+        }
+      }
+    },
+    "textMatcher": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["type", "accepted_values"],
+      "properties": {
+        "type": { "const": "normalized_text_any" },
+        "accepted_values": {
+          "type": "array",
+          "minItems": 1,
+          "maxItems": 20,
+          "uniqueItems": true,
+          "items": { "type": "string", "minLength": 1, "maxLength": 300 }
+        }
+      }
+    },
+    "numberMatcher": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["type", "value", "absolute_tolerance"],
+      "properties": {
+        "type": { "const": "number" },
+        "value": { "type": "number" },
+        "absolute_tolerance": { "type": "number", "minimum": 0 },
+        "unit_aliases": {
+          "type": "array",
+          "maxItems": 12,
+          "uniqueItems": true,
+          "items": { "type": "string", "minLength": 1, "maxLength": 40 }
+        }
+      }
+    },
+    "relationMatcher": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["type", "subject_aliases", "relation_aliases", "object_aliases"],
+      "properties": {
+        "type": { "const": "relation" },
+        "subject_aliases": { "$ref": "#/$defs/aliases" },
+        "relation_aliases": { "$ref": "#/$defs/aliases" },
+        "object_aliases": { "$ref": "#/$defs/aliases" }
+      }
+    },
+    "aliases": {
+      "type": "array",
+      "minItems": 1,
+      "maxItems": 20,
+      "uniqueItems": true,
+      "items": { "type": "string", "minLength": 1, "maxLength": 200 }
+    },
+    "evidence": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["evidence_id", "path", "line_start", "line_end", "supports_claims"],
+      "properties": {
+        "evidence_id": {
+          "type": "string",
+          "pattern": "^[a-z][a-z0-9_-]{1,31}$"
+        },
+        "path": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 4096,
+          "not": { "pattern": "(^/)|(^|/)\\.\\.(/|$)|(^|/)\\.git(/|$)" }
+        },
+        "line_start": { "type": "integer", "minimum": 1 },
+        "line_end": { "type": "integer", "minimum": 1 },
+        "supports_claims": {
+          "type": "array",
+          "minItems": 1,
+          "maxItems": 12,
+          "uniqueItems": true,
+          "items": {
+            "type": "string",
+            "pattern": "^[a-z][a-z0-9_-]{1,31}$"
+          }
+        }
+      }
+    },
+    "judgeAnchors": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["causal_logic", "completeness", "unsupported_claims"],
+      "properties": {
+        "causal_logic": {
+          "type": "array",
+          "minItems": 1,
+          "maxItems": 12,
+          "items": { "type": "string", "minLength": 3, "maxLength": 500 }
+        },
+        "completeness": {
+          "type": "array",
+          "minItems": 1,
+          "maxItems": 12,
+          "items": { "type": "string", "minLength": 3, "maxLength": 500 }
+        },
+        "unsupported_claims": {
+          "type": "array",
+          "maxItems": 12,
+          "items": { "type": "string", "minLength": 3, "maxLength": 500 }
+        }
+      }
+    }
+  }
+}

@@ -50,7 +50,7 @@ export function invocationLimitBlock(): { block: true; reason: string } {
 export type Thinking = "low" | "medium";
 
 export const SUBAGENT_PRESETS = {
-  "lookup-standard": { model: "openai-codex/gpt-5.6-luna", thinking: "low" },
+  "lookup-standard": { model: "openai-codex/gpt-5.6-luna", thinking: "medium" },
   "analysis-standard": { model: "openai-codex/gpt-5.6-terra", thinking: "medium" },
   "review-standard": { model: "openai-codex/gpt-5.6-sol", thinking: "medium" },
 } as const satisfies Record<string, { model: string; thinking: Thinking }>;

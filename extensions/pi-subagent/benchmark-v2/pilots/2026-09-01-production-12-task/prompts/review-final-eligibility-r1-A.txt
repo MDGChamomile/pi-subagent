@@ -1,0 +1,18 @@
+Arm instruction: Investigate directly with the available local read-only tools. Do not use or delegate to any subagent.
+
+Objective: Review ChildJsonCollector for the single most material final-answer protocol defect in this snapshot. Give a concrete message sequence that produces a wrong accepted result and state the required fix. Cite the defective eligibility logic and downstream acceptance.
+
+Use only the frozen files visible in this snapshot. Do not modify files, run tests, invoke shell commands, or use the web. Answer in English.
+
+Return only this format:
+Conclusion
+<concise conclusion>
+
+Findings
+- <material claim>
+
+Evidence
+- path/to/file.ext:LINE[-LINE] — <what this supports>
+
+Uncertainties
+- <material uncertainty, or None>

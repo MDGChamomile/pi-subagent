@@ -1,0 +1,363 @@
+{
+  "compliance": {
+    "A_without_subagent": 36,
+    "B_exactly_one_subagent": 36,
+    "B_post_subagent_investigation": 1
+  },
+  "errors": [],
+  "overall": {
+    "corpus_combined_token_reduction": 0.06726407298819037,
+    "corpus_combined_tokens_A": 2327171,
+    "corpus_combined_tokens_B": 2170636,
+    "corpus_parent_prompt_cumulative_A": 2220229,
+    "corpus_parent_prompt_cumulative_B": 131408,
+    "corpus_parent_prompt_reduction": 0.9408133125006475,
+    "corpus_reported_cost_A": 8.738333,
+    "corpus_reported_cost_B": 4.5003348800000005,
+    "corpus_reported_cost_reduction": 0.4849893131790697,
+    "mean_task_quality_difference_B_minus_A": -4.7559523809523805,
+    "median_parent_peak_A": 16657.0,
+    "median_parent_peak_B": 2266.0,
+    "median_parent_peak_reduction": 0.8639610974365132,
+    "median_task_parent_context_reduction": 0.9390980382179803,
+    "median_task_quality_A": 91.42857142857143,
+    "median_task_quality_B": 87.57142857142857,
+    "median_wall_change_B_vs_A": 0.04908982393315431,
+    "median_wall_ms_A": 70371.0,
+    "median_wall_ms_B": 73825.5,
+    "parent_context_reduction_bootstrap_95ci": [
+      0.9201486948939255,
+      0.9496613682194537
+    ],
+    "parent_tool_calls_A": 614,
+    "parent_tool_calls_B": 37,
+    "parent_tool_result_bytes_A": 2185232,
+    "parent_tool_result_bytes_B": 105766,
+    "quality_difference_bootstrap_95ci": [
+      -8.809523809523808,
+      -0.6785714285714283
+    ]
+  },
+  "runs": 72,
+  "scoring_limitations": [
+    "lexical claim rules",
+    "citation semantics approximated by frozen marker overlap",
+    "no unsupported-claim judge",
+    "scorer frozen after one orchestration preflight output was inspected"
+  ],
+  "status": "exploratory_complete",
+  "task_level": [
+    {
+      "A": {
+        "claim_recall": 0.8571428571428571,
+        "combined_tokens": 40540,
+        "cost": 0.205546,
+        "evidence_recall": 1.0,
+        "parent_prompt_cumulative": 36279,
+        "parent_prompt_peak": 10087,
+        "quality": 91.42857142857143,
+        "wall_ms": 52285
+      },
+      "B": {
+        "claim_recall": 1.0,
+        "combined_tokens": 32087,
+        "cost": 0.04698636,
+        "evidence_recall": 0.6,
+        "parent_prompt_cumulative": 3378,
+        "parent_prompt_peak": 2018,
+        "quality": 94.0,
+        "wall_ms": 60744
+      },
+      "parent_context_reduction": 0.9068882824774663,
+      "profile": "lookup",
+      "quality_difference": 2.5714285714285694,
+      "task_id": "lookup-presets"
+    },
+    {
+      "A": {
+        "claim_recall": 1.0,
+        "combined_tokens": 58451,
+        "cost": 0.261846,
+        "evidence_recall": 1.0,
+        "parent_prompt_cumulative": 55428,
+        "parent_prompt_peak": 14713,
+        "quality": 100.0,
+        "wall_ms": 76324
+      },
+      "B": {
+        "claim_recall": 0.7142857142857143,
+        "combined_tokens": 62655,
+        "cost": 0.05798136,
+        "evidence_recall": 1.0,
+        "parent_prompt_cumulative": 3691,
+        "parent_prompt_peak": 2328,
+        "quality": 82.85714285714286,
+        "wall_ms": 69174
+      },
+      "parent_context_reduction": 0.9334091073103846,
+      "profile": "lookup",
+      "quality_difference": -17.14285714285714,
+      "task_id": "lookup-child-cli"
+    },
+    {
+      "A": {
+        "claim_recall": 0.8571428571428571,
+        "combined_tokens": 67424,
+        "cost": 0.317682,
+        "evidence_recall": 1.0,
+        "parent_prompt_cumulative": 63378,
+        "parent_prompt_peak": 24990,
+        "quality": 91.42857142857143,
+        "wall_ms": 113917
+      },
+      "B": {
+        "claim_recall": 0.7142857142857143,
+        "combined_tokens": 137389,
+        "cost": 0.07463004000000001,
+        "evidence_recall": 1.0,
+        "parent_prompt_cumulative": 3822,
+        "parent_prompt_peak": 2466,
+        "quality": 82.85714285714286,
+        "wall_ms": 90588
+      },
+      "parent_context_reduction": 0.9396951623591783,
+      "profile": "lookup",
+      "quality_difference": -8.57142857142857,
+      "task_id": "lookup-output-bounds"
+    },
+    {
+      "A": {
+        "claim_recall": 0.8333333333333334,
+        "combined_tokens": 75017,
+        "cost": 0.275255,
+        "evidence_recall": 1.0,
+        "parent_prompt_cumulative": 71985,
+        "parent_prompt_peak": 21352,
+        "quality": 90.0,
+        "wall_ms": 102878
+      },
+      "B": {
+        "claim_recall": 0.8333333333333334,
+        "combined_tokens": 109118,
+        "cost": 0.053360080000000004,
+        "evidence_recall": 1.0,
+        "parent_prompt_cumulative": 3582,
+        "parent_prompt_peak": 2222,
+        "quality": 90.0,
+        "wall_ms": 73787
+      },
+      "parent_context_reduction": 0.9502396332569285,
+      "profile": "lookup",
+      "quality_difference": 0.0,
+      "task_id": "lookup-web-limits"
+    },
+    {
+      "A": {
+        "claim_recall": 0.8571428571428571,
+        "combined_tokens": 97354,
+        "cost": 0.28466600000000003,
+        "evidence_recall": 1.0,
+        "parent_prompt_cumulative": 93981,
+        "parent_prompt_peak": 23649,
+        "quality": 91.42857142857143,
+        "wall_ms": 71203
+      },
+      "B": {
+        "claim_recall": 0.8571428571428571,
+        "combined_tokens": 63846,
+        "cost": 0.1288454,
+        "evidence_recall": 0.8571428571428571,
+        "parent_prompt_cumulative": 3933,
+        "parent_prompt_peak": 2566,
+        "quality": 89.28571428571429,
+        "wall_ms": 80652
+      },
+      "parent_context_reduction": 0.9581511156510358,
+      "profile": "analysis",
+      "quality_difference": -2.142857142857139,
+      "task_id": "analysis-usage"
+    },
+    {
+      "A": {
+        "claim_recall": 1.0,
+        "combined_tokens": 101069,
+        "cost": 0.33999500000000005,
+        "evidence_recall": 0.8571428571428571,
+        "parent_prompt_cumulative": 96416,
+        "parent_prompt_peak": 25603,
+        "quality": 97.85714285714286,
+        "wall_ms": 108908
+      },
+      "B": {
+        "claim_recall": 0.8571428571428571,
+        "combined_tokens": 55515,
+        "cost": 0.131391,
+        "evidence_recall": 0.7142857142857143,
+        "parent_prompt_cumulative": 3905,
+        "parent_prompt_peak": 2547,
+        "quality": 87.14285714285714,
+        "wall_ms": 81672
+      },
+      "parent_context_reduction": 0.9594984234981746,
+      "profile": "analysis",
+      "quality_difference": -10.714285714285722,
+      "task_id": "analysis-liveness"
+    },
+    {
+      "A": {
+        "claim_recall": 0.8571428571428571,
+        "combined_tokens": 80221,
+        "cost": 0.263343,
+        "evidence_recall": 0.8333333333333334,
+        "parent_prompt_cumulative": 76399,
+        "parent_prompt_peak": 17570,
+        "quality": 91.42857142857143,
+        "wall_ms": 99965
+      },
+      "B": {
+        "claim_recall": 0.8571428571428571,
+        "combined_tokens": 47662,
+        "cost": 0.1207416,
+        "evidence_recall": 0.8333333333333334,
+        "parent_prompt_cumulative": 3890,
+        "parent_prompt_peak": 2525,
+        "quality": 80.35714285714286,
+        "wall_ms": 82237
+      },
+      "parent_context_reduction": 0.9490831031819789,
+      "profile": "analysis",
+      "quality_difference": -11.07142857142857,
+      "task_id": "analysis-json-collector"
+    },
+    {
+      "A": {
+        "claim_recall": 0.8571428571428571,
+        "combined_tokens": 98663,
+        "cost": 0.28448100000000004,
+        "evidence_recall": 1.0,
+        "parent_prompt_cumulative": 95865,
+        "parent_prompt_peak": 26910,
+        "quality": 91.42857142857143,
+        "wall_ms": 75238
+      },
+      "B": {
+        "claim_recall": 0.8571428571428571,
+        "combined_tokens": 45728,
+        "cost": 0.13839200000000002,
+        "evidence_recall": 1.0,
+        "parent_prompt_cumulative": 3668,
+        "parent_prompt_peak": 2303,
+        "quality": 91.42857142857143,
+        "wall_ms": 70588
+      },
+      "parent_context_reduction": 0.9617378605330412,
+      "profile": "analysis",
+      "quality_difference": 0.0,
+      "task_id": "analysis-finalization"
+    },
+    {
+      "A": {
+        "claim_recall": 0.8333333333333334,
+        "combined_tokens": 56479,
+        "cost": 0.214211,
+        "evidence_recall": 1.0,
+        "parent_prompt_cumulative": 54700,
+        "parent_prompt_peak": 14541,
+        "quality": 90.0,
+        "wall_ms": 50023
+      },
+      "B": {
+        "claim_recall": 0.6666666666666666,
+        "combined_tokens": 42190,
+        "cost": 0.191273,
+        "evidence_recall": 1.0,
+        "parent_prompt_cumulative": 3364,
+        "parent_prompt_peak": 2004,
+        "quality": 80.0,
+        "wall_ms": 72115
+      },
+      "parent_context_reduction": 0.9385009140767825,
+      "profile": "review",
+      "quality_difference": -10.0,
+      "task_id": "review-gate-parallel"
+    },
+    {
+      "A": {
+        "claim_recall": 0.6666666666666666,
+        "combined_tokens": 30791,
+        "cost": 0.147093,
+        "evidence_recall": 1.0,
+        "parent_prompt_cumulative": 29010,
+        "parent_prompt_peak": 9502,
+        "quality": 80.0,
+        "wall_ms": 45783
+      },
+      "B": {
+        "claim_recall": 0.5,
+        "combined_tokens": 42489,
+        "cost": 0.19122299999999998,
+        "evidence_recall": 1.0,
+        "parent_prompt_cumulative": 3354,
+        "parent_prompt_peak": 1994,
+        "quality": 70.0,
+        "wall_ms": 84091
+      },
+      "parent_context_reduction": 0.8843846949327818,
+      "profile": "review",
+      "quality_difference": -10.0,
+      "task_id": "review-final-eligibility"
+    },
+    {
+      "A": {
+        "claim_recall": 0.8,
+        "combined_tokens": 33529,
+        "cost": 0.14499900000000002,
+        "evidence_recall": 1.0,
+        "parent_prompt_cumulative": 31995,
+        "parent_prompt_peak": 11090,
+        "quality": 88.0,
+        "wall_ms": 44305
+      },
+      "B": {
+        "claim_recall": 0.8,
+        "combined_tokens": 33256,
+        "cost": 0.14705600000000002,
+        "evidence_recall": 1.0,
+        "parent_prompt_cumulative": 3294,
+        "parent_prompt_peak": 1935,
+        "quality": 88.0,
+        "wall_ms": 61570
+      },
+      "parent_context_reduction": 0.8970464135021097,
+      "profile": "review",
+      "quality_difference": 0.0,
+      "task_id": "review-liveness-error"
+    },
+    {
+      "A": {
+        "claim_recall": 0.8333333333333334,
+        "combined_tokens": 40692,
+        "cost": 0.160054,
+        "evidence_recall": 1.0,
+        "parent_prompt_cumulative": 39381,
+        "parent_prompt_peak": 13011,
+        "quality": 90.0,
+        "wall_ms": 39197
+      },
+      "B": {
+        "claim_recall": 1.0,
+        "combined_tokens": 49943,
+        "cost": 0.16043700000000002,
+        "evidence_recall": 1.0,
+        "parent_prompt_cumulative": 3195,
+        "parent_prompt_peak": 1830,
+        "quality": 100.0,
+        "wall_ms": 50321
+      },
+      "parent_context_reduction": 0.9188695055991468,
+      "profile": "review",
+      "quality_difference": 10.0,
+      "task_id": "review-failed-usage"
+    }
+  ]
+}

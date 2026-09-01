@@ -4,6 +4,14 @@ A foreground, model-invocable Pi extension that runs focused local-file or web i
 
 The companion [skill](../../skills/pi-subagent/README.md) decides when and how to delegate. This extension enforces the runtime boundary, launches the child, reports progress, and returns only the bounded final answer.
 
+## Highlights
+
+- Keeps intermediate child turns and tool results out of the parent context.
+- Restricts local runs to explicit read-only paths and keeps local and web capabilities separate.
+- Bounds runtime, tool calls, web requests, and returned output.
+- Reports live progress, completion status, usage, and estimated injected context in the TUI.
+- Handles partial results, cancellation, timeouts, and parent termination explicitly.
+
 ## In action
 
 These screenshots show a real local lookup against this repository. Machine-specific paths and account details were removed from the rendered output.
@@ -18,12 +26,15 @@ These screenshots show a real local lookup against this repository. Machine-spec
 
 ## Requirements and installation
 
-Requirements:
+Core requirements:
 
 - Pi 0.84.2 or later;
-- access to the configured Luna, Terra, and Sol child models;
-- `rg` for local `grep`, and `fd` or `fdfind` for local `find`;
-- [`pi-web-access` v0.26.0](https://github.com/nicobailon/pi-web-access) with its default tool names for web investigations.
+- access to the child model selected by the Luna, Terra, or Sol preset.
+
+Capability-specific requirements:
+
+- `local`: `rg` for `grep`, and `fd` or `fdfind` for `find`;
+- `web`: [`pi-web-access` v0.26.0](https://github.com/nicobailon/pi-web-access) with its default tool names.
 
 Install the extension and companion skill together from npm:
 
@@ -50,7 +61,7 @@ ln -s "$PWD/live/skills/pi-subagent" ~/.pi/agent/skills/pi-subagent
 Restart Pi or run `/reload`. The model can then select the skill automatically, or the user can invoke `/skill:pi-subagent`.
 
 > [!NOTE]
-> Web runs specifically depend on the tested [`pi-web-access` v0.26.0](https://github.com/nicobailon/pi-web-access), installed with `pi install npm:pi-web-access@v0.26.0`. The guard verifies the package name, exact version, declared entry point, and tool provenance, so another version or extension exposing the same tool names does not satisfy this dependency. The exact pin prevents unreviewed code drift on reinstall; it does not by itself prove package safety. Without it, `local` runs remain available. Local child startup is forced offline and never downloads missing search binaries.
+> The web guard verifies the dependency's package name, exact version, declared entry point, and tool provenance, so another version or extension exposing the same tool names does not satisfy it. The exact pin prevents unreviewed code drift on reinstall; it does not by itself prove package safety. Without the web dependency, `local` runs remain available. Local child startup is forced offline and never downloads missing search binaries.
 
 ## How it works
 
@@ -78,7 +89,7 @@ Each standard preset chooses a proportionate child model without changing the ma
 
 | Preset | Child profile | Use for |
 | --- | --- | --- |
-| `lookup-standard` | Luna / low | Bounded fact-finding |
+| `lookup-standard` | Luna / medium | Bounded fact-finding |
 | `analysis-standard` | Terra / medium | Synthesis and causal comparison |
 | `review-standard` | Sol / medium | Adversarial review |
 
@@ -86,14 +97,23 @@ Older stored calls with separate `profile` and `thinking` arguments, or with the
 
 ### Result and lifecycle
 
+The runtime applies these per-child limits:
+
+| Limit | `local` | `web` |
+| --- | --- | --- |
+| Investigation deadline | 18 minutes, then a 2-minute text-finalization window within the 20-minute hard limit | Same |
+| Tool-call budget | Warn at 36 attempts; stop before attempt 49 | Warn at 30 attempts; stop before attempt 41 |
+| Executed web queries | — | 32 |
+| Executed fetch/content targets | — | 50 |
+| Final answer | 12 KiB | 12 KiB |
+
 - The parent accepts a final answer only after the child guard validates policy and tool ownership and publishes its readiness marker.
-- Intermediate assistant turns and investigation tool results are discarded. The collector retains only the last assistant message containing non-empty text without a tool call or terminal model error, sanitizes it, and caps it at 12 KiB.
+- Intermediate assistant turns and investigation tool results are discarded. The collector retains only the last assistant message containing non-empty text without a tool call or terminal model error, then sanitizes and bounds it.
 - A tool-only ending gets one tool-disabled finalization follow-up. A zero-exit child that still has no final answer is rejected.
-- Each running call reports `mm:ss · model (thinking) running · N reported tokens` once per second.
-- A settled row reports `✓ Complete · 14.2s · Context injected: ~1,820 tokens`, or `⚠ Partial`; expanding it reveals the answer.
-- The investigation deadline is 18 minutes. The child then gets a two-minute text-finalization window within the 20-minute hard limit. Answers completed in that window are labelled `partial`; an unresponsive child is terminated at the hard deadline.
-- Each child has a lifetime tool-call budget. `local` warns at 36 attempts and stops before attempt 49; `web` warns at 30 and stops before attempt 41. Allowed and denied attempts both count. A soft warning is sent once and later calls remain available; a hard stop disables tools, reuses text finalization, and returns a `partial` result with `partialReason: "tool_budget"`.
-- Web children additionally allow at most 32 executed queries and 50 executed fetch/content targets over their lifetime. Valid calls reserve their full cost synchronously during sequential Pi tool preflight, before parallel execution: `web_search` charges its normalized `query`/`queries`; `source_check` charges its effective queries and, with `fetchContent: true`, conservatively up to five result pages (`min(5, queries × results per query)`); `fetch_content` charges its normalized unique `url`/`urls`; and each `get_search_content` retrieval charges one content target. A batch that would cross either limit does not execute or consume query/fetch counters.
+- Each running call reports `mm:ss · model (thinking) running · N reported tokens` once per second. A settled row reports `✓ Complete · 14.2s · Context injected: ~1,820 tokens`, or `⚠ Partial`; expanding it reveals the answer.
+- Answers completed during the text-finalization window are labelled `partial`; an unresponsive child is terminated at the hard deadline.
+- Allowed and denied tool attempts both count. A soft warning leaves later calls available; a hard stop disables tools, reuses text finalization, and returns a `partial` result with `partialReason: "tool_budget"`.
+- Web calls reserve their full cost synchronously during sequential Pi tool preflight, before parallel execution: `web_search` charges its normalized `query`/`queries`; `source_check` charges its effective queries and, with `fetchContent: true`, conservatively up to five result pages (`min(5, queries × results per query)`); `fetch_content` charges its normalized unique `url`/`urls`; and each `get_search_content` retrieval charges one content target. A batch that would cross either limit does not execute or consume query/fetch counters.
 - Parent tool-result details include only numeric/boolean budget telemetry (`toolCallsAttempted`, `toolCallsExecuted`, `deniedCalls`, `queryCount`, `fetchTargetCount`, `softLimitReached`, and `hardLimitReached`), plus the machine-readable partial reason when applicable. They never include tasks, queries, URLs, paths, or tool content.
 - A dedicated parent-liveness pipe makes the child remove private runtime files and terminate its POSIX process group, or the child process itself on Windows, if the parent exits abruptly.
 - Final diff, audit, test, and retrieval validation stays with the parent when it holds the edited files or may need to make follow-up fixes.
@@ -131,6 +151,8 @@ python3 live/extensions/pi-subagent/scripts/context_isolation_eval.py --mode con
 ```
 
 The first plain-final-answer three-case run retained 100% fact recall in both arms while reducing mean maximum parent prompt tokens by 89.2% and parent investigative tool-result bytes by 100%. It produced no raw tool syntax or post-result parent investigation. Treat these deterministic fixture results as bounded checks, not universal production estimates.
+
+A separate [12-task production-preset exploratory pilot](https://github.com/MDGChamomile/pi-agent-kit/tree/main/live/extensions/pi-subagent/benchmark-v2/pilots/2026-09-01-production-12-task/REPORT.md) ran 72 fresh parent sessions and 36 children across balanced lookup, analysis, and review tasks. Delegation reduced the median task-level parent cumulative prompt by 93.9% (exploratory bootstrap interval: 92.0%-95.0%), parent investigative tool-result bytes by 95.2%, and parent tool calls from 614 to 37; only one of 36 delegated parents reinvestigated locally after the child result. Parent-plus-child reported tokens fell only 6.7% overall and median wall time increased 4.9%. A provisional lexical quality score favored direct investigation by 4.76 points, so the pilot does not establish quality non-inferiority. These are calibration results from one local codebase, not confirmatory or universal performance claims.
 
 ## Verification
 

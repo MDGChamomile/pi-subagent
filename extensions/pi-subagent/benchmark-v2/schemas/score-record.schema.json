@@ -1,0 +1,92 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://github.com/MDGChamomile/pi-agent-kit/pi-subagent-benchmark-v2/score-record.schema.json",
+  "title": "Pi Subagent Benchmark v2 Score Record",
+  "type": "object",
+  "additionalProperties": false,
+  "required": [
+    "schema_version",
+    "anonymous_answer_id",
+    "task_id",
+    "automated",
+    "judge",
+    "total_score",
+    "score_status"
+  ],
+  "properties": {
+    "schema_version": { "const": 1 },
+    "anonymous_answer_id": { "type": "string", "pattern": "^[a-zA-Z0-9._-]{8,160}$" },
+    "task_id": { "type": "string", "minLength": 1, "maxLength": 80 },
+    "automated": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "fact_score",
+        "citation_score",
+        "matched_claim_ids",
+        "citation_precision",
+        "citation_recall",
+        "scorer_version_sha256"
+      ],
+      "properties": {
+        "fact_score": { "type": "number", "minimum": 0, "maximum": 40 },
+        "citation_score": { "type": "number", "minimum": 0, "maximum": 20 },
+        "matched_claim_ids": {
+          "type": "array",
+          "uniqueItems": true,
+          "items": { "type": "string", "minLength": 1, "maxLength": 40 }
+        },
+        "citation_precision": { "type": "number", "minimum": 0, "maximum": 1 },
+        "citation_recall": { "type": "number", "minimum": 0, "maximum": 1 },
+        "scorer_version_sha256": {
+          "type": "string",
+          "pattern": "^[0-9a-f]{64}$"
+        }
+      }
+    },
+    "judge": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "provider",
+        "model",
+        "model_version",
+        "prompt_sha256",
+        "causal_logic_score",
+        "completeness_score",
+        "unsupported_claims_score",
+        "rationale",
+        "raw_response_sha256"
+      ],
+      "properties": {
+        "provider": { "type": "string", "minLength": 1, "maxLength": 120 },
+        "model": { "type": "string", "minLength": 1, "maxLength": 200 },
+        "model_version": { "type": "string", "minLength": 1, "maxLength": 200 },
+        "prompt_sha256": { "type": "string", "pattern": "^[0-9a-f]{64}$" },
+        "causal_logic_score": { "type": "number", "minimum": 0, "maximum": 25 },
+        "completeness_score": { "type": "number", "minimum": 0, "maximum": 10 },
+        "unsupported_claims_score": { "type": "number", "minimum": 0, "maximum": 5 },
+        "rationale": { "type": "string", "minLength": 1, "maxLength": 4000 },
+        "raw_response_sha256": { "type": "string", "pattern": "^[0-9a-f]{64}$" }
+      }
+    },
+    "human_audit": {
+      "oneOf": [
+        { "type": "null" },
+        {
+          "type": "object",
+          "additionalProperties": false,
+          "required": ["reviewer_id", "total_score", "notes", "reviewed_at"],
+          "properties": {
+            "reviewer_id": { "type": "string", "minLength": 1, "maxLength": 80 },
+            "total_score": { "type": "number", "minimum": 0, "maximum": 100 },
+            "notes": { "type": "string", "maxLength": 4000 },
+            "reviewed_at": { "type": "string", "format": "date-time" }
+          }
+        }
+      ]
+    },
+    "total_score": { "type": "number", "minimum": 0, "maximum": 100 },
+    "score_status": { "enum": ["scored", "forced_zero_failure", "judge_invalid", "audit_provisional"] }
+  }
+}

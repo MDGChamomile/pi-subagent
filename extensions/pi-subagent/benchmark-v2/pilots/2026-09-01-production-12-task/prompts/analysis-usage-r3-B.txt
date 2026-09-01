@@ -1,0 +1,18 @@
+Arm instruction: Use exactly one pi_subagent call with capability local, scope ["live/extensions/pi-subagent"], and preset analysis-standard for the investigation. Then synthesize the final answer from the child result without broadly rereading files. 
+
+Objective: Trace child provider-usage accounting from JSON event collection through a successful or failed pi_subagent tool result. Explain which message roles contribute usage, how failure usage survives a thrown tool error, and where nested usage is exposed to the parent. Cite the complete path.
+
+Use only the frozen files visible in this snapshot. Do not modify files, run tests, invoke shell commands, or use the web. Answer in English.
+
+Return only this format:
+Conclusion
+<concise conclusion>
+
+Findings
+- <material claim>
+
+Evidence
+- path/to/file.ext:LINE[-LINE] — <what this supports>
+
+Uncertainties
+- <material uncertainty, or None>
