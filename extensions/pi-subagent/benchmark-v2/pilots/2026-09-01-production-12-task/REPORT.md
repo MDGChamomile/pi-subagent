@@ -48,10 +48,20 @@ Accordingly, this pilot supports a bounded claim that production delegation subs
 - `protocol.json`, `tasks.json`, and `schedule.json`: frozen design and task order;
 - `FROZEN_SHA256`, `PROMPT_SHA256SUMS`, and `COMMAND_SHA256SUMS`: pre-run hashes;
 - `run-template.sh`: portable form of the exact parent invocation;
-- `score_pilot.py` and `SCORING_FREEZE.json`: deterministic normalization/scoring and its disclosure;
+- `score_pilot.py` and `SCORING_FREEZE.json`: frozen deterministic normalization/scoring and its disclosure;
+- `summarize_pilot.py`: separate deterministic derivation of the aggregate context, usage, cost, latency, and tool metrics added to `summary.json`, without changing the frozen quality scorer;
 - `validate_configuration.py` and `CONFIGURATION_VALIDATION.json`: post-run verification of every arm and child preset/model/thinking assignment;
 - `summary.json` and `scores.jsonl`: machine-readable results;
 - `PUBLIC_SHA256SUMS`: hashes for the publishable pilot bundle;
 - local ignored `commands/`, `raw/`, `normalized/`, `logs/`, and `snapshots/`: machine-specific commands, raw events, run records, process metadata, and frozen source snapshots. The ignored local `SHA256SUMS` covers that complete archive.
 
-The pilot is calibration material only and must not enter a future confirmatory corpus.
+With the ignored local archive present, reproduce and verify the machine-readable results in this order:
+
+```bash
+python3 score_pilot.py
+python3 summarize_pilot.py
+python3 summarize_pilot.py --check
+python3 validate_configuration.py
+```
+
+The public bundle includes hashes and derived results but intentionally excludes the machine-local normalized and raw records needed to rerun those commands. The pilot is calibration material only and must not enter a future confirmatory corpus.
