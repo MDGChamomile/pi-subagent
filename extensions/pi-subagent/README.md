@@ -28,6 +28,7 @@ These screenshots show a real local lookup against this repository. Machine-spec
 
 Core requirements:
 
+- Linux, including Ubuntu on WSL; native Windows is not officially supported or tested;
 - Pi 0.84.2 or later;
 - access to the child model selected by the Luna, Terra, or Sol preset.
 
@@ -115,7 +116,7 @@ The runtime applies these per-child limits:
 - Allowed and denied tool attempts both count. A soft warning leaves later calls available; a hard stop disables tools, reuses text finalization, and returns a `partial` result with `partialReason: "tool_budget"`.
 - Web calls reserve their full cost synchronously during sequential Pi tool preflight, before parallel execution: `web_search` charges its normalized `query`/`queries`; `source_check` charges its effective queries and, with `fetchContent: true`, conservatively up to five result pages (`min(5, queries × results per query)`); `fetch_content` charges its normalized unique `url`/`urls`; and each `get_search_content` retrieval charges one content target. A batch that would cross either limit does not execute or consume query/fetch counters.
 - For complete and partial results, only the bounded final-answer text (`content`) enters the parent model context. Parent tool-result `details` contain content-free execution and budget metadata, such as the selected capability, preset, model, scope-root count, status, duration, usage, limits, and counters. They never include tasks, queries, URLs, paths, or tool content.
-- A dedicated parent-liveness pipe makes the child remove private runtime files and terminate its POSIX process group, or the child process itself on Windows, if the parent exits abruptly.
+- A dedicated parent-liveness pipe makes the child remove private runtime files and terminate its POSIX process group if the parent exits abruptly. The implementation has a native-Windows fallback that terminates the child process itself, but native Windows is not officially supported or tested.
 - Final diff, audit, test, and retrieval validation stays with the parent when it holds the edited files or may need to make follow-up fixes.
 
 ## Security boundary
