@@ -60,7 +60,7 @@ Without that dependency, local runs remain available.
 2. The extension starts an ephemeral `pi --mode json --print --no-session` child process.
 3. A child guard validates tool ownership and applies the local or web boundary.
 4. The child investigates within its time and resource budgets.
-5. The parent receives only the final bounded answer and numeric/boolean budget telemetry.
+5. For complete and partial results, the parent model context receives only the bounded final answer; content-free execution and budget metadata are returned separately in tool-result details without tasks, paths, queries, URLs, or tool content.
 
 The child cannot write files, run Bash or tests, persist a session, or recursively launch more agents. Final validation and any implementation stay with the parent.
 
@@ -109,4 +109,4 @@ The runtime canonicalizes local paths, blocks lexical and symlink escapes, verif
 
 ## License
 
-[MIT](LICENSE)
+[MIT](https://github.com/MDGChamomile/pi-agent-kit/blob/v0.2.3/LICENSE)

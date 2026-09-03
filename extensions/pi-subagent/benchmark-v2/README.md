@@ -69,12 +69,12 @@ Every task records:
 
 - public repository URL and license;
 - base commit and, for historical tasks, oracle fix commit;
-- source archive SHA-256 and optional injection patch SHA-256;
-- exact exposed roots, file count, byte count, and snapshot hash;
+- base-source archive SHA-256, computed from the content-addressed base-commit export before any injection, and optional injection patch SHA-256;
+- exact exposed roots, file count, byte count, and model-visible snapshot SHA-256, computed from the prepared snapshot after any injection and exclusions;
 - objective, profile, strata, required claims, evidence spans, and judge anchors;
 - a canonical task hash.
 
-Evaluation snapshots are produced with `git archive` or an equivalent content-addressed export. They contain no `.git` directory, issue discussion, fix patch, gold manifest, or hidden answer material. The model sees only the frozen source snapshot and task prompt.
+Base-source archives are produced with `git archive` or an equivalent content-addressed export. Evaluation snapshots are prepared offline from those archives. They contain no `.git` directory, issue discussion, fix patch, gold manifest, or hidden answer material. The model sees only the frozen source snapshot and task prompt.
 
 ### 3.4 Candidate selection and gold freeze
 
@@ -262,11 +262,12 @@ No confirmatory run starts until all of the following are true:
 
 1. all 90 tasks and 12 calibration tasks pass corpus validation;
 2. prompts, scorer fixtures, schemas, thresholds, models, timeout, and analysis code are frozen;
-3. the 12-task calibration completes without changing confirmatory tasks or thresholds;
-4. the human-audit owner and escalation path are named;
-5. provider/model session counts, expected wall time, and maximum spend are calculated;
-6. the user explicitly approves the exact execution batch and any required external judge batch;
-7. the preregistration and source tree are hashed.
+3. schemas and configuration validators enforce arm-specific child presence, required execution telemetry, and the assigned child model and thinking level;
+4. the 12-task calibration completes without changing confirmatory tasks or thresholds;
+5. the human-audit owner and escalation path are named;
+6. provider/model session counts, expected wall time, and maximum spend are calculated;
+7. the user explicitly approves the exact execution batch and any required external judge batch;
+8. the preregistration and source tree are hashed.
 
 Calibration may fix implementation defects in the runner or scorer. Any protocol change after confirmatory output is visible invalidates the confirmatory label and requires a new benchmark version.
 

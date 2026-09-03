@@ -29,6 +29,14 @@ assert.equal(
   "top-level skill guide must use the version-matched absolute GitHub URL",
 );
 
+const pinnedReleaseUrls = topLevelReadme.match(
+  /https:\/\/(?:raw\.githubusercontent\.com\/MDGChamomile\/pi-agent-kit\/v[^/]+|github\.com\/MDGChamomile\/pi-agent-kit\/(?:blob|tree)\/v[^/]+)/g,
+) ?? [];
+assert.ok(pinnedReleaseUrls.length >= 4, "package README must pin its release assets and documentation links");
+for (const url of pinnedReleaseUrls) {
+  assert.ok(url.endsWith(`/v${manifest.version}`), `package README release URL does not match ${manifest.version}: ${url}`);
+}
+
 for (const resource of [...manifest.pi.extensions, ...manifest.pi.skills]) {
   const info = await stat(join(stagingDirectory, resource));
   assert.equal(info.isFile() || info.isDirectory(), true, `missing Pi resource: ${resource}`);

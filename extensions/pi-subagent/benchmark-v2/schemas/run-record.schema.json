@@ -52,6 +52,28 @@
     },
     "raw_event_sha256": { "$ref": "#/$defs/sha256" }
   },
+  "allOf": [
+    {
+      "if": {
+        "properties": { "arm": { "const": "direct" } },
+        "required": ["arm"]
+      },
+      "then": {
+        "properties": { "child": { "type": "null" } }
+      }
+    },
+    {
+      "if": {
+        "properties": {
+          "arm": { "enum": ["delegated_matched", "delegated_production"] }
+        },
+        "required": ["arm"]
+      },
+      "then": {
+        "properties": { "child": { "$ref": "#/$defs/child" } }
+      }
+    }
+  ],
   "$defs": {
     "sha256": {
       "type": "string",
@@ -106,11 +128,22 @@
     "agent": {
       "type": "object",
       "additionalProperties": false,
-      "required": ["provider", "model", "thinking", "assistant_messages"],
+      "required": [
+        "provider",
+        "model",
+        "thinking",
+        "tool_calls_attempted",
+        "tool_calls_executed",
+        "denied_calls",
+        "assistant_messages"
+      ],
       "properties": {
         "provider": { "type": "string", "minLength": 1, "maxLength": 120 },
         "model": { "type": "string", "minLength": 1, "maxLength": 200 },
         "thinking": { "type": "string", "minLength": 1, "maxLength": 40 },
+        "tool_calls_attempted": { "type": "integer", "minimum": 0 },
+        "tool_calls_executed": { "type": "integer", "minimum": 0 },
+        "denied_calls": { "type": "integer", "minimum": 0 },
         "assistant_messages": {
           "type": "array",
           "items": { "$ref": "#/$defs/message" }
@@ -125,7 +158,11 @@
         "model",
         "thinking",
         "status",
+        "partial_reason",
         "duration_ms",
+        "tool_calls_attempted",
+        "tool_calls_executed",
+        "denied_calls",
         "usage"
       ],
       "properties": {
@@ -144,7 +181,7 @@
     "toolResult": {
       "type": "object",
       "additionalProperties": false,
-      "required": ["index", "tool_name", "bytes", "is_error"],
+      "required": ["index", "tool_name", "bytes", "is_error", "after_subagent_result", "nested_usage"],
       "properties": {
         "index": { "type": "integer", "minimum": 0 },
         "tool_name": { "type": "string", "minLength": 1, "maxLength": 120 },
@@ -168,7 +205,8 @@
         "started_at",
         "ended_at",
         "wall_time_ms",
-        "exit_code"
+        "exit_code",
+        "timeout_phase"
       ],
       "properties": {
         "status": {
