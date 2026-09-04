@@ -62,6 +62,8 @@ Without that dependency, local runs remain available.
 4. The child investigates within its time and resource budgets.
 5. For complete and partial results, the parent model context receives only the bounded final answer; content-free execution and budget metadata are returned separately in tool-result details without tasks, paths, queries, URLs, or tool content.
 
+[![Pi Subagent parent, child, capability, resource, and result boundaries](https://raw.githubusercontent.com/MDGChamomile/pi-agent-kit/main/live/extensions/pi-subagent/assets/pi-subagent-architecture.png)](https://github.com/MDGChamomile/pi-agent-kit/blob/main/live/extensions/pi-subagent/assets/pi-subagent-architecture.png)
+
 The child cannot write files, run Bash or tests, persist a session, or recursively launch more agents. Final validation and any implementation stay with the parent.
 
 ## Capabilities

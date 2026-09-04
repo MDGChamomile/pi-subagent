@@ -74,6 +74,8 @@ Restart Pi or run `/reload`. The model can then select the skill automatically, 
 4. The parent discards intermediate child turns and tool results, then retains only the last valid non-tool assistant answer.
 5. The TUI reports per-call progress and, when settled, the elapsed time and estimated context injected into the parent.
 
+[![Pi Subagent parent, child, capability, resource, and result boundaries](assets/pi-subagent-architecture.png)](assets/pi-subagent-architecture.png)
+
 One child call is the default. Up to three distinct, independent calls may run in parallel during one parent agent run; local and web calls each count toward that limit and can multiply model, provider, and web-request usage. One corrected retry is allowed only after preflight validation fails.
 
 ## Runtime contract

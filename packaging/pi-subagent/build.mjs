@@ -25,6 +25,10 @@ export const packageFiles = [
     "live/extensions/pi-subagent/assets/pi-subagent-complete.png",
     "extensions/pi-subagent/assets/pi-subagent-complete.png",
   ],
+  [
+    "live/extensions/pi-subagent/assets/pi-subagent-architecture.png",
+    "extensions/pi-subagent/assets/pi-subagent-architecture.png",
+  ],
   ["live/skills/pi-subagent/SKILL.md", "skills/pi-subagent/SKILL.md"],
   ["live/skills/pi-subagent/README.md", "skills/pi-subagent/README.md"],
 ];
