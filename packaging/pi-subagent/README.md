@@ -7,7 +7,7 @@ Run focused, bounded investigations in an ephemeral child Pi process while keepi
 - **`pi_subagent` extension** — enforces scope, tool ownership, resource budgets, lifecycle, telemetry, and output boundaries.
 - **Companion skill** — helps the parent decide when to delegate and selects the appropriate capability and model preset.
 
-![Pi Subagent showing a completed child investigation and the context returned to the parent](https://raw.githubusercontent.com/MDGChamomile/pi-agent-kit/v0.2.3/live/extensions/pi-subagent/assets/pi-subagent-complete.png)
+![Pi Subagent showing a completed child investigation and the context returned to the parent](https://raw.githubusercontent.com/MDGChamomile/pi-agent-kit/v0.2.4/live/extensions/pi-subagent/assets/pi-subagent-complete.png)
 
 ## Why use it?
 
@@ -102,11 +102,11 @@ The runtime canonicalizes local paths, blocks lexical and symlink escapes, verif
 
 ## Documentation
 
-- [extension guide](https://github.com/MDGChamomile/pi-agent-kit/blob/v0.2.3/live/extensions/pi-subagent/README.md) — complete runtime, installation, security, and verification contract.
-- [skill guide](https://github.com/MDGChamomile/pi-agent-kit/blob/v0.2.3/live/skills/pi-subagent/README.md) — when delegation is appropriate and how the workflow selects a child.
+- [extension guide](https://github.com/MDGChamomile/pi-agent-kit/blob/v0.2.4/live/extensions/pi-subagent/README.md) — complete runtime, installation, security, and verification contract.
+- [skill guide](https://github.com/MDGChamomile/pi-agent-kit/blob/v0.2.4/live/skills/pi-subagent/README.md) — when delegation is appropriate and how the workflow selects a child.
 - [Source repository](https://github.com/MDGChamomile/pi-agent-kit)
 - [Issue tracker](https://github.com/MDGChamomile/pi-agent-kit/issues)
 
 ## License
 
-[MIT](https://github.com/MDGChamomile/pi-agent-kit/blob/v0.2.3/LICENSE)
+[MIT](https://github.com/MDGChamomile/pi-agent-kit/blob/v0.2.4/LICENSE)
