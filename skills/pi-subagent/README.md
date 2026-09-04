@@ -4,17 +4,7 @@ A progressively disclosed workflow for deciding when and how Pi should delegate 
 
 The skill keeps noisy file reads or web searches out of the parent context. The child is read-only, returns only a bounded final answer, and leaves implementation and final validation with the parent.
 
-## In action
-
-These screenshots show a real local lookup against this repository. Machine-specific paths and account details were removed from the rendered output.
-
-**Running — elapsed time, child model, thinking level, and reported tokens**
-
-![Pi Subagent reporting elapsed time, child model, thinking level, and reported tokens while running](../../extensions/pi-subagent/assets/pi-subagent-running.png)
-
-**Complete — completion time, injected context size, and expanded final answer**
-
-![Pi Subagent reporting completion time, injected context size, and the expanded final answer](../../extensions/pi-subagent/assets/pi-subagent-complete.png)
+See the extension guide for [runtime screenshots](../../extensions/pi-subagent/README.md#in-action) and the complete execution contract.
 
 ## When to use it
 

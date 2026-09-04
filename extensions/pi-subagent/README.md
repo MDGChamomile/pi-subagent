@@ -4,6 +4,8 @@ A foreground, model-invocable Pi extension that runs focused local-file or web i
 
 The companion [skill](../../skills/pi-subagent/README.md) decides when and how to delegate. This extension enforces the runtime boundary, launches the child, reports progress, and returns only the bounded final answer.
 
+[Install](#requirements-and-installation) · [Runtime contract](#runtime-contract) · [Security](#security-boundary) · [Evaluation](#evaluation) · [Verification](#verification)
+
 ## Highlights
 
 - Keeps intermediate child turns and tool results out of the parent context.
@@ -153,7 +155,7 @@ python3 live/extensions/pi-subagent/scripts/context_isolation_eval.py --mode con
 
 The command compares direct and delegated investigation against three fixed synthetic fixtures. It starts fresh model sessions, so outcomes are not deterministic; use it as a bounded sanity check rather than durable performance evidence.
 
-A separate [12-task production-preset exploratory pilot](https://github.com/MDGChamomile/pi-agent-kit/blob/6770d67511ab19727164b1ea8d565c9bed2a6609/live/extensions/pi-subagent/benchmark-v2/pilots/2026-09-01-production-12-task/REPORT.md) ran 72 fresh parent sessions and 36 children across balanced lookup, analysis, and review tasks. Delegation reduced the median task-level parent cumulative prompt by 93.9% (exploratory bootstrap interval: 92.0%-95.0%), parent investigative tool-result bytes by 95.2%, and parent tool calls from 614 to 37; only one of 36 delegated parents reinvestigated locally after the child result. Parent-plus-child reported tokens fell only 6.7% overall and median wall time increased 4.9%. A provisional lexical quality score favored direct investigation by 4.76 points, so the pilot does not establish quality non-inferiority. These are calibration results from one local codebase, not confirmatory or universal performance claims.
+A separate [12-task production-preset exploratory pilot](https://github.com/MDGChamomile/pi-agent-kit/blob/6770d67511ab19727164b1ea8d565c9bed2a6609/live/extensions/pi-subagent/benchmark-v2/pilots/2026-09-01-production-12-task/REPORT.md) found substantially lower parent-context growth and investigative tool output with delegation. Total reported tokens fell only modestly, wall time increased, and the provisional quality measure favored direct investigation, so the pilot does not establish quality non-inferiority. See the report for the measurements, methodology, and limitations; these are calibration results from one local codebase, not universal performance claims.
 
 ## Verification
 

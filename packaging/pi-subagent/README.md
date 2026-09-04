@@ -1,5 +1,9 @@
 # Pi Subagent
 
+[![npm version](https://img.shields.io/npm/v/%40mdgchamomile%2Fpi-subagent)](https://www.npmjs.com/package/@mdgchamomile/pi-subagent)
+[![npm downloads](https://img.shields.io/npm/dm/%40mdgchamomile%2Fpi-subagent)](https://www.npmjs.com/package/@mdgchamomile/pi-subagent)
+[![License](https://img.shields.io/npm/l/%40mdgchamomile%2Fpi-subagent)](https://github.com/MDGChamomile/pi-agent-kit/blob/v0.2.4/LICENSE)
+
 Run focused, bounded investigations in an ephemeral child Pi process while keeping intermediate tool output out of the parent context.
 
 `@mdgchamomile/pi-subagent` bundles two parts that work together:
@@ -13,26 +17,22 @@ Run focused, bounded investigations in an ephemeral child Pi process while keepi
 
 Investigations can fill the main conversation with file reads, searches, fetched pages, and exploratory reasoning. Pi Subagent moves that work into a foreground child process and returns only its bounded final answer.
 
-Use it for:
-
-- targeted fact-finding across an explicit set of local files;
-- focused public-web research without exposing local-file tools to the child;
-- synthesis or adversarial review that would otherwise add substantial intermediate context;
-- keeping the parent focused on implementation, decisions, and final verification.
-
-## Highlights
-
-- **Context isolation** — intermediate child turns and tool results are discarded.
-- **Explicit read-only scope** — local runs receive only 1–8 authorized files or directories.
-- **Separated capabilities** — local-file and web tools never coexist in one child.
-- **Bounded execution** — limits apply to runtime, tool calls, web queries, fetched targets, and final output size.
-- **Visible progress** — the Pi TUI reports elapsed time, model, thinking level, token usage, completion status, and estimated injected context.
-- **Defensive lifecycle handling** — includes cancellation, timeout escalation, partial-result reporting, and parent-liveness cleanup.
-- **Progressive disclosure** — the bundled skill is loaded when relevant rather than adding the full workflow to every prompt.
+- **Keep context focused** — discard intermediate child turns and tool results while the parent handles decisions and final verification.
+- **Limit access explicitly** — authorize 1–8 local paths or use a separate web-only capability; local and web tools never coexist in one child.
+- **Bound execution** — cap runtime, tool calls, web requests, and final output while reporting progress and partial results visibly.
+- **Load guidance only when needed** — progressively disclose the bundled skill instead of adding the full workflow to every prompt.
 
 ## Install
 
-Pi **0.84.2 or later** is required.
+Requirements:
+
+- Linux, including Ubuntu on WSL; native Windows is not officially supported or tested;
+- Pi 0.84.2 or later;
+- access to the child model selected by the Luna, Terra, or Sol preset;
+- `rg` for local `grep`, and `fd` or `fdfind` for local `find`.
+
+> [!IMPORTANT]
+> This package provides an application-level capability boundary, not an OS, network, or credential-isolated sandbox. Pi extensions execute with the current user's system permissions. Review the source and trust assumptions before installing it.
 
 ```bash
 pi install npm:@mdgchamomile/pi-subagent
@@ -83,18 +83,7 @@ Mixed local-and-web work uses separate child calls, with synthesis performed by 
 
 The preset changes only the child model; it does not alter the main model's thinking level.
 
-## Requirements
-
-- Pi 0.84.2 or later;
-- access to the child model selected by the Luna, Terra, or Sol preset;
-- `rg` for local `grep`;
-- `fd` or `fdfind` for local `find`;
-- `pi-web-access` v0.27.0 only when using the web capability.
-
 ## Security and data flow
-
-> [!IMPORTANT]
-> This package provides an application-level capability boundary, not an OS, network, or credential-isolated sandbox. Pi extensions execute with the current user's system permissions. Review the source and trust assumptions before installing third-party packages.
 
 Authorized local-file contents, web tasks and queries, fetched pages, and the final answer may be sent to the applicable configured model or search providers. Do not delegate secrets that must not leave the host or use the package for untrusted workloads requiring host isolation.
 
