@@ -161,6 +161,8 @@ The command compares direct and delegated investigation against three fixed synt
 
 A separate [12-task production-preset exploratory pilot](https://github.com/MDGChamomile/pi-agent-kit/blob/6770d67511ab19727164b1ea8d565c9bed2a6609/live/extensions/pi-subagent/benchmark-v2/pilots/2026-09-01-production-12-task/REPORT.md) found substantially lower parent-context growth and investigative tool output with delegation. Total reported tokens fell only modestly, wall time increased, and the provisional quality measure favored direct investigation, so the pilot does not establish quality non-inferiority. See the report for the measurements, methodology, and limitations; these are calibration results from one local codebase, not universal performance claims.
 
+The source-only `benchmark-v2/pilots/2026-09-05-astra-routing/REPORT.md` records a 46-child Astra/low-thinking routing pilot. It recommends retaining the three medium presets and identifies two provisional Luna-low lookup use cases. Ambiguous scoring and concurrent source changes limit this pilot; the original records and separate audits are preserved, and its frozen protocol intentionally refuses changed source hashes. The opt-in runner is `scripts/model_selection_eval.py`; it makes no model calls without `--execute`.
+
 ## Verification
 
 ```bash

@@ -1,0 +1,906 @@
+{
+  "pi_version": "0.85.0",
+  "offline": {
+    "typecheck": "pass",
+    "unit_tests": {
+      "typescript": 62,
+      "python": 22
+    },
+    "package_check": "pass",
+    "package_files": 14
+  },
+  "current_smoke": {
+    "local": {
+      "status": "pass",
+      "results": [
+        {
+          "capability": "local",
+          "preset": "lookup-standard",
+          "expected": {
+            "model": "openai-codex/gpt-5.6-luna",
+            "thinking": "medium"
+          },
+          "status": "pass",
+          "checks": {
+            "exactly_one_call": true,
+            "requested_preset_and_scope": true,
+            "exactly_one_result": true,
+            "no_tool_error": true,
+            "non_empty_answer": true,
+            "within_12_kib": true,
+            "no_raw_tool_syntax": true,
+            "expected_fact": true,
+            "evidence_present": true,
+            "no_parent_investigation_or_loader_calls": true,
+            "reported_preset": true,
+            "reported_model": true,
+            "reported_thinking": true,
+            "reported_capability": true,
+            "complete_untruncated_result": true,
+            "reported_usage": true,
+            "observed_child_requests": true,
+            "effective_child_model": true,
+            "effective_child_thinking": true,
+            "wire_child_model": true,
+            "wire_child_thinking": true,
+            "response_child_model": true
+          },
+          "result_bytes": 47,
+          "errors": [],
+          "parent_other_calls": [],
+          "child_usage": {
+            "input": 1763,
+            "output": 44,
+            "cacheRead": 0,
+            "cacheWrite": 0,
+            "totalTokens": 1807,
+            "cost": {
+              "input": 0.0003526,
+              "output": 5.2799999999999996e-05,
+              "cacheRead": 0,
+              "cacheWrite": 0,
+              "total": 0.00040540000000000004
+            },
+            "reasoning": 0
+          },
+          "child_duration_ms": 6234,
+          "exit_code": 0
+        },
+        {
+          "capability": "local",
+          "preset": "analysis-standard",
+          "expected": {
+            "model": "openai-codex/gpt-5.6-terra",
+            "thinking": "medium"
+          },
+          "status": "pass",
+          "checks": {
+            "exactly_one_call": true,
+            "requested_preset_and_scope": true,
+            "exactly_one_result": true,
+            "no_tool_error": true,
+            "non_empty_answer": true,
+            "within_12_kib": true,
+            "no_raw_tool_syntax": true,
+            "expected_fact": true,
+            "evidence_present": true,
+            "no_parent_investigation_or_loader_calls": true,
+            "reported_preset": true,
+            "reported_model": true,
+            "reported_thinking": true,
+            "reported_capability": true,
+            "complete_untruncated_result": true,
+            "reported_usage": true,
+            "observed_child_requests": true,
+            "effective_child_model": true,
+            "effective_child_thinking": true,
+            "wire_child_model": true,
+            "wire_child_thinking": true,
+            "response_child_model": true
+          },
+          "result_bytes": 34,
+          "errors": [],
+          "parent_other_calls": [],
+          "child_usage": {
+            "input": 1757,
+            "output": 49,
+            "cacheRead": 0,
+            "cacheWrite": 0,
+            "totalTokens": 1806,
+            "cost": {
+              "input": 0.0035139999999999998,
+              "output": 0.000588,
+              "cacheRead": 0,
+              "cacheWrite": 0,
+              "total": 0.004102
+            },
+            "reasoning": 8
+          },
+          "child_duration_ms": 7100,
+          "exit_code": 0
+        },
+        {
+          "capability": "local",
+          "preset": "review-standard",
+          "expected": {
+            "model": "openai-codex/gpt-5.6-sol",
+            "thinking": "medium"
+          },
+          "status": "pass",
+          "checks": {
+            "exactly_one_call": true,
+            "requested_preset_and_scope": true,
+            "exactly_one_result": true,
+            "no_tool_error": true,
+            "non_empty_answer": true,
+            "within_12_kib": true,
+            "no_raw_tool_syntax": true,
+            "expected_fact": true,
+            "evidence_present": true,
+            "no_parent_investigation_or_loader_calls": true,
+            "reported_preset": true,
+            "reported_model": true,
+            "reported_thinking": true,
+            "reported_capability": true,
+            "complete_untruncated_result": true,
+            "reported_usage": true,
+            "observed_child_requests": true,
+            "effective_child_model": true,
+            "effective_child_thinking": true,
+            "wire_child_model": true,
+            "wire_child_thinking": true,
+            "response_child_model": true
+          },
+          "result_bytes": 61,
+          "errors": [],
+          "parent_other_calls": [],
+          "child_usage": {
+            "input": 1751,
+            "output": 47,
+            "cacheRead": 0,
+            "cacheWrite": 0,
+            "totalTokens": 1798,
+            "cost": {
+              "input": 0.008755,
+              "output": 0.00141,
+              "cacheRead": 0,
+              "cacheWrite": 0,
+              "total": 0.010165
+            },
+            "reasoning": 0
+          },
+          "child_duration_ms": 7635,
+          "exit_code": 0
+        }
+      ]
+    },
+    "web": {
+      "status": "pass",
+      "results": [
+        {
+          "capability": "web",
+          "preset": "lookup-standard",
+          "expected": {
+            "model": "openai-codex/gpt-5.6-luna",
+            "thinking": "medium"
+          },
+          "status": "pass",
+          "checks": {
+            "exactly_one_call": true,
+            "requested_preset_and_scope": true,
+            "exactly_one_result": true,
+            "no_tool_error": true,
+            "non_empty_answer": true,
+            "within_12_kib": true,
+            "no_raw_tool_syntax": true,
+            "expected_fact": true,
+            "evidence_present": true,
+            "no_parent_investigation_or_loader_calls": true,
+            "reported_preset": true,
+            "reported_model": true,
+            "reported_thinking": true,
+            "reported_capability": true,
+            "complete_untruncated_result": true,
+            "reported_usage": true,
+            "observed_child_requests": true,
+            "effective_child_model": true,
+            "effective_child_thinking": true,
+            "wire_child_model": true,
+            "wire_child_thinking": true,
+            "response_child_model": true
+          },
+          "result_bytes": 215,
+          "errors": [],
+          "parent_other_calls": [],
+          "child_usage": {
+            "input": 3831,
+            "output": 94,
+            "cacheRead": 2560,
+            "cacheWrite": 0,
+            "totalTokens": 6485,
+            "cost": {
+              "input": 0.0007662000000000001,
+              "output": 0.0001128,
+              "cacheRead": 5.12e-05,
+              "cacheWrite": 0,
+              "total": 0.0009302
+            },
+            "reasoning": 17
+          },
+          "child_duration_ms": 8258,
+          "exit_code": 0
+        },
+        {
+          "capability": "web",
+          "preset": "analysis-standard",
+          "expected": {
+            "model": "openai-codex/gpt-5.6-terra",
+            "thinking": "medium"
+          },
+          "status": "pass",
+          "checks": {
+            "exactly_one_call": true,
+            "requested_preset_and_scope": true,
+            "exactly_one_result": true,
+            "no_tool_error": true,
+            "non_empty_answer": true,
+            "within_12_kib": true,
+            "no_raw_tool_syntax": true,
+            "expected_fact": true,
+            "evidence_present": true,
+            "no_parent_investigation_or_loader_calls": true,
+            "reported_preset": true,
+            "reported_model": true,
+            "reported_thinking": true,
+            "reported_capability": true,
+            "complete_untruncated_result": true,
+            "reported_usage": true,
+            "observed_child_requests": true,
+            "effective_child_model": true,
+            "effective_child_thinking": true,
+            "wire_child_model": true,
+            "wire_child_thinking": true,
+            "response_child_model": true
+          },
+          "result_bytes": 155,
+          "errors": [],
+          "parent_other_calls": [],
+          "child_usage": {
+            "input": 1248,
+            "output": 64,
+            "cacheRead": 5120,
+            "cacheWrite": 0,
+            "totalTokens": 6432,
+            "cost": {
+              "input": 0.002496,
+              "output": 0.000768,
+              "cacheRead": 0.0010240000000000002,
+              "cacheWrite": 0,
+              "total": 0.004288
+            },
+            "reasoning": 0
+          },
+          "child_duration_ms": 8207,
+          "exit_code": 0
+        },
+        {
+          "capability": "web",
+          "preset": "review-standard",
+          "expected": {
+            "model": "openai-codex/gpt-5.6-sol",
+            "thinking": "medium"
+          },
+          "status": "pass",
+          "checks": {
+            "exactly_one_call": true,
+            "requested_preset_and_scope": true,
+            "exactly_one_result": true,
+            "no_tool_error": true,
+            "non_empty_answer": true,
+            "within_12_kib": true,
+            "no_raw_tool_syntax": true,
+            "expected_fact": true,
+            "evidence_present": true,
+            "no_parent_investigation_or_loader_calls": true,
+            "reported_preset": true,
+            "reported_model": true,
+            "reported_thinking": true,
+            "reported_capability": true,
+            "complete_untruncated_result": true,
+            "reported_usage": true,
+            "observed_child_requests": true,
+            "effective_child_model": true,
+            "effective_child_thinking": true,
+            "wire_child_model": true,
+            "wire_child_thinking": true,
+            "response_child_model": true
+          },
+          "result_bytes": 217,
+          "errors": [],
+          "parent_other_calls": [],
+          "child_usage": {
+            "input": 3420,
+            "output": 77,
+            "cacheRead": 2944,
+            "cacheWrite": 0,
+            "totalTokens": 6441,
+            "cost": {
+              "input": 0.0171,
+              "output": 0.00231,
+              "cacheRead": 0.001472,
+              "cacheWrite": 0,
+              "total": 0.020882
+            },
+            "reasoning": 0
+          },
+          "child_duration_ms": 8261,
+          "exit_code": 0
+        }
+      ]
+    }
+  },
+  "historical_smoke_including_failures": {
+    "initial_local": {
+      "status": "pass",
+      "results": [
+        {
+          "capability": "local",
+          "preset": "lookup-standard",
+          "expected": {
+            "model": "openai-codex/gpt-5.6-luna",
+            "thinking": "medium"
+          },
+          "status": "pass",
+          "checks": {
+            "exactly_one_call": true,
+            "requested_preset_and_scope": true,
+            "exactly_one_result": true,
+            "no_tool_error": true,
+            "non_empty_answer": true,
+            "within_12_kib": true,
+            "no_raw_tool_syntax": true,
+            "expected_fact": true,
+            "evidence_present": true,
+            "no_parent_investigation_or_loader_calls": true,
+            "reported_preset": true,
+            "reported_model": true,
+            "reported_thinking": true,
+            "reported_capability": true,
+            "complete_untruncated_result": true,
+            "reported_usage": true,
+            "observed_child_requests": true,
+            "effective_child_model": true,
+            "effective_child_thinking": true,
+            "wire_child_model": true,
+            "wire_child_thinking": true,
+            "response_child_model": true
+          },
+          "result_bytes": 47,
+          "errors": [],
+          "parent_other_calls": [],
+          "child_usage": {
+            "input": 1761,
+            "output": 44,
+            "cacheRead": 0,
+            "cacheWrite": 0,
+            "totalTokens": 1805,
+            "cost": {
+              "input": 0.0003522,
+              "output": 5.2799999999999996e-05,
+              "cacheRead": 0,
+              "cacheWrite": 0,
+              "total": 0.00040500000000000003
+            },
+            "reasoning": 0
+          },
+          "child_duration_ms": 6153,
+          "exit_code": 0
+        },
+        {
+          "capability": "local",
+          "preset": "analysis-standard",
+          "expected": {
+            "model": "openai-codex/gpt-5.6-terra",
+            "thinking": "medium"
+          },
+          "status": "pass",
+          "checks": {
+            "exactly_one_call": true,
+            "requested_preset_and_scope": true,
+            "exactly_one_result": true,
+            "no_tool_error": true,
+            "non_empty_answer": true,
+            "within_12_kib": true,
+            "no_raw_tool_syntax": true,
+            "expected_fact": true,
+            "evidence_present": true,
+            "no_parent_investigation_or_loader_calls": true,
+            "reported_preset": true,
+            "reported_model": true,
+            "reported_thinking": true,
+            "reported_capability": true,
+            "complete_untruncated_result": true,
+            "reported_usage": true,
+            "observed_child_requests": true,
+            "effective_child_model": true,
+            "effective_child_thinking": true,
+            "wire_child_model": true,
+            "wire_child_thinking": true,
+            "response_child_model": true
+          },
+          "result_bytes": 34,
+          "errors": [],
+          "parent_other_calls": [],
+          "child_usage": {
+            "input": 1749,
+            "output": 39,
+            "cacheRead": 0,
+            "cacheWrite": 0,
+            "totalTokens": 1788,
+            "cost": {
+              "input": 0.0034980000000000002,
+              "output": 0.000468,
+              "cacheRead": 0,
+              "cacheWrite": 0,
+              "total": 0.003966
+            },
+            "reasoning": 0
+          },
+          "child_duration_ms": 7025,
+          "exit_code": 0
+        },
+        {
+          "capability": "local",
+          "preset": "review-standard",
+          "expected": {
+            "model": "openai-codex/gpt-5.6-sol",
+            "thinking": "medium"
+          },
+          "status": "pass",
+          "checks": {
+            "exactly_one_call": true,
+            "requested_preset_and_scope": true,
+            "exactly_one_result": true,
+            "no_tool_error": true,
+            "non_empty_answer": true,
+            "within_12_kib": true,
+            "no_raw_tool_syntax": true,
+            "expected_fact": true,
+            "evidence_present": true,
+            "no_parent_investigation_or_loader_calls": true,
+            "reported_preset": true,
+            "reported_model": true,
+            "reported_thinking": true,
+            "reported_capability": true,
+            "complete_untruncated_result": true,
+            "reported_usage": true,
+            "observed_child_requests": true,
+            "effective_child_model": true,
+            "effective_child_thinking": true,
+            "wire_child_model": true,
+            "wire_child_thinking": true,
+            "response_child_model": true
+          },
+          "result_bytes": 56,
+          "errors": [],
+          "parent_other_calls": [],
+          "child_usage": {
+            "input": 1747,
+            "output": 47,
+            "cacheRead": 0,
+            "cacheWrite": 0,
+            "totalTokens": 1794,
+            "cost": {
+              "input": 0.008735,
+              "output": 0.00141,
+              "cacheRead": 0,
+              "cacheWrite": 0,
+              "total": 0.010145000000000001
+            },
+            "reasoning": 0
+          },
+          "child_duration_ms": 6839,
+          "exit_code": 0
+        }
+      ]
+    },
+    "initial_example_web": {
+      "status": "fail",
+      "results": [
+        {
+          "capability": "web",
+          "preset": "lookup-standard",
+          "expected": {
+            "model": "openai-codex/gpt-5.6-luna",
+            "thinking": "medium"
+          },
+          "status": "fail",
+          "checks": {
+            "exactly_one_call": true,
+            "requested_preset_and_scope": true,
+            "exactly_one_result": true,
+            "no_tool_error": true,
+            "non_empty_answer": true,
+            "within_12_kib": true,
+            "no_raw_tool_syntax": true,
+            "expected_fact": false,
+            "evidence_present": true,
+            "no_parent_investigation_or_loader_calls": true,
+            "reported_preset": true,
+            "reported_model": true,
+            "reported_thinking": true,
+            "reported_capability": true,
+            "complete_untruncated_result": true,
+            "reported_usage": true,
+            "observed_child_requests": true,
+            "effective_child_model": true,
+            "effective_child_thinking": true,
+            "wire_child_model": true,
+            "wire_child_thinking": true,
+            "response_child_model": true
+          },
+          "result_bytes": 93,
+          "errors": [],
+          "parent_other_calls": [],
+          "child_usage": {
+            "input": 4967,
+            "output": 162,
+            "cacheRead": 5120,
+            "cacheWrite": 0,
+            "totalTokens": 10249,
+            "cost": {
+              "input": 0.0009934,
+              "output": 0.00019439999999999998,
+              "cacheRead": 0.0001024,
+              "cacheWrite": 0,
+              "total": 0.0012902
+            },
+            "reasoning": 82
+          },
+          "child_duration_ms": 10826,
+          "exit_code": 0
+        },
+        {
+          "capability": "web",
+          "preset": "analysis-standard",
+          "expected": {
+            "model": "openai-codex/gpt-5.6-terra",
+            "thinking": "medium"
+          },
+          "status": "pass",
+          "checks": {
+            "exactly_one_call": true,
+            "requested_preset_and_scope": true,
+            "exactly_one_result": true,
+            "no_tool_error": true,
+            "non_empty_answer": true,
+            "within_12_kib": true,
+            "no_raw_tool_syntax": true,
+            "expected_fact": true,
+            "evidence_present": true,
+            "no_parent_investigation_or_loader_calls": true,
+            "reported_preset": true,
+            "reported_model": true,
+            "reported_thinking": true,
+            "reported_capability": true,
+            "complete_untruncated_result": true,
+            "reported_usage": true,
+            "observed_child_requests": true,
+            "effective_child_model": true,
+            "effective_child_thinking": true,
+            "wire_child_model": true,
+            "wire_child_thinking": true,
+            "response_child_model": true
+          },
+          "result_bytes": 38,
+          "errors": [],
+          "parent_other_calls": [],
+          "child_usage": {
+            "input": 3807,
+            "output": 37,
+            "cacheRead": 2560,
+            "cacheWrite": 0,
+            "totalTokens": 6404,
+            "cost": {
+              "input": 0.007614,
+              "output": 0.000444,
+              "cacheRead": 0.0005120000000000001,
+              "cacheWrite": 0,
+              "total": 0.00857
+            },
+            "reasoning": 0
+          },
+          "child_duration_ms": 6882,
+          "exit_code": 0
+        },
+        {
+          "capability": "web",
+          "preset": "review-standard",
+          "expected": {
+            "model": "openai-codex/gpt-5.6-sol",
+            "thinking": "medium"
+          },
+          "status": "pass",
+          "checks": {
+            "exactly_one_call": true,
+            "requested_preset_and_scope": true,
+            "exactly_one_result": true,
+            "no_tool_error": true,
+            "non_empty_answer": true,
+            "within_12_kib": true,
+            "no_raw_tool_syntax": true,
+            "expected_fact": true,
+            "evidence_present": true,
+            "no_parent_investigation_or_loader_calls": true,
+            "reported_preset": true,
+            "reported_model": true,
+            "reported_thinking": true,
+            "reported_capability": true,
+            "complete_untruncated_result": true,
+            "reported_usage": true,
+            "observed_child_requests": true,
+            "effective_child_model": true,
+            "effective_child_thinking": true,
+            "wire_child_model": true,
+            "wire_child_thinking": true,
+            "response_child_model": true
+          },
+          "result_bytes": 88,
+          "errors": [],
+          "parent_other_calls": [],
+          "child_usage": {
+            "input": 3920,
+            "output": 186,
+            "cacheRead": 6144,
+            "cacheWrite": 0,
+            "totalTokens": 10250,
+            "cost": {
+              "input": 0.0196,
+              "output": 0.00558,
+              "cacheRead": 0.003072,
+              "cacheWrite": 0,
+              "total": 0.028252000000000003
+            },
+            "reasoning": 104
+          },
+          "child_duration_ms": 13096,
+          "exit_code": 0
+        }
+      ]
+    },
+    "example_lookup_diagnostic": {
+      "status": "fail",
+      "results": [
+        {
+          "capability": "web",
+          "preset": "lookup-standard",
+          "expected": {
+            "model": "openai-codex/gpt-5.6-luna",
+            "thinking": "medium"
+          },
+          "status": "fail",
+          "checks": {
+            "exactly_one_call": true,
+            "requested_preset_and_scope": true,
+            "exactly_one_result": true,
+            "no_tool_error": true,
+            "non_empty_answer": true,
+            "within_12_kib": true,
+            "no_raw_tool_syntax": true,
+            "expected_fact": false,
+            "evidence_present": true,
+            "no_parent_investigation_or_loader_calls": true,
+            "reported_preset": true,
+            "reported_model": true,
+            "reported_thinking": true,
+            "reported_capability": true,
+            "complete_untruncated_result": true,
+            "reported_usage": true,
+            "observed_child_requests": true,
+            "effective_child_model": true,
+            "effective_child_thinking": true,
+            "wire_child_model": true,
+            "wire_child_thinking": true,
+            "response_child_model": true
+          },
+          "result_bytes": 95,
+          "errors": [],
+          "parent_other_calls": [],
+          "child_usage": {
+            "input": 7459,
+            "output": 101,
+            "cacheRead": 2560,
+            "cacheWrite": 0,
+            "totalTokens": 10120,
+            "cost": {
+              "input": 0.0014918000000000002,
+              "output": 0.00012119999999999999,
+              "cacheRead": 5.12e-05,
+              "cacheWrite": 0,
+              "total": 0.0016642000000000002
+            },
+            "reasoning": 23
+          },
+          "child_duration_ms": 9782,
+          "failure_answer_excerpt": "Unable to extract content from https://example.com; no page title or heading could be verified.",
+          "exit_code": 0
+        }
+      ]
+    },
+    "iana_heading_diagnostic": {
+      "status": "fail",
+      "results": [
+        {
+          "capability": "web",
+          "preset": "lookup-standard",
+          "expected": {
+            "model": "openai-codex/gpt-5.6-luna",
+            "thinking": "medium"
+          },
+          "status": "fail",
+          "checks": {
+            "exactly_one_call": true,
+            "requested_preset_and_scope": true,
+            "exactly_one_result": true,
+            "no_tool_error": true,
+            "non_empty_answer": true,
+            "within_12_kib": true,
+            "no_raw_tool_syntax": true,
+            "expected_fact": false,
+            "evidence_present": true,
+            "no_parent_investigation_or_loader_calls": true,
+            "reported_preset": true,
+            "reported_model": true,
+            "reported_thinking": true,
+            "reported_capability": true,
+            "complete_untruncated_result": true,
+            "reported_usage": true,
+            "observed_child_requests": true,
+            "effective_child_model": true,
+            "effective_child_thinking": true,
+            "wire_child_model": true,
+            "wire_child_thinking": true,
+            "response_child_model": true
+          },
+          "result_bytes": 182,
+          "errors": [],
+          "parent_other_calls": [],
+          "child_usage": {
+            "input": 3829,
+            "output": 294,
+            "cacheRead": 2560,
+            "cacheWrite": 0,
+            "totalTokens": 6683,
+            "cost": {
+              "input": 0.0007658000000000001,
+              "output": 0.0003528,
+              "cacheRead": 5.12e-05,
+              "cacheWrite": 0,
+              "total": 0.0011698
+            },
+            "reasoning": 218
+          },
+          "child_duration_ms": 12144,
+          "failure_answer_excerpt": "Heading: **Not extracted from the provided page content.**\n\nRestriction: “They are not available for registration or transfer.”\n\nSource: https://www.iana.org/help/example-domains",
+          "exit_code": 0
+        },
+        {
+          "capability": "web",
+          "preset": "analysis-standard",
+          "expected": {
+            "model": "openai-codex/gpt-5.6-terra",
+            "thinking": "medium"
+          },
+          "status": "fail",
+          "checks": {
+            "exactly_one_call": true,
+            "requested_preset_and_scope": true,
+            "exactly_one_result": true,
+            "no_tool_error": true,
+            "non_empty_answer": true,
+            "within_12_kib": true,
+            "no_raw_tool_syntax": true,
+            "expected_fact": false,
+            "evidence_present": true,
+            "no_parent_investigation_or_loader_calls": true,
+            "reported_preset": true,
+            "reported_model": true,
+            "reported_thinking": true,
+            "reported_capability": true,
+            "complete_untruncated_result": true,
+            "reported_usage": true,
+            "observed_child_requests": true,
+            "effective_child_model": true,
+            "effective_child_thinking": true,
+            "wire_child_model": true,
+            "wire_child_thinking": true,
+            "response_child_model": true
+          },
+          "result_bytes": 187,
+          "errors": [],
+          "parent_other_calls": [],
+          "child_usage": {
+            "input": 9764,
+            "output": 353,
+            "cacheRead": 0,
+            "cacheWrite": 0,
+            "totalTokens": 10117,
+            "cost": {
+              "input": 0.019528,
+              "output": 0.004236,
+              "cacheRead": 0,
+              "cacheWrite": 0,
+              "total": 0.023764
+            },
+            "reasoning": 251
+          },
+          "child_duration_ms": 15475,
+          "failure_answer_excerpt": "Heading: extraction did not expose a heading; cannot verify it.\n\nRestriction: “They are not available for registration or transfer.”\n\nSource: https://www.iana.org/help/example-domains",
+          "exit_code": 0
+        },
+        {
+          "capability": "web",
+          "preset": "review-standard",
+          "expected": {
+            "model": "openai-codex/gpt-5.6-sol",
+            "thinking": "medium"
+          },
+          "status": "fail",
+          "checks": {
+            "exactly_one_call": true,
+            "requested_preset_and_scope": true,
+            "exactly_one_result": true,
+            "no_tool_error": true,
+            "non_empty_answer": true,
+            "within_12_kib": true,
+            "no_raw_tool_syntax": true,
+            "expected_fact": false,
+            "evidence_present": true,
+            "no_parent_investigation_or_loader_calls": true,
+            "reported_preset": true,
+            "reported_model": true,
+            "reported_thinking": true,
+            "reported_capability": true,
+            "complete_untruncated_result": true,
+            "reported_usage": true,
+            "observed_child_requests": true,
+            "effective_child_model": true,
+            "effective_child_thinking": true,
+            "wire_child_model": true,
+            "wire_child_thinking": true,
+            "response_child_model": true
+          },
+          "result_bytes": 228,
+          "errors": [],
+          "parent_other_calls": [],
+          "child_usage": {
+            "input": 7808,
+            "output": 499,
+            "cacheRead": 13952,
+            "cacheWrite": 0,
+            "totalTokens": 22259,
+            "cost": {
+              "input": 0.039040000000000005,
+              "output": 0.01497,
+              "cacheRead": 0.0069759999999999996,
+              "cacheWrite": 0,
+              "total": 0.060986000000000005
+            },
+            "reasoning": 248
+          },
+          "child_duration_ms": 21607,
+          "failure_answer_excerpt": "**Heading:** Extraction failed; the English heading was not returned, so I cannot report it exactly.\n\n**Restriction:** “They are not available for registration or transfer.”\n\nSource: https://www.iana.org/help/example-domains",
+          "exit_code": 0
+        }
+      ]
+    }
+  },
+  "smoke_child_invocations_including_diagnostics": 16,
+  "current_runtime_sha256": {
+    "shared.ts": "51e5f66506766d6f1b29a1a7894842aaf5fe907662d934e5782583fdef2b2f24",
+    "subprocess.ts": "45ab7f83e5292c93ee15327f2223265e7cdbc44d2767cdf76f6ee3cb969944d7",
+    "child-guard.ts": "a261deec7333c96bdd8b326b84f60a669a27ade2cc2701b080fb1fb71cd80248",
+    "parent-liveness.ts": "cc35818bf9d11cc1199e3a98113342fcb5dadda1c1fed27fb39fe8787620874b"
+  },
+  "note": "Final 3 local + 3 web cells pass on the concurrently updated current runtime; earlier failures are retained, not erased. A/B source-drift limitations are recorded separately."
+}

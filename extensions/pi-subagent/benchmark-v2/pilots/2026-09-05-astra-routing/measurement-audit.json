@@ -1,0 +1,453 @@
+{
+  "kind": "post_hoc_measurement_audit_not_replacement_of_frozen_scores",
+  "notes": [
+    "Exclude analysis-capacity from routing ranks: documented_pool_limit is ambiguous between deployed 8 and runbook recommendation 20. All eight explanations correctly diagnose the per-worker issue.",
+    "Pi read uses split(\"\\n\") and exposes a terminal empty line. Four frozen strict-citation failures extend only to this terminal line; treat these separately from the three ranges exceeding both counts.",
+    "No original tasks, outputs, frozen scores, or execution implementation were changed. No extra model trials were used."
+  ],
+  "nonambiguous_runs": 38,
+  "nonambiguous_all_answer_fields_correct": 38,
+  "nonambiguous_pi_lf_evidence_passes": 35,
+  "comparisons": {
+    "lookup-config: luna-medium -> luna-low": {
+      "median_duration_ms_change_pct": 1.041849063211342,
+      "median_total_tokens_change_pct": -1.7811361489677546,
+      "median_output_tokens_change_pct": -16.292798110979934,
+      "median_api_equivalent_usd_change_pct": -7.058217413704249
+    },
+    "lookup-incident: luna-medium -> luna-low": {
+      "median_duration_ms_change_pct": -23.865482713017194,
+      "median_total_tokens_change_pct": -3.9408222047656483,
+      "median_output_tokens_change_pct": -26.198439241917505,
+      "median_api_equivalent_usd_change_pct": -12.175204157386798
+    },
+    "analysis-deadline: terra-medium -> astra-medium": {
+      "median_duration_ms_change_pct": 21.130471439612176,
+      "median_total_tokens_change_pct": -5.783675513269904,
+      "median_output_tokens_change_pct": -29.313543599257883,
+      "median_api_equivalent_usd_change_pct": 295.2010763940798
+    },
+    "review: sol-medium -> astra-medium": {
+      "median_duration_ms_change_pct": 5.432951221276983,
+      "median_total_tokens_change_pct": -12.556755910443085,
+      "median_output_tokens_change_pct": -41.0612760581175,
+      "median_api_equivalent_usd_change_pct": 94.99110227153773
+    }
+  },
+  "runs": [
+    {
+      "run_id": "review-lease--sol-medium--r1",
+      "task_id": "review-lease",
+      "candidate": "sol-medium",
+      "excluded_from_routing_comparison": false,
+      "all_answer_fields_match_frozen_key": true,
+      "pi_lf_evidence_check": true,
+      "original_contract_pass": false
+    },
+    {
+      "run_id": "review-lease--astra-low--r1",
+      "task_id": "review-lease",
+      "candidate": "astra-low",
+      "excluded_from_routing_comparison": false,
+      "all_answer_fields_match_frozen_key": true,
+      "pi_lf_evidence_check": true,
+      "original_contract_pass": true
+    },
+    {
+      "run_id": "review-lease--astra-medium--r1",
+      "task_id": "review-lease",
+      "candidate": "astra-medium",
+      "excluded_from_routing_comparison": false,
+      "all_answer_fields_match_frozen_key": true,
+      "pi_lf_evidence_check": true,
+      "original_contract_pass": true
+    },
+    {
+      "run_id": "review-safe-control--sol-medium--r1",
+      "task_id": "review-safe-control",
+      "candidate": "sol-medium",
+      "excluded_from_routing_comparison": false,
+      "all_answer_fields_match_frozen_key": true,
+      "pi_lf_evidence_check": true,
+      "original_contract_pass": true
+    },
+    {
+      "run_id": "review-safe-control--astra-low--r1",
+      "task_id": "review-safe-control",
+      "candidate": "astra-low",
+      "excluded_from_routing_comparison": false,
+      "all_answer_fields_match_frozen_key": true,
+      "pi_lf_evidence_check": true,
+      "original_contract_pass": true
+    },
+    {
+      "run_id": "review-safe-control--astra-medium--r1",
+      "task_id": "review-safe-control",
+      "candidate": "astra-medium",
+      "excluded_from_routing_comparison": false,
+      "all_answer_fields_match_frozen_key": true,
+      "pi_lf_evidence_check": true,
+      "original_contract_pass": true
+    },
+    {
+      "run_id": "analysis-capacity--terra-medium--r1",
+      "task_id": "analysis-capacity",
+      "candidate": "terra-medium",
+      "excluded_from_routing_comparison": true,
+      "all_answer_fields_match_frozen_key": false,
+      "pi_lf_evidence_check": true,
+      "original_contract_pass": false
+    },
+    {
+      "run_id": "analysis-capacity--astra-low--r1",
+      "task_id": "analysis-capacity",
+      "candidate": "astra-low",
+      "excluded_from_routing_comparison": true,
+      "all_answer_fields_match_frozen_key": false,
+      "pi_lf_evidence_check": true,
+      "original_contract_pass": false
+    },
+    {
+      "run_id": "analysis-capacity--terra-low--r1",
+      "task_id": "analysis-capacity",
+      "candidate": "terra-low",
+      "excluded_from_routing_comparison": true,
+      "all_answer_fields_match_frozen_key": false,
+      "pi_lf_evidence_check": true,
+      "original_contract_pass": false
+    },
+    {
+      "run_id": "analysis-deadline--terra-low--r1",
+      "task_id": "analysis-deadline",
+      "candidate": "terra-low",
+      "excluded_from_routing_comparison": false,
+      "all_answer_fields_match_frozen_key": true,
+      "pi_lf_evidence_check": false,
+      "original_contract_pass": false
+    },
+    {
+      "run_id": "analysis-capacity--astra-medium--r1",
+      "task_id": "analysis-capacity",
+      "candidate": "astra-medium",
+      "excluded_from_routing_comparison": true,
+      "all_answer_fields_match_frozen_key": true,
+      "pi_lf_evidence_check": true,
+      "original_contract_pass": true
+    },
+    {
+      "run_id": "analysis-deadline--terra-medium--r1",
+      "task_id": "analysis-deadline",
+      "candidate": "terra-medium",
+      "excluded_from_routing_comparison": false,
+      "all_answer_fields_match_frozen_key": true,
+      "pi_lf_evidence_check": true,
+      "original_contract_pass": true
+    },
+    {
+      "run_id": "analysis-deadline--astra-medium--r1",
+      "task_id": "analysis-deadline",
+      "candidate": "astra-medium",
+      "excluded_from_routing_comparison": false,
+      "all_answer_fields_match_frozen_key": true,
+      "pi_lf_evidence_check": true,
+      "original_contract_pass": true
+    },
+    {
+      "run_id": "lookup-config--astra-low--r1",
+      "task_id": "lookup-config",
+      "candidate": "astra-low",
+      "excluded_from_routing_comparison": false,
+      "all_answer_fields_match_frozen_key": true,
+      "pi_lf_evidence_check": true,
+      "original_contract_pass": true
+    },
+    {
+      "run_id": "analysis-deadline--astra-low--r1",
+      "task_id": "analysis-deadline",
+      "candidate": "astra-low",
+      "excluded_from_routing_comparison": false,
+      "all_answer_fields_match_frozen_key": true,
+      "pi_lf_evidence_check": true,
+      "original_contract_pass": true
+    },
+    {
+      "run_id": "lookup-config--luna-low--r1",
+      "task_id": "lookup-config",
+      "candidate": "luna-low",
+      "excluded_from_routing_comparison": false,
+      "all_answer_fields_match_frozen_key": true,
+      "pi_lf_evidence_check": true,
+      "original_contract_pass": true
+    },
+    {
+      "run_id": "lookup-config--luna-medium--r1",
+      "task_id": "lookup-config",
+      "candidate": "luna-medium",
+      "excluded_from_routing_comparison": false,
+      "all_answer_fields_match_frozen_key": true,
+      "pi_lf_evidence_check": true,
+      "original_contract_pass": true
+    },
+    {
+      "run_id": "review-delivery--astra-medium--r1",
+      "task_id": "review-delivery",
+      "candidate": "astra-medium",
+      "excluded_from_routing_comparison": false,
+      "all_answer_fields_match_frozen_key": true,
+      "pi_lf_evidence_check": true,
+      "original_contract_pass": true
+    },
+    {
+      "run_id": "review-delivery--astra-low--r1",
+      "task_id": "review-delivery",
+      "candidate": "astra-low",
+      "excluded_from_routing_comparison": false,
+      "all_answer_fields_match_frozen_key": true,
+      "pi_lf_evidence_check": true,
+      "original_contract_pass": true
+    },
+    {
+      "run_id": "lookup-incident--astra-low--r1",
+      "task_id": "lookup-incident",
+      "candidate": "astra-low",
+      "excluded_from_routing_comparison": false,
+      "all_answer_fields_match_frozen_key": true,
+      "pi_lf_evidence_check": true,
+      "original_contract_pass": true
+    },
+    {
+      "run_id": "review-delivery--sol-medium--r1",
+      "task_id": "review-delivery",
+      "candidate": "sol-medium",
+      "excluded_from_routing_comparison": false,
+      "all_answer_fields_match_frozen_key": true,
+      "pi_lf_evidence_check": true,
+      "original_contract_pass": true
+    },
+    {
+      "run_id": "lookup-incident--luna-low--r1",
+      "task_id": "lookup-incident",
+      "candidate": "luna-low",
+      "excluded_from_routing_comparison": false,
+      "all_answer_fields_match_frozen_key": true,
+      "pi_lf_evidence_check": true,
+      "original_contract_pass": true
+    },
+    {
+      "run_id": "lookup-incident--luna-medium--r1",
+      "task_id": "lookup-incident",
+      "candidate": "luna-medium",
+      "excluded_from_routing_comparison": false,
+      "all_answer_fields_match_frozen_key": true,
+      "pi_lf_evidence_check": true,
+      "original_contract_pass": false
+    },
+    {
+      "run_id": "review-safe-control--sol-medium--r2",
+      "task_id": "review-safe-control",
+      "candidate": "sol-medium",
+      "excluded_from_routing_comparison": false,
+      "all_answer_fields_match_frozen_key": true,
+      "pi_lf_evidence_check": true,
+      "original_contract_pass": true
+    },
+    {
+      "run_id": "review-safe-control--astra-low--r2",
+      "task_id": "review-safe-control",
+      "candidate": "astra-low",
+      "excluded_from_routing_comparison": false,
+      "all_answer_fields_match_frozen_key": true,
+      "pi_lf_evidence_check": true,
+      "original_contract_pass": true
+    },
+    {
+      "run_id": "review-safe-control--astra-medium--r2",
+      "task_id": "review-safe-control",
+      "candidate": "astra-medium",
+      "excluded_from_routing_comparison": false,
+      "all_answer_fields_match_frozen_key": true,
+      "pi_lf_evidence_check": true,
+      "original_contract_pass": true
+    },
+    {
+      "run_id": "lookup-incident--luna-medium--r2",
+      "task_id": "lookup-incident",
+      "candidate": "luna-medium",
+      "excluded_from_routing_comparison": false,
+      "all_answer_fields_match_frozen_key": true,
+      "pi_lf_evidence_check": true,
+      "original_contract_pass": false
+    },
+    {
+      "run_id": "lookup-incident--luna-low--r2",
+      "task_id": "lookup-incident",
+      "candidate": "luna-low",
+      "excluded_from_routing_comparison": false,
+      "all_answer_fields_match_frozen_key": true,
+      "pi_lf_evidence_check": true,
+      "original_contract_pass": true
+    },
+    {
+      "run_id": "lookup-incident--astra-low--r2",
+      "task_id": "lookup-incident",
+      "candidate": "astra-low",
+      "excluded_from_routing_comparison": false,
+      "all_answer_fields_match_frozen_key": true,
+      "pi_lf_evidence_check": true,
+      "original_contract_pass": true
+    },
+    {
+      "run_id": "analysis-capacity--astra-low--r2",
+      "task_id": "analysis-capacity",
+      "candidate": "astra-low",
+      "excluded_from_routing_comparison": true,
+      "all_answer_fields_match_frozen_key": true,
+      "pi_lf_evidence_check": true,
+      "original_contract_pass": true
+    },
+    {
+      "run_id": "analysis-capacity--astra-medium--r2",
+      "task_id": "analysis-capacity",
+      "candidate": "astra-medium",
+      "excluded_from_routing_comparison": true,
+      "all_answer_fields_match_frozen_key": false,
+      "pi_lf_evidence_check": true,
+      "original_contract_pass": false
+    },
+    {
+      "run_id": "analysis-capacity--terra-medium--r2",
+      "task_id": "analysis-capacity",
+      "candidate": "terra-medium",
+      "excluded_from_routing_comparison": true,
+      "all_answer_fields_match_frozen_key": false,
+      "pi_lf_evidence_check": true,
+      "original_contract_pass": false
+    },
+    {
+      "run_id": "analysis-capacity--terra-low--r2",
+      "task_id": "analysis-capacity",
+      "candidate": "terra-low",
+      "excluded_from_routing_comparison": true,
+      "all_answer_fields_match_frozen_key": false,
+      "pi_lf_evidence_check": true,
+      "original_contract_pass": false
+    },
+    {
+      "run_id": "lookup-config--luna-medium--r2",
+      "task_id": "lookup-config",
+      "candidate": "luna-medium",
+      "excluded_from_routing_comparison": false,
+      "all_answer_fields_match_frozen_key": true,
+      "pi_lf_evidence_check": true,
+      "original_contract_pass": false
+    },
+    {
+      "run_id": "lookup-config--astra-low--r2",
+      "task_id": "lookup-config",
+      "candidate": "astra-low",
+      "excluded_from_routing_comparison": false,
+      "all_answer_fields_match_frozen_key": true,
+      "pi_lf_evidence_check": true,
+      "original_contract_pass": true
+    },
+    {
+      "run_id": "lookup-config--luna-low--r2",
+      "task_id": "lookup-config",
+      "candidate": "luna-low",
+      "excluded_from_routing_comparison": false,
+      "all_answer_fields_match_frozen_key": true,
+      "pi_lf_evidence_check": true,
+      "original_contract_pass": true
+    },
+    {
+      "run_id": "analysis-deadline--astra-low--r2",
+      "task_id": "analysis-deadline",
+      "candidate": "astra-low",
+      "excluded_from_routing_comparison": false,
+      "all_answer_fields_match_frozen_key": true,
+      "pi_lf_evidence_check": true,
+      "original_contract_pass": true
+    },
+    {
+      "run_id": "analysis-deadline--terra-low--r2",
+      "task_id": "analysis-deadline",
+      "candidate": "terra-low",
+      "excluded_from_routing_comparison": false,
+      "all_answer_fields_match_frozen_key": true,
+      "pi_lf_evidence_check": false,
+      "original_contract_pass": false
+    },
+    {
+      "run_id": "analysis-deadline--terra-medium--r2",
+      "task_id": "analysis-deadline",
+      "candidate": "terra-medium",
+      "excluded_from_routing_comparison": false,
+      "all_answer_fields_match_frozen_key": true,
+      "pi_lf_evidence_check": false,
+      "original_contract_pass": false
+    },
+    {
+      "run_id": "analysis-deadline--astra-medium--r2",
+      "task_id": "analysis-deadline",
+      "candidate": "astra-medium",
+      "excluded_from_routing_comparison": false,
+      "all_answer_fields_match_frozen_key": true,
+      "pi_lf_evidence_check": true,
+      "original_contract_pass": true
+    },
+    {
+      "run_id": "review-lease--astra-medium--r2",
+      "task_id": "review-lease",
+      "candidate": "astra-medium",
+      "excluded_from_routing_comparison": false,
+      "all_answer_fields_match_frozen_key": true,
+      "pi_lf_evidence_check": true,
+      "original_contract_pass": true
+    },
+    {
+      "run_id": "review-lease--sol-medium--r2",
+      "task_id": "review-lease",
+      "candidate": "sol-medium",
+      "excluded_from_routing_comparison": false,
+      "all_answer_fields_match_frozen_key": true,
+      "pi_lf_evidence_check": true,
+      "original_contract_pass": true
+    },
+    {
+      "run_id": "review-lease--astra-low--r2",
+      "task_id": "review-lease",
+      "candidate": "astra-low",
+      "excluded_from_routing_comparison": false,
+      "all_answer_fields_match_frozen_key": true,
+      "pi_lf_evidence_check": true,
+      "original_contract_pass": true
+    },
+    {
+      "run_id": "review-delivery--astra-medium--r2",
+      "task_id": "review-delivery",
+      "candidate": "astra-medium",
+      "excluded_from_routing_comparison": false,
+      "all_answer_fields_match_frozen_key": true,
+      "pi_lf_evidence_check": true,
+      "original_contract_pass": true
+    },
+    {
+      "run_id": "review-delivery--astra-low--r2",
+      "task_id": "review-delivery",
+      "candidate": "astra-low",
+      "excluded_from_routing_comparison": false,
+      "all_answer_fields_match_frozen_key": true,
+      "pi_lf_evidence_check": true,
+      "original_contract_pass": true
+    },
+    {
+      "run_id": "review-delivery--sol-medium--r2",
+      "task_id": "review-delivery",
+      "candidate": "sol-medium",
+      "excluded_from_routing_comparison": false,
+      "all_answer_fields_match_frozen_key": true,
+      "pi_lf_evidence_check": true,
+      "original_contract_pass": true
+    }
+  ]
+}

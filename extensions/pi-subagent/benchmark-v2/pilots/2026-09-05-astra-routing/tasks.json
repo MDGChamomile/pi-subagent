@@ -1,0 +1,120 @@
+{
+  "schema_version": 1,
+  "tasks": [
+    {
+      "id": "lookup-config",
+      "profile": "lookup",
+      "objective": "Read the deployment files. Report the effective retry_limit (integer), region (string), service (string), and audit_enabled (boolean). Apply the documented precedence; do not diagnose or propose changes.",
+      "files": {
+        "fixture/README.md": "Configuration precedence, from lowest to highest: defaults.ini, production.env. Absent keys retain their defaults. Environment key names are case-insensitive. true/false are booleans.\n",
+        "fixture/defaults.ini": "retry_limit=3\nregion=ap-northeast-2\nservice=ledger-worker\naudit_enabled=true\n",
+        "fixture/production.env": "RETRY_LIMIT=5\nSERVICE=ledger-writer\n",
+        "fixture/old-development.env": "# Not used in production.\nRETRY_LIMIT=99\nAUDIT_ENABLED=false\n"
+      },
+      "expected": {"retry_limit": 5, "region": "ap-northeast-2", "service": "ledger-writer", "audit_enabled": true},
+      "evidence_groups": [
+        {"path": "fixture/README.md", "lines": [1]},
+        {"path": "fixture/defaults.ini", "lines": [2, 4]},
+        {"path": "fixture/production.env", "lines": [1, 2]}
+      ],
+      "candidates": ["luna-medium", "luna-low", "astra-low"]
+    },
+    {
+      "id": "lookup-incident",
+      "profile": "lookup",
+      "objective": "Extract facts for incident INC-7421 from the logs: incident_id, first_failure_utc, service, root_cause. Use the earliest timestamp for this incident, not file order, and ignore another incident. Return root_cause in the exact words recorded by the source.",
+      "files": {
+        "fixture/events.log": "2026-08-25T03:15:15Z ERROR incident=INC-7421 service=ledger-writer retry=2\n2026-08-25T03:10:00Z ERROR incident=INC-7419 service=mailer reason=connection refused\n2026-08-25T03:14:15Z ERROR incident=INC-7421 service=ledger-writer first failure\n2026-08-25T03:14:16Z INFO incident=INC-7421 root_cause=expired service certificate\n2026-08-25T03:16:00Z INFO incident=INC-7421 certificate replaced\n",
+        "fixture/notes.txt": "The log aggregator does not preserve timestamp ordering. The certificate replacement is remediation, not the cause.\n"
+      },
+      "expected": {"incident_id": "INC-7421", "first_failure_utc": "2026-08-25T03:14:15Z", "service": "ledger-writer", "root_cause": "expired service certificate"},
+      "evidence_groups": [{"path": "fixture/events.log", "lines": [3, 4]}],
+      "candidates": ["luna-medium", "luna-low", "astra-low"]
+    },
+    {
+      "id": "analysis-capacity",
+      "profile": "analysis",
+      "objective": "Explain the timeout incident using configuration, metrics, and routing. Report root_cause (per_worker_pool_saturation, cluster_capacity_exhaustion, or upstream_slowdown), peak_worker_concurrency (integer), documented_pool_limit (integer), and adding_workers_alone_sufficient (boolean). Distinguish per-worker capacity from cluster capacity.",
+      "files": {
+        "fixture/production.conf": "WORKERS=3\nPOOL_LIMIT_PER_WORKER=8\nREQUEST_TIMEOUT_SECONDS=30\n",
+        "fixture/metrics.csv": "worker,peak_concurrency,timeout_count,upstream_p99_ms\nworker-a,17,9,150\nworker-b,2,0,151\nworker-c,1,0,149\n",
+        "fixture/routing.md": "All requests from a tenant are pinned to one worker for the full incident window. Adding workers does not move the affected tenant's existing routing assignment.\n",
+        "fixture/runbook.md": "For a hot worker with sustained concurrency above 12, configure POOL_LIMIT_PER_WORKER=20 and restart that worker. The upstream service has verified headroom for this incident; limits are per process, not shared across workers.\n"
+      },
+      "expected": {"root_cause": "per_worker_pool_saturation", "peak_worker_concurrency": 17, "documented_pool_limit": 20, "adding_workers_alone_sufficient": false},
+      "evidence_groups": [
+        {"path": "fixture/production.conf", "lines": [2]},
+        {"path": "fixture/metrics.csv", "lines": [2]},
+        {"path": "fixture/routing.md", "lines": [1]},
+        {"path": "fixture/runbook.md", "lines": [1]}
+      ],
+      "candidates": ["terra-medium", "terra-low", "astra-medium", "astra-low"]
+    },
+    {
+      "id": "analysis-deadline",
+      "profile": "analysis",
+      "objective": "Trace the retry schedule in the worst case. Report configured_request_budget_ms, full_schedule_ms, fully_completed_attempts_before_abort, and binding_timeout (request or attempt). Account for units, delays, and the global cancellation deadline. Explain the final incomplete attempt; do not assume retries reset the request deadline.",
+      "files": {
+        "fixture/settings.json": "{\"requestBudgetSeconds\":3.2,\"attemptTimeoutMs\":900,\"maxAttempts\":3,\"retryDelaysMs\":[200,400]}\n",
+        "fixture/retry.ts": "export async function run(settings) {\n  const deadline = Date.now() + settings.requestBudgetSeconds * 1000;\n  for (let i = 0; i < settings.maxAttempts; i++) {\n    if (i > 0) await sleep(settings.retryDelaysMs[i - 1], deadline);\n    await attempt(settings.attemptTimeoutMs, deadline);\n  }\n}\n",
+        "fixture/contracts.md": "Use t=0 for the start and ignore scheduling overhead. Each failed attempt consumes exactly attemptTimeoutMs unless the global deadline arrives first. Failures are caught and retried by the omitted surrounding code. Both sleep and attempt abort at the same absolute global deadline. No cleanup time is charged.\n"
+      },
+      "expected": {"configured_request_budget_ms": 3200, "full_schedule_ms": 3300, "fully_completed_attempts_before_abort": 2, "binding_timeout": "request"},
+      "evidence_groups": [
+        {"path": "fixture/settings.json", "lines": [1]},
+        {"path": "fixture/retry.ts", "lines": [2, 4, 5]},
+        {"path": "fixture/contracts.md", "lines": [1]}
+      ],
+      "candidates": ["terra-medium", "terra-low", "astra-medium", "astra-low"]
+    },
+    {
+      "id": "review-delivery",
+      "profile": "review",
+      "objective": "Review payment delivery for retries, concurrent requests, and a crash after the external send. Report duplicate_external_effect_possible, db_unique_key_alone_sufficient, marking_complete_before_send_safe (all booleans), and minimum_fix (database_unique_only, outbox_only, provider_idempotency, or retries_disabled). Explain why the chosen class of fix addresses the external effect; flag only supported defects.",
+      "files": {
+        "fixture/deliver.ts": "export async function deliver(job) {\n  if (await db.receipts.exists(job.id)) return;\n  await provider.charge(job.account, job.amount);\n  await db.receipts.insert({ jobId: job.id, complete: true });\n}\n",
+        "fixture/schema.sql": "CREATE TABLE receipts (jobId TEXT PRIMARY KEY, complete BOOLEAN NOT NULL);\n",
+        "fixture/contracts.md": "Requests and retries may execute concurrently on different hosts. The database primary key is enforced atomically. A process may crash at any await boundary. The provider commits each successful charge independently of the database transaction. It offers a durable idempotency-key parameter, but the current call supplies none. The required outcome is one eventual external charge per job, with no lost charges.\n"
+      },
+      "expected": {"duplicate_external_effect_possible": true, "db_unique_key_alone_sufficient": false, "marking_complete_before_send_safe": false, "minimum_fix": "provider_idempotency"},
+      "evidence_groups": [
+        {"path": "fixture/deliver.ts", "lines": [2, 3, 4]},
+        {"path": "fixture/schema.sql", "lines": [1]},
+        {"path": "fixture/contracts.md", "lines": [1]}
+      ],
+      "candidates": ["sol-medium", "astra-medium", "astra-low"]
+    },
+    {
+      "id": "review-lease",
+      "profile": "review",
+      "objective": "Review this expiring distributed lease under process pauses. Report old_worker_can_delete_new_lease, get_then_del_sufficient, atomic_owner_checked_release_needed, and renewal_alone_sufficient (booleans). Explain one concrete interleaving and the minimum release correction. Judge only the lease-ownership release contract; external side-effect fencing is out of scope.",
+      "files": {
+        "fixture/lease.ts": "export async function withLease(key, work) {\n  const token = randomUUID();\n  if (!(await redis.set(key, token, { NX: true, PX: 1000 }))) return;\n  try {\n    await work();\n  } finally {\n    await redis.del(key);\n  }\n}\n",
+        "fixture/proposal.md": "Proposed correction A: periodically renew the expiry, but keep the unconditional DEL. Proposed correction B: issue GET, compare with the token in JavaScript, then issue DEL in a separate request.\n",
+        "fixture/contracts.md": "A worker may pause longer than the lease TTL. Another host may acquire the same key after expiry. Redis commands are individually atomic, but separate GET and DEL commands may have other commands interleaved. An atomic server-side compare-token-and-delete operation is available. Renewal cannot run while the owning process is paused. Tokens are globally unique.\n"
+      },
+      "expected": {"old_worker_can_delete_new_lease": true, "get_then_del_sufficient": false, "atomic_owner_checked_release_needed": true, "renewal_alone_sufficient": false},
+      "evidence_groups": [
+        {"path": "fixture/lease.ts", "lines": [3, 7]},
+        {"path": "fixture/proposal.md", "lines": [1]},
+        {"path": "fixture/contracts.md", "lines": [1]}
+      ],
+      "candidates": ["sol-medium", "astra-medium", "astra-low"]
+    },
+    {
+      "id": "review-safe-control",
+      "profile": "review",
+      "objective": "Review only concurrency for the provided transfer implementation under its explicit contracts. Report lost_update_possible, lock_order_deadlock_possible, and concurrency_fix_required (booleans). It is valid to find no material defect. Do not invent missing production requirements or dispute the stipulated lock implementation. Explain why your conclusion follows.",
+      "files": {
+        "fixture/transfer.ts": "export async function transfer(from, to, amount) {\n  if (from === to) return;\n  const keys = [from, to].sort();\n  await locks.withKeys(keys, async () => {\n    const debit = balances.get(from);\n    const credit = balances.get(to);\n    await audit.record(from, to, amount);\n    balances.set(from, debit - amount);\n    balances.set(to, credit + amount);\n  });\n}\n",
+        "fixture/contracts.md": "This is one process. Every read or mutation of balances is performed only through transfer under these same locks. Account IDs are strings, balances exist, and inputs are valid. withKeys acquires distinct keys in the given order using one stable mutex per key, holds all locks until the async callback settles, and releases all acquired locks even on rejection. audit.record never accesses balances, acquires these locks, or reenters transfer. No asynchronous operation exists between the two balances.set calls. Process crashes and durability are out of scope.\n"
+      },
+      "expected": {"lost_update_possible": false, "lock_order_deadlock_possible": false, "concurrency_fix_required": false},
+      "evidence_groups": [
+        {"path": "fixture/transfer.ts", "lines": [2, 3, 4, 8, 9]},
+        {"path": "fixture/contracts.md", "lines": [1]}
+      ],
+      "candidates": ["sol-medium", "astra-medium", "astra-low"]
+    }
+  ]
+}

@@ -1,0 +1,71 @@
+{
+  "status": "frozen_before_model_trials",
+  "date_utc": "2026-09-05",
+  "purpose": "Exploratory child routing and low-vs-medium calibration, not confirmatory non-inferiority evidence",
+  "tasks_file": "tasks.json",
+  "tasks_sha256": "736da89455dc2526d774ed6433a946a8ebdfa5e3a84d14538bc855d04ee62727",
+  "implementation_sha256": {
+    "shared.ts": "b2349bbd88bfe113c077cbc440a26d60bd0b3713395966565859f8cc6157c491",
+    "subprocess.ts": "99dad5d61237fbed00325ebe8de24fd6e4a1feebc96acd3c7712415ef15a673d",
+    "child-guard.ts": "d09a49565439de3b8ea3aa7198204a3ff3325e56ad012ba4ebfeb67d7069eddb",
+    "parent-liveness.ts": "cc35818bf9d11cc1199e3a98113342fcb5dadda1c1fed27fb39fe8787620874b",
+    "scripts/model_selection_eval.py": "a44a3cac8b55c11a614653806d65d69a3f54025656071e240e7198d2540fa7dd",
+    "scripts/model_trial.ts": "6b58e305b5b75913ebaefca1db59fa70e0d0f30224c27ed7bda6ac6dd90495ae",
+    "scripts/eval_runtime.py": "37aeced8ad5dbd8972e905f94b2e54f847f07d9739abcc5d38884892a7a813dc",
+    "scripts/observe-runtime.ts": "29168b5181e2bea7f796604840b730c0ac7d437da7de6b6c435c0ded030c3701"
+  },
+  "pi_version": "0.85.0",
+  "candidates": {
+    "luna-medium": {"model": "openai-codex/gpt-5.6-luna", "thinking": "medium"},
+    "luna-low": {"model": "openai-codex/gpt-5.6-luna", "thinking": "low"},
+    "terra-medium": {"model": "openai-codex/gpt-5.6-terra", "thinking": "medium"},
+    "terra-low": {"model": "openai-codex/gpt-5.6-terra", "thinking": "low"},
+    "sol-medium": {"model": "openai-codex/gpt-5.6-sol", "thinking": "medium"},
+    "astra-medium": {"model": "openai-codex/gpt-6-astra", "thinking": "medium"},
+    "astra-low": {"model": "openai-codex/gpt-6-astra", "thinking": "low"}
+  },
+  "repetitions": 2,
+  "seed": 6052026,
+  "concurrency": 2,
+  "timeout_seconds": 240,
+  "max_trials": 46,
+  "execution": {
+    "route": "existing OpenAI Codex subscription only; no OpenRouter or direct paid API",
+    "comparison_unit": "same task across candidate model/effort pairs; repetitions are not independent tasks",
+    "isolation": "fresh ephemeral child; identical production guard, system prompt, tools, fixture and output bounds",
+    "transport": "sse",
+    "automatic_retry": false,
+    "compaction": false,
+    "low_control": "temporary models.json only; observe effective and wire thinking, reject clamping before request",
+    "order": "seeded task and candidate order per repetition",
+    "raw_content": "retain synthetic final answers only; no intermediate tool output or private source content",
+    "parent_synthesis": "excluded to isolate child model effects; six separate production smoke cells test end-to-end delegation"
+  },
+  "score": {
+    "primary": "All exact typed answer fields plus valid line ranges covering required evidence groups and nonempty explanation",
+    "runtime_gate": "complete, untruncated, observed request/response model and actual effective/wire reasoning match",
+    "secondary": ["field accuracy", "evidence coverage", "duration", "total reported tokens", "output tokens", "API-equivalent cost"],
+    "manual_check": "parent audits substantive explanations and no-defect control; not an independent blinded judge",
+    "limitations": "Structured answer checks are not a general quality score; no statistical non-inferiority or production-generalization claim"
+  },
+  "decision_rules": {
+    "default": "Keep existing three medium presets unless quality and practical efficiency evidence support changing them",
+    "astra": "Do not replace inexpensive routing solely on release or brand. Add a specialist preset only with a distinct demonstrated capability/quality need",
+    "low": "Report a task type as a provisional low candidate only if both low repeats meet answer/evidence/runtime checks and paired token or latency results show practical benefit; do not relax global low policy automatically",
+    "inconclusive": "Retain current routing and describe coverage gaps; no unplanned extra model calls to force significance"
+  },
+  "api_rates_per_million": {
+    "openai-codex/gpt-5.6-luna": {"input": 0.2, "cacheRead": 0.02, "cacheWrite": 0.25, "output": 1.2},
+    "openai-codex/gpt-5.6-terra": {"input": 2, "cacheRead": 0.2, "cacheWrite": 2.5, "output": 12},
+    "openai-codex/gpt-5.6-sol": {"input": 4, "cacheRead": 0.4, "cacheWrite": 5, "output": 20},
+    "openai-codex/gpt-6-astra": {"input": 10, "cacheRead": 1, "cacheWrite": 12.5, "output": 50}
+  },
+  "pricing_notes": "Short-context standard API-equivalent estimates from official pages, not Codex bills or quota conversion. Pi's cached Sol catalog still contains 5/30, so catalog cost is retained but not used for comparisons.",
+  "sources": [
+    "https://developers.openai.com/api/docs/guides/latest-model",
+    "https://developers.openai.com/api/docs/models/gpt-5.6-luna",
+    "https://developers.openai.com/api/docs/models/gpt-5.6-terra",
+    "https://developers.openai.com/api/docs/models/gpt-5.6-sol",
+    "https://developers.openai.com/api/docs/models/gpt-6-astra"
+  ]
+}

@@ -1,0 +1,26 @@
+{
+  "status": "source_drift_detected_during_final_checks",
+  "pilot_completion_utc": "2026-09-05T01:48:08.207464+00:00",
+  "changed_files": [
+    {
+      "path": "shared.ts",
+      "frozen_sha256": "b2349bbd88bfe113c077cbc440a26d60bd0b3713395966565859f8cc6157c491",
+      "observed_after_run_sha256": "51e5f66506766d6f1b29a1a7894842aaf5fe907662d934e5782583fdef2b2f24",
+      "observed_mtime_utc": "2026-09-05T01:47:50.982656+00:00"
+    },
+    {
+      "path": "subprocess.ts",
+      "frozen_sha256": "99dad5d61237fbed00325ebe8de24fd6e4a1feebc96acd3c7712415ef15a673d",
+      "observed_after_run_sha256": "45ab7f83e5292c93ee15327f2223265e7cdbc44d2767cdf76f6ee3cb969944d7",
+      "observed_mtime_utc": "2026-09-05T01:47:50.982656+00:00"
+    },
+    {
+      "path": "child-guard.ts",
+      "frozen_sha256": "d09a49565439de3b8ea3aa7198204a3ff3325e56ad012ba4ebfeb67d7069eddb",
+      "observed_after_run_sha256": "a261deec7333c96bdd8b326b84f60a669a27ade2cc2701b080fb1fb71cd80248",
+      "observed_mtime_utc": "2026-09-05T01:47:50.987656+00:00"
+    }
+  ],
+  "interpretation": "Another workstream changed partial-result handling near the end of the pilot. All 46 runs reported complete and untruncated, but exact per-trial source snapshots were not retained. Do not treat this pilot as a rigorously source-pinned comparison. Preserve those unrelated changes; no extra A/B calls or source reverts were performed.",
+  "replay": "The frozen protocol intentionally rejects the current changed source hashes before model calls."
+}

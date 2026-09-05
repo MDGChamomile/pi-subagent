@@ -1,0 +1,238 @@
+{
+  "completed_trials": 46,
+  "runtime_passes": 46,
+  "contract_passes": 33,
+  "api_equivalent_usd": 1.48934,
+  "by_task_candidate": {
+    "analysis-capacity/astra-low": {
+      "runs": 2,
+      "contract_passes": 1,
+      "mean_fact_accuracy": 0.875,
+      "mean_evidence_coverage": 1.0,
+      "median_duration_ms": 21837.5,
+      "median_total_tokens": 3888.0,
+      "median_output_tokens": 474.0,
+      "median_api_equivalent_usd": 0.05784
+    },
+    "analysis-capacity/astra-medium": {
+      "runs": 2,
+      "contract_passes": 1,
+      "mean_fact_accuracy": 0.875,
+      "mean_evidence_coverage": 1.0,
+      "median_duration_ms": 21032.5,
+      "median_total_tokens": 3866.5,
+      "median_output_tokens": 452.5,
+      "median_api_equivalent_usd": 0.056764999999999996
+    },
+    "analysis-capacity/terra-low": {
+      "runs": 2,
+      "contract_passes": 0,
+      "mean_fact_accuracy": 0.75,
+      "mean_evidence_coverage": 1.0,
+      "median_duration_ms": 12422.5,
+      "median_total_tokens": 3878.5,
+      "median_output_tokens": 440.5,
+      "median_api_equivalent_usd": 0.012162
+    },
+    "analysis-capacity/terra-medium": {
+      "runs": 2,
+      "contract_passes": 0,
+      "mean_fact_accuracy": 0.75,
+      "mean_evidence_coverage": 1.0,
+      "median_duration_ms": 12483.5,
+      "median_total_tokens": 3885.5,
+      "median_output_tokens": 451.5,
+      "median_api_equivalent_usd": 0.012285999999999998
+    },
+    "analysis-deadline/astra-low": {
+      "runs": 2,
+      "contract_passes": 2,
+      "mean_fact_accuracy": 1.0,
+      "mean_evidence_coverage": 1.0,
+      "median_duration_ms": 17770.0,
+      "median_total_tokens": 3764.0,
+      "median_output_tokens": 379.0,
+      "median_api_equivalent_usd": 0.0528
+    },
+    "analysis-deadline/astra-medium": {
+      "runs": 2,
+      "contract_passes": 2,
+      "mean_fact_accuracy": 1.0,
+      "mean_evidence_coverage": 1.0,
+      "median_duration_ms": 17240.5,
+      "median_total_tokens": 3763.0,
+      "median_output_tokens": 381.0,
+      "median_api_equivalent_usd": 0.05287
+    },
+    "analysis-deadline/terra-low": {
+      "runs": 2,
+      "contract_passes": 0,
+      "mean_fact_accuracy": 1.0,
+      "mean_evidence_coverage": 0.6666666666666666,
+      "median_duration_ms": 12999.5,
+      "median_total_tokens": 3915.5,
+      "median_output_tokens": 509.0,
+      "median_api_equivalent_usd": 0.012921
+    },
+    "analysis-deadline/terra-medium": {
+      "runs": 2,
+      "contract_passes": 1,
+      "mean_fact_accuracy": 1.0,
+      "mean_evidence_coverage": 0.8333333333333333,
+      "median_duration_ms": 14233.0,
+      "median_total_tokens": 3994.0,
+      "median_output_tokens": 539.0,
+      "median_api_equivalent_usd": 0.013378000000000001
+    },
+    "lookup-config/astra-low": {
+      "runs": 2,
+      "contract_passes": 2,
+      "mean_fact_accuracy": 1.0,
+      "mean_evidence_coverage": 1.0,
+      "median_duration_ms": 15142.5,
+      "median_total_tokens": 3527.0,
+      "median_output_tokens": 273.0,
+      "median_api_equivalent_usd": 0.04619
+    },
+    "lookup-config/luna-low": {
+      "runs": 2,
+      "contract_passes": 2,
+      "mean_fact_accuracy": 1.0,
+      "mean_evidence_coverage": 1.0,
+      "median_duration_ms": 11541.0,
+      "median_total_tokens": 3639.5,
+      "median_output_tokens": 354.5,
+      "median_api_equivalent_usd": 0.0010824000000000003
+    },
+    "lookup-config/luna-medium": {
+      "runs": 2,
+      "contract_passes": 1,
+      "mean_fact_accuracy": 1.0,
+      "mean_evidence_coverage": 0.8333333333333333,
+      "median_duration_ms": 11422.0,
+      "median_total_tokens": 3705.5,
+      "median_output_tokens": 423.5,
+      "median_api_equivalent_usd": 0.0011646
+    },
+    "lookup-incident/astra-low": {
+      "runs": 2,
+      "contract_passes": 2,
+      "mean_fact_accuracy": 1.0,
+      "mean_evidence_coverage": 1.0,
+      "median_duration_ms": 13742.5,
+      "median_total_tokens": 3552.0,
+      "median_output_tokens": 236.0,
+      "median_api_equivalent_usd": 0.04496
+    },
+    "lookup-incident/luna-low": {
+      "runs": 2,
+      "contract_passes": 2,
+      "mean_fact_accuracy": 1.0,
+      "mean_evidence_coverage": 1.0,
+      "median_duration_ms": 10074.5,
+      "median_total_tokens": 3668.5,
+      "median_output_tokens": 331.0,
+      "median_api_equivalent_usd": 0.0010647
+    },
+    "lookup-incident/luna-medium": {
+      "runs": 2,
+      "contract_passes": 0,
+      "mean_fact_accuracy": 1.0,
+      "mean_evidence_coverage": 1.0,
+      "median_duration_ms": 13232.5,
+      "median_total_tokens": 3819.0,
+      "median_output_tokens": 448.5,
+      "median_api_equivalent_usd": 0.0012123000000000001
+    },
+    "review-delivery/astra-low": {
+      "runs": 2,
+      "contract_passes": 2,
+      "mean_fact_accuracy": 1.0,
+      "mean_evidence_coverage": 1.0,
+      "median_duration_ms": 18068.5,
+      "median_total_tokens": 3779.0,
+      "median_output_tokens": 356.5,
+      "median_api_equivalent_usd": 0.05205
+    },
+    "review-delivery/astra-medium": {
+      "runs": 2,
+      "contract_passes": 2,
+      "mean_fact_accuracy": 1.0,
+      "mean_evidence_coverage": 1.0,
+      "median_duration_ms": 17007.0,
+      "median_total_tokens": 3764.5,
+      "median_output_tokens": 340.5,
+      "median_api_equivalent_usd": 0.051265000000000005
+    },
+    "review-delivery/sol-medium": {
+      "runs": 2,
+      "contract_passes": 2,
+      "mean_fact_accuracy": 1.0,
+      "mean_evidence_coverage": 1.0,
+      "median_duration_ms": 16821.5,
+      "median_total_tokens": 3970.5,
+      "median_output_tokens": 525.0,
+      "median_api_equivalent_usd": 0.024281999999999998
+    },
+    "review-lease/astra-low": {
+      "runs": 2,
+      "contract_passes": 2,
+      "mean_fact_accuracy": 1.0,
+      "mean_evidence_coverage": 1.0,
+      "median_duration_ms": 18028.0,
+      "median_total_tokens": 3813.0,
+      "median_output_tokens": 372.5,
+      "median_api_equivalent_usd": 0.053029999999999994
+    },
+    "review-lease/astra-medium": {
+      "runs": 2,
+      "contract_passes": 2,
+      "mean_fact_accuracy": 1.0,
+      "mean_evidence_coverage": 1.0,
+      "median_duration_ms": 16622.5,
+      "median_total_tokens": 3760.0,
+      "median_output_tokens": 319.5,
+      "median_api_equivalent_usd": 0.050379999999999994
+    },
+    "review-lease/sol-medium": {
+      "runs": 2,
+      "contract_passes": 1,
+      "mean_fact_accuracy": 1.0,
+      "mean_evidence_coverage": 0.8333333333333333,
+      "median_duration_ms": 16696.5,
+      "median_total_tokens": 4943.5,
+      "median_output_tokens": 589.0,
+      "median_api_equivalent_usd": 0.029198
+    },
+    "review-safe-control/astra-low": {
+      "runs": 2,
+      "contract_passes": 2,
+      "mean_fact_accuracy": 1.0,
+      "mean_evidence_coverage": 1.0,
+      "median_duration_ms": 15090.5,
+      "median_total_tokens": 3647.0,
+      "median_output_tokens": 274.5,
+      "median_api_equivalent_usd": 0.04745
+    },
+    "review-safe-control/astra-medium": {
+      "runs": 2,
+      "contract_passes": 2,
+      "mean_fact_accuracy": 1.0,
+      "mean_evidence_coverage": 1.0,
+      "median_duration_ms": 17370.0,
+      "median_total_tokens": 3645.5,
+      "median_output_tokens": 273.0,
+      "median_api_equivalent_usd": 0.047375
+    },
+    "review-safe-control/sol-medium": {
+      "runs": 2,
+      "contract_passes": 2,
+      "mean_fact_accuracy": 1.0,
+      "mean_evidence_coverage": 1.0,
+      "median_duration_ms": 14853.5,
+      "median_total_tokens": 3860.0,
+      "median_output_tokens": 469.0,
+      "median_api_equivalent_usd": 0.022944
+    }
+  }
+}
