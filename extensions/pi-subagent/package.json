@@ -4,11 +4,11 @@
   "type": "module",
   "scripts": {
     "typecheck": "tsc -p tsconfig.json",
-    "test": "node --experimental-strip-types --test *.test.ts",
+    "test": "node --experimental-strip-types --test *.test.ts && python3 -B -m unittest discover -s scripts -p '*_test.py'",
     "package:check": "node ../../../packaging/pi-subagent/check.mjs",
     "eval:context": "python3 scripts/context_isolation_eval.py --mode context",
-    "test:live:local": "python3 scripts/context_isolation_eval.py --mode smoke --capability local",
-    "test:live:web": "python3 scripts/context_isolation_eval.py --mode smoke --capability web"
+    "test:live:local": "python3 -B scripts/context_isolation_eval.py --mode smoke --capability local --preset all",
+    "test:live:web": "python3 -B scripts/context_isolation_eval.py --mode smoke --capability web --preset all"
   },
   "devDependencies": {
     "@earendil-works/pi-agent-core": "0.85.0",

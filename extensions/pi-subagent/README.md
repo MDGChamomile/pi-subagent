@@ -164,14 +164,18 @@ A separate [12-task production-preset exploratory pilot](https://github.com/MDGC
 ## Verification
 
 ```bash
-npm --prefix live/extensions/pi-subagent ci --include=dev
+npm --prefix live/extensions/pi-subagent ci --include=dev --ignore-scripts
 npm --prefix live/extensions/pi-subagent run typecheck
 npm --prefix live/extensions/pi-subagent test
 npm --prefix live/extensions/pi-subagent run package:check
-python3 live/extensions/pi-subagent/scripts/context_isolation_eval.py --mode smoke --capability local
-python3 live/extensions/pi-subagent/scripts/context_isolation_eval.py --mode smoke --capability web
+python3 -B live/extensions/pi-subagent/scripts/context_isolation_eval.py --mode smoke --capability local --preset all
+python3 -B live/extensions/pi-subagent/scripts/context_isolation_eval.py --mode smoke --capability web --preset all
 ```
 
-The web smoke test reproduces the normal loader arrangement: `pi-web-access` tools stay registered for provenance checks but remain inactive in the parent model. It fails if the parent activates `load_web_tools` or calls a web tool directly.
+The development dependencies are pinned to Pi 0.85.0. The default offline suite includes Python evaluation-contract tests as well as the TypeScript runtime tests; Python 3 is required. Live checks are opt-in and consume model/provider usage. They require the Node.js Pi installation. `--preset all` (the default) runs every current runtime preset in a fresh parent session; select one with, for example, `--preset review-standard`. Set `--main-model openai-codex/gpt-6-astra --main-thinking medium` explicitly for reproducible parent configuration.
+
+Live checks verify the requested preset/capability/scope, returned model/thinking, complete untruncated output, usage, evidence, and absence of parent investigation. A test-only observer loads before the production guard and independently checks the effective child model/thinking, outgoing model/reasoning fields, and returned model identity. It records only configuration metadata in temporary files, never prompts, response text, headers, or credentials. Missing observations and silent thinking clamping fail the check. It does not change production presets or global model configuration.
+
+The web smoke test reproduces the normal loader arrangement: `pi-web-access` tools stay registered for provenance checks but remain inactive in the parent model. It fetches IANA's example-domain documentation without searching, requires verbatim body evidence for both the documentation purpose and registration/transfer restriction, and fails if the parent activates `load_web_tools` or calls a web tool directly. It does not depend on the best-effort HTTP service at `example.com`, whose short page can be rejected as incomplete by the extractor. Page-title metadata is not assumed to be present in extracted body text.
 
 The default suite covers final-answer isolation, complete and partial outcomes, tool-disabled finalization, empty answers, bounded provider errors, cancellation, timeout escalation, abrupt parent exit, usage aggregation, scope, recoverable web denials, and tool ownership. Opt-in smoke tests additionally cover live model selection and the local/web runtime boundaries.

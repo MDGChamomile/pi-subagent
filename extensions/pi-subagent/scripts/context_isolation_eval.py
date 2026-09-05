@@ -7,7 +7,6 @@ import argparse
 import json
 import os
 import re
-import shutil
 import subprocess
 import tempfile
 import time
@@ -15,12 +14,16 @@ from dataclasses import dataclass
 from pathlib import Path
 from typing import Any
 
+from eval_runtime import json_events, load_presets, observe_run, runtime_checks
+
 EXTENSION_DIR = Path(__file__).resolve().parents[1]
 EXTENSION_ENTRY = EXTENSION_DIR / "index.ts"
 AGENT_ROOT = Path(os.getenv("PI_CODING_AGENT_DIR", Path.home() / ".pi" / "agent")).expanduser()
 WEB_EXTENSION = AGENT_ROOT / "npm" / "node_modules" / "pi-web-access" / "index.ts"
 WEB_TOOL_LOADER = AGENT_ROOT / "extensions" / "web-tool-loader.ts"
-WEB_TOOL_NAMES = {"web_search", "source_check", "fetch_content", "get_search_content"}
+SMOKE_WEB_URL = "https://www.iana.org/help/example-domains"
+SMOKE_WEB_QUOTE = "not available for registration or transfer"
+SMOKE_WEB_PURPOSE = "maintained for documentation purposes"
 INVESTIGATION_TOOLS = {"read", "grep", "find", "ls", "web_search", "fetch_content", "get_search_content", "source_check"}
 TOOL_SYNTAX_RE = re.compile(r"(?:^|\s)(?:to=|functions\.)\w+", re.I)
 EVIDENCE_RE = re.compile(r"(?:fixture[/\\][^\s`:]+(?::\d+(?:-\d+)?)?|(?:incident|metrics|production|transfer)\.[a-z]+(?::\d+(?:-\d+)?)?)", re.I)
@@ -127,22 +130,8 @@ def text_content(content: Any) -> str:
     )
 
 
-def json_events(output: str):
-    for line in output.splitlines():
-        try:
-            event = json.loads(line)
-        except json.JSONDecodeError:
-            continue
-        if isinstance(event, dict):
-            yield event
-
-
 def base_command(main_model: str, main_thinking: str) -> list[str]:
-    pi = shutil.which("pi")
-    if not pi:
-        raise RuntimeError("pi executable is unavailable")
     return [
-        pi,
         "--mode", "json",
         "--print",
         "--no-session",
@@ -154,6 +143,7 @@ def base_command(main_model: str, main_thinking: str) -> list[str]:
         "--no-themes",
         "--no-context-files",
         "--no-approve",
+        "--offline",
     ]
 
 
@@ -186,14 +176,11 @@ def run_pi(
             f"the result; only synthesize it.\n\nObjective:\n{case.task}"
         )
     started = time.monotonic()
-    completed = subprocess.run(
-        command,
-        cwd=cwd,
-        input=prompt,
-        text=True,
-        capture_output=True,
-        timeout=timeout_seconds,
-        check=False,
+    selection = load_presets()[child_preset]
+    completed, observations = observe_run(
+        command, cwd=cwd, prompt=prompt, timeout=timeout_seconds,
+        model=selection["model"] if arm == "subagent" else None,
+        thinking=selection["thinking"] if arm == "subagent" else None,
     )
     duration_ms = round((time.monotonic() - started) * 1000)
     if completed.returncode != 0:
@@ -208,6 +195,7 @@ def run_pi(
     subagent_finished = False
     result_text = ""
     final_text = ""
+    child_details: dict[str, Any] = {}
     for event in json_events(completed.stdout):
         if event.get("type") != "message_end" or not isinstance(event.get("message"), dict):
             continue
@@ -241,7 +229,9 @@ def run_pi(
                 subagent_finished = True
                 if not message.get("isError"):
                     result_text = body
+                    child_details = message.get("details") or {}
 
+    observed_checks = runtime_checks(observations, **selection) if arm == "subagent" else {}
     quality_text = result_text if arm == "subagent" and result_text else final_text
     normalize = lambda value: " ".join(re.sub(r"[^0-9a-z가-힣]+", " ", value.casefold()).split())
     normalized_quality = normalize(quality_text)
@@ -251,6 +241,15 @@ def run_pi(
         "profile": case.profile,
         "arm": arm,
         "child_preset": child_preset if arm == "subagent" else None,
+        "child_model": child_details.get("model"),
+        "child_thinking": child_details.get("thinking"),
+        "child_status": child_details.get("status"),
+        "child_usage": child_details.get("usage"),
+        "runtime_checks": observed_checks,
+        "runtime_configuration_verified": arm == "direct" or (
+            all(observed_checks.values()) and child_details.get("model") == selection["model"]
+            and child_details.get("thinking") == selection["thinking"]
+        ),
         "duration_ms": duration_ms,
         "max_parent_prompt_tokens": max(assistant_prompts, default=0),
         "parent_tool_result_bytes": tool_result_bytes,
@@ -269,50 +268,14 @@ def run_pi(
     }
 
 
-def run_smoke(args: argparse.Namespace) -> int:
-    if args.capability == "web":
-        for path in (WEB_EXTENSION, WEB_TOOL_LOADER):
-            if not path.is_file():
-                raise SystemExit(f"web smoke dependency is unavailable: {path}")
-
-    with tempfile.TemporaryDirectory(prefix="pi-subagent-live-") as temporary:
-        cwd = Path(temporary)
-        command = [*base_command(args.main_model, args.main_thinking), "--extension", str(EXTENSION_ENTRY)]
-        if args.capability == "local":
-            (cwd / "fixture.txt").write_text("SMOKE_MARKER=plain-final-answer\n", encoding="utf-8")
-            command += ["--tools", "pi_subagent"]
-            prompt = (
-                "Call pi_subagent exactly once with capability=local, scope=[\"fixture.txt\"], "
-                "preset=lookup-standard. Report the exact SMOKE_MARKER value with fixture.txt:1 as evidence. "
-                "Do not read the file in the parent."
-            )
-        else:
-            command += [
-                "--extension", str(WEB_EXTENSION),
-                "--extension", str(WEB_TOOL_LOADER),
-            ]
-            prompt = (
-                "Call pi_subagent exactly once with capability=web, scope=[], preset=lookup-standard. "
-                "Verify the public page https://example.com and report its page title or primary heading with the URL "
-                "as evidence. Do not use parent web tools and do not repeat the child investigation."
-            )
-        completed = subprocess.run(
-            command,
-            cwd=cwd,
-            input=prompt,
-            text=True,
-            capture_output=True,
-            timeout=args.timeout_seconds,
-            check=False,
-        )
-    if completed.returncode != 0:
-        diagnostic = re.sub(r"\s+", " ", completed.stderr).strip()[:500]
-        raise SystemExit(f"live smoke process failed with {completed.returncode}: {diagnostic}")
-
+def evaluate_smoke(output: str, observations: list[dict[str, Any]], *, capability: str,
+                   preset: str, selection: dict[str, str]) -> dict[str, Any]:
     answers: list[str] = []
     errors: list[str] = []
-    parent_web_calls: list[str] = []
-    for event in json_events(completed.stdout):
+    calls: list[dict[str, Any]] = []
+    parent_other_calls: list[str] = []
+    details: dict[str, Any] = {}
+    for event in json_events(output):
         message = event.get("message") if event.get("type") == "message_end" else None
         if not isinstance(message, dict):
             continue
@@ -320,34 +283,95 @@ def run_smoke(args: argparse.Namespace) -> int:
             for block in message.get("content") or []:
                 if not isinstance(block, dict) or block.get("type") != "toolCall":
                     continue
-                name = block.get("name")
-                if name in WEB_TOOL_NAMES or name == "load_web_tools":
-                    parent_web_calls.append(str(name))
+                if block.get("name") == "pi_subagent":
+                    calls.append(block.get("arguments") or {})
+                else:
+                    parent_other_calls.append(str(block.get("name")))
         elif message.get("role") == "toolResult" and message.get("toolName") == "pi_subagent":
             body = text_content(message.get("content"))
-            (errors if message.get("isError") else answers).append(body[:500] if message.get("isError") else body)
+            if message.get("isError"):
+                errors.append(body[:500])
+            else:
+                answers.append(body)
+                details = message.get("details") if isinstance(message.get("details"), dict) else {}
 
+    answer = answers[0] if len(answers) == 1 else ""
+    scope = ["fixture.txt"] if capability == "local" else []
+    usage = details.get("usage") if isinstance(details.get("usage"), dict) else {}
+    reported_tokens = usage.get("totalTokens")
     checks = {
+        "exactly_one_call": len(calls) == 1,
+        "requested_preset_and_scope": len(calls) == 1 and calls[0].get("preset") == preset
+            and calls[0].get("capability") == capability and calls[0].get("scope") == scope,
         "exactly_one_result": len(answers) == 1,
         "no_tool_error": not errors,
-        "non_empty_answer": len(answers) == 1 and bool(answers[0].strip()),
-        "within_12_kib": len(answers) == 1 and len(answers[0].encode("utf-8")) <= 12 * 1024,
-        "no_raw_tool_syntax": len(answers) == 1 and not TOOL_SYNTAX_RE.search(answers[0]),
-        "expected_fact": len(answers) == 1 and (
-            (args.capability == "local" and "plain-final-answer" in answers[0])
-            or (args.capability == "web" and "example domain" in answers[0].casefold())
-        ),
-        "no_parent_web_activation_or_calls": not parent_web_calls,
+        "non_empty_answer": bool(answer.strip()),
+        "within_12_kib": bool(answer) and len(answer.encode("utf-8")) <= 12 * 1024,
+        "no_raw_tool_syntax": bool(answer) and not bool(TOOL_SYNTAX_RE.search(answer)),
+        "expected_fact": (capability == "local" and "plain-final-answer" in answer)
+            or (capability == "web" and SMOKE_WEB_PURPOSE in answer.casefold() and SMOKE_WEB_QUOTE in answer.casefold()),
+        "evidence_present": "fixture.txt:1" in answer if capability == "local" else SMOKE_WEB_URL in answer,
+        "no_parent_investigation_or_loader_calls": not parent_other_calls,
+        "reported_preset": details.get("preset") == preset,
+        "reported_model": details.get("model") == selection["model"],
+        "reported_thinking": details.get("thinking") == selection["thinking"],
+        "reported_capability": details.get("capability") == capability,
+        "complete_untruncated_result": details.get("status") == "complete" and details.get("outputTruncated") is False,
+        "reported_usage": isinstance(reported_tokens, (int, float)) and not isinstance(reported_tokens, bool) and reported_tokens > 0,
+        **runtime_checks(observations, **selection),
     }
-    passed = all(checks.values())
-    print(json.dumps({
-        "capability": args.capability,
-        "status": "pass" if passed else "fail",
-        "checks": checks,
-        "result_bytes": len(answers[0].encode("utf-8")) if len(answers) == 1 else 0,
-        "errors": errors,
-        "parent_web_calls": parent_web_calls,
-    }, ensure_ascii=False, indent=2))
+    return {
+        "capability": capability, "preset": preset, "expected": selection,
+        "status": "pass" if all(checks.values()) else "fail", "checks": checks,
+        "result_bytes": len(answer.encode("utf-8")), "errors": errors,
+        "parent_other_calls": parent_other_calls, "child_usage": usage,
+        "child_duration_ms": details.get("durationMs"),
+        # Fixed synthetic/public smoke targets only; retain bounded final text to diagnose failures.
+        **({"failure_answer_excerpt": answer[:1500]} if not all(checks.values()) else {}),
+    }
+
+
+def run_smoke(args: argparse.Namespace) -> int:
+    if args.capability == "web":
+        for path in (WEB_EXTENSION, WEB_TOOL_LOADER):
+            if not path.is_file():
+                raise SystemExit(f"web smoke dependency is unavailable: {path}")
+    presets = load_presets()
+    selected = list(presets) if args.preset == "all" else [args.preset]
+    results = []
+    for preset in selected:
+        selection = presets[preset]
+        with tempfile.TemporaryDirectory(prefix="pi-subagent-live-") as temporary:
+            cwd = Path(temporary)
+            command = [*base_command(args.main_model, args.main_thinking), "--extension", str(EXTENSION_ENTRY)]
+            if args.capability == "local":
+                (cwd / "fixture.txt").write_text("SMOKE_MARKER=plain-final-answer\n", encoding="utf-8")
+                command += ["--tools", "pi_subagent"]
+                prompt = (
+                    "Call pi_subagent exactly once with capability=local, scope=[\"fixture.txt\"], "
+                    f"preset={preset}. Have the child report the exact SMOKE_MARKER value with fixture.txt:1 as evidence. "
+                    "Do not read the file in the parent."
+                )
+            else:
+                command += ["--extension", str(WEB_EXTENSION), "--extension", str(WEB_TOOL_LOADER)]
+                prompt = (
+                    f"Call pi_subagent exactly once with capability=web, scope=[], preset={preset}. "
+                    f"Have the child fetch {SMOKE_WEB_URL} with fetch_content, retrieve the stored content if needed, "
+                    f"and quote verbatim both the documentation-purpose clause and the registration/transfer restriction from the body. Cite {SMOKE_WEB_URL}. "
+                    "Do not search: the URL is supplied. Do not guess from prior knowledge if extraction fails. "
+                    "Do not use parent web tools and do not repeat the child investigation."
+                )
+            try:
+                completed, observations = observe_run(command, cwd=cwd, prompt=prompt, timeout=args.timeout_seconds, **selection)
+                result = evaluate_smoke(completed.stdout, observations, capability=args.capability, preset=preset, selection=selection)
+                result["exit_code"] = completed.returncode
+                if completed.returncode != 0:
+                    result["status"] = "fail"
+            except subprocess.TimeoutExpired:
+                result = {"capability": args.capability, "preset": preset, "status": "fail", "error": "timeout"}
+        results.append(result)
+    passed = all(result["status"] == "pass" for result in results)
+    print(json.dumps({"status": "pass" if passed else "fail", "results": results}, ensure_ascii=False, indent=2))
     return 0 if passed else 1
 
 
@@ -386,17 +410,25 @@ def summarize(results: list[dict[str, Any]]) -> dict[str, Any]:
     return summary
 
 
-def parse_args() -> argparse.Namespace:
+def positive_timeout(value: str) -> int:
+    seconds = int(value)
+    if not 1 <= seconds <= 1200:
+        raise argparse.ArgumentTypeError("timeout must be between 1 and 1200 seconds")
+    return seconds
+
+
+def parse_args(argv: list[str] | None = None) -> argparse.Namespace:
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument("--mode", choices=("context", "smoke"), default="context")
     parser.add_argument("--main-model", default=f"{os.getenv('PI_PROVIDER', '')}/{os.getenv('PI_MODEL', '')}".strip("/"))
     parser.add_argument("--main-thinking", default=os.getenv("PI_REASONING_LEVEL", "high"))
     parser.add_argument("--case", choices=("all", *(case.name for case in CASES)), default="all")
     parser.add_argument("--capability", choices=("local", "web"), default="local")
+    parser.add_argument("--preset", choices=("all", *load_presets()), default="all", help="smoke presets; all runs one fresh parent per preset")
     parser.add_argument("--repetitions", type=int, default=1)
-    parser.add_argument("--timeout-seconds", type=int, default=1200)
+    parser.add_argument("--timeout-seconds", type=positive_timeout, default=1200)
     parser.add_argument("--include-results", action="store_true", help="include deterministic fixture results for evaluator diagnostics")
-    return parser.parse_args()
+    return parser.parse_args(argv)
 
 
 def main() -> int:
@@ -440,7 +472,7 @@ def main() -> int:
         "cases": [case.name for case in selected],
         "repetitions": args.repetitions,
     }, "summary": summarize(results), "results": results}, ensure_ascii=False, indent=2))
-    return 0
+    return 0 if all(row["runtime_configuration_verified"] for row in results) else 1
 
 
 if __name__ == "__main__":
