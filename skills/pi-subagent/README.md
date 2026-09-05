@@ -38,7 +38,7 @@ The three presets are:
 
 ## Requirements and installation
 
-This skill requires the companion global extension and Pi 0.84.2 or later. Web investigations also require the tested `pi-web-access` v0.27.0 with its default tool names.
+This skill requires the companion global extension, Pi 0.84.2 or later, and authentication for Pi's `openai-codex` provider with access to the selected child model. The extension's [preset table](../../extensions/pi-subagent/README.md#presets) lists the exact, fixed provider/model IDs behind Luna, Terra, and Sol; they do not inherit the parent model. Web investigations also require the tested `pi-web-access` v0.27.0 with its default tool names.
 
 Follow the extension's [requirements and installation guide](../../extensions/pi-subagent/README.md#requirements-and-installation) to install both components together.
 

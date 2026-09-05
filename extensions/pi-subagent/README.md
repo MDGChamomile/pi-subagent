@@ -32,7 +32,7 @@ Core requirements:
 
 - Linux, including Ubuntu on WSL; native Windows is not officially supported or tested;
 - Pi 0.84.2 or later;
-- access to the child model selected by the Luna, Terra, or Sol preset.
+- authentication for Pi's `openai-codex` provider and access to the selected child model listed under [Presets](#presets). Installing this extension does not grant model access.
 
 Capability-specific requirements:
 
@@ -92,11 +92,13 @@ One child call is the default. Up to three distinct, independent calls may run i
 
 Each standard preset chooses a proportionate child model without changing the main model's thinking level:
 
-| Preset | Child profile | Use for |
-| --- | --- | --- |
-| `lookup-standard` | Luna / medium | Bounded fact-finding |
-| `analysis-standard` | Terra / medium | Synthesis and causal comparison |
-| `review-standard` | Sol / medium | Adversarial review |
+| Preset | Provider/model ID | Thinking | Use for |
+| --- | --- | --- | --- |
+| `lookup-standard` | `openai-codex/gpt-5.6-luna` | `medium` | Bounded fact-finding |
+| `analysis-standard` | `openai-codex/gpt-5.6-terra` | `medium` | Synthesis and causal comparison |
+| `review-standard` | `openai-codex/gpt-5.6-sol` | `medium` | Adversarial review |
+
+These mappings are fixed in the extension; they do not inherit the parent model or fall back to another provider. The selected model must be present in Pi's model registry and accessible to your authenticated account. If it is absent from the registry, the call fails during preflight with `Configured subagent model is unavailable`.
 
 Older stored calls with separate `profile` and `thinking` arguments, or with the former balanced/deep/exhaustive preset names, are translated to the matching standard preset before schema validation.
 

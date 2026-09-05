@@ -28,7 +28,7 @@ Requirements:
 
 - Linux, including Ubuntu on WSL; native Windows is not officially supported or tested;
 - Pi 0.84.2 or later;
-- access to the child model selected by the Luna, Terra, or Sol preset;
+- authentication for Pi's `openai-codex` provider and access to the selected child model listed under [Presets](#presets);
 - `rg` for local `grep`, and `fd` or `fdfind` for local `find`.
 
 > [!IMPORTANT]
@@ -77,13 +77,13 @@ Mixed local-and-web work uses separate child calls, with synthesis performed by 
 
 ## Presets
 
-| Preset | Child profile | Best for |
-| --- | --- | --- |
-| `lookup-standard` | Luna / medium | Bounded fact-finding |
-| `analysis-standard` | Terra / medium | Synthesis and causal comparison |
-| `review-standard` | Sol / medium | Adversarial review |
+| Preset | Provider/model ID | Thinking | Best for |
+| --- | --- | --- | --- |
+| `lookup-standard` | `openai-codex/gpt-5.6-luna` | `medium` | Bounded fact-finding |
+| `analysis-standard` | `openai-codex/gpt-5.6-terra` | `medium` | Synthesis and causal comparison |
+| `review-standard` | `openai-codex/gpt-5.6-sol` | `medium` | Adversarial review |
 
-The preset changes only the child model; it does not alter the main model's thinking level.
+These mappings are fixed in the extension; they do not inherit the parent model or fall back to another provider. The preset does not alter the main model's thinking level. Installing this package does not grant model access: the selected model must be present in Pi's model registry and accessible to your authenticated account. If it is absent from the registry, the call fails during preflight with `Configured subagent model is unavailable`.
 
 ## Security and data flow
 
