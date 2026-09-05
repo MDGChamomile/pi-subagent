@@ -1,0 +1,167 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="1800" height="1200" viewBox="0 0 1800 1200" role="img" aria-labelledby="title desc">
+  <title id="title">Pi Subagent — process and data flow</title>
+  <desc id="desc">The parent canonicalizes scope and launches an ephemeral child with no persisted Pi session. The child guard verifies tool ownership and guards each call, allowing local read-only tools or web tools, never both. Local tools connect to scoped files; web tools connect to a pinned web extension. Either capability sends authorized content to configured model providers. The child emits JSON events and private control files. A parent-side collector verifies readiness after exit, excludes intermediate messages, sanitizes control characters, and bounds the last eligible answer. Complete or partial answer text enters the parent model context; execution metadata stays in host-only details. Failures return bounded error text. This is not an OS, network, or credential-isolated sandbox.</desc>
+  <defs>
+    <style>
+      text { font-family: 'DejaVu Sans', sans-serif; fill: #101820; }
+      .eyebrow { font-size: 15px; font-weight: 700; letter-spacing: 1.5px; }
+      .section { font-size: 17px; font-weight: 700; letter-spacing: 1px; fill: white; }
+      .label { font-size: 15px; font-weight: 700; letter-spacing: 1px; fill: #007bb5; }
+      .heading { font-size: 25px; font-weight: 700; }
+      .body { font-size: 20px; fill: #455361; }
+      .small { font-size: 18px; fill: #455361; }
+      .mono { font-family: 'DejaVu Sans Mono', monospace; font-size: 18px; }
+      .flow-label { font-size: 13px; font-weight: 700; fill: #007bb5; letter-spacing: .5px; }
+      .box { fill: white; stroke: #101820; stroke-width: 1; }
+      .soft { fill: #f4f6f8; stroke: #cbd2d8; stroke-width: 1; }
+      .blue-box { fill: #f3f9fd; stroke: #007bb5; stroke-width: 1.5; }
+      .flow { fill: none; stroke: #007bb5; stroke-width: 2; marker-end: url(#blue-arrow); }
+      .access { fill: none; stroke: #101820; stroke-width: 2; marker-end: url(#black-arrow); }
+      .error-flow { fill: none; stroke: #b3261e; stroke-width: 1.5; stroke-dasharray: 4 3; marker-end: url(#red-arrow); }
+    </style>
+    <marker id="blue-arrow" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="8" markerHeight="8" orient="auto-start-reverse"><path d="M0 0 L10 5 L0 10 Z" fill="#007bb5"/></marker>
+    <marker id="black-arrow" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="8" markerHeight="8" orient="auto-start-reverse"><path d="M0 0 L10 5 L0 10 Z" fill="#101820"/></marker>
+    <marker id="red-arrow" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="7" markerHeight="7" orient="auto-start-reverse"><path d="M0 0 L10 5 L0 10 Z" fill="#b3261e"/></marker>
+  </defs>
+
+  <rect width="1800" height="1200" fill="white"/>
+  <text x="50" y="55" class="eyebrow">PI EXTENSION + SKILL / BOUNDED DELEGATION</text>
+  <text x="50" y="119" style="font-family:'DejaVu Serif',serif;font-size:58px">Pi Subagent</text>
+  <text x="50" y="160" class="body" style="font-size:23px">Focused investigation outside the parent context — with parent-side control over returned output.</text>
+  <rect x="1260" y="40" width="490" height="122" class="box"/>
+  <text x="1280" y="69" class="eyebrow">TRUST BOUNDARY</text>
+  <text x="1280" y="99" class="body">Application-level controls, not an OS,</text>
+  <text x="1280" y="127" class="body">network, or credential-isolated sandbox.</text>
+  <line x1="50" y1="183" x2="1750" y2="183" stroke="#cbd2d8"/>
+
+  <!-- Process columns. The collector belongs to the parent, not the child. -->
+  <rect x="50" y="200" width="600" height="940" class="box"/>
+  <rect x="50" y="200" width="600" height="44" fill="#101820"/>
+  <text x="70" y="229" class="section">01 / PARENT PI + EXTENSION</text>
+  <rect x="750" y="200" width="510" height="940" class="box"/>
+  <rect x="750" y="200" width="510" height="44" fill="#101820"/>
+  <text x="770" y="229" class="section">02 / EPHEMERAL CHILD PROCESS</text>
+  <rect x="1360" y="200" width="390" height="940" class="box"/>
+  <rect x="1360" y="200" width="390" height="44" fill="#101820"/>
+  <text x="1380" y="229" class="section">03 / RESOURCES + EGRESS</text>
+
+  <!-- Parent authority and preflight. -->
+  <rect x="70" y="265" width="560" height="105" class="box"/>
+  <text x="90" y="294" class="label">TASK + AUTHORITY</text>
+  <text x="90" y="326" class="heading">Parent conversation</text>
+  <text x="90" y="355" class="body">Task + authorization; implementation + final checks.</text>
+  <path d="M350 370 V390" class="flow"/>
+  <rect x="70" y="390" width="560" height="115" class="soft"/>
+  <text x="90" y="419" class="label">PI_SUBAGENT / PREFLIGHT + DISPATCH</text>
+  <text x="90" y="450" class="heading">One task · preset · local or web</text>
+  <text x="90" y="482" class="body">Canonicalize authorized scope before spawning.</text>
+  <path d="M630 447 H700 V335 H770" class="flow"/>
+  <text x="662" y="322" class="flow-label">DISPATCH</text>
+
+  <!-- Child guard and mutually exclusive capabilities. -->
+  <text x="770" y="270" class="label">NO PERSISTED PI SESSION</text>
+  <rect x="770" y="290" width="470" height="125" class="soft"/>
+  <text x="790" y="319" class="label">CHILD GUARD</text>
+  <text x="790" y="350" class="body">Verify tool ownership; publish readiness.</text>
+  <text x="790" y="378" class="body">Validate each tool call before execution.</text>
+  <text x="790" y="403" class="small">Local paths / web argument allowlists.</text>
+
+  <rect x="770" y="450" width="470" height="120" class="box"/>
+  <text x="790" y="479" class="label">LOCAL / PI-OWNED TOOLS</text>
+  <text x="790" y="513" class="mono">read · grep · find · ls</text>
+  <text x="790" y="548" class="body">1–8 authorized roots · read-only</text>
+  <text x="1005" y="596" text-anchor="middle" class="label">XOR / NEVER COEXIST</text>
+  <rect x="770" y="615" width="470" height="130" class="box"/>
+  <text x="790" y="644" class="label">WEB / PINNED EXTENSION TOOLS</text>
+  <text x="790" y="675" class="mono">web_search · source_check</text>
+  <text x="790" y="702" class="mono">fetch_content · get_search_content</text>
+  <text x="790" y="730" class="body">Empty local scope · no local-file tools</text>
+
+  <!-- Access arrows attach to their actual resources. -->
+  <rect x="1380" y="450" width="350" height="120" class="box"/>
+  <text x="1400" y="479" class="label">LOCAL ONLY</text>
+  <text x="1400" y="513" class="heading">Scoped files</text>
+  <text x="1400" y="548" class="small">Canonical, authorized read paths.</text>
+  <path d="M1240 510 H1380" class="access"/>
+  <text x="1275" y="497" class="small" style="font-size:14px">read</text>
+
+  <rect x="1380" y="615" width="350" height="130" class="soft"/>
+  <text x="1400" y="644" class="label">WEB ONLY</text>
+  <text x="1400" y="677" class="heading">Pinned web extension</text>
+  <text x="1400" y="705" class="small">Default-deny search and</text>
+  <text x="1400" y="731" class="small">readable HTTP(S) retrieval.</text>
+  <path d="M1240 680 H1380" class="access"/>
+  <text x="1275" y="666" class="small" style="font-size:14px">web</text>
+
+  <!-- Child transport is not the parent tool-result contract. -->
+  <rect x="770" y="795" width="470" height="120" class="soft"/>
+  <text x="790" y="824" class="label">CHILD OUTPUT / CONTROL FILES</text>
+  <text x="790" y="857" class="body">JSON events → parent collector</text>
+  <text x="790" y="886" class="body">Private readiness + budget telemetry</text>
+  <path d="M770 855 H700 V620 H630" class="flow"/>
+  <text x="665" y="878" class="flow-label">COLLECT</text>
+
+  <!-- Explicit provider egress for either capability. -->
+  <rect x="1380" y="795" width="350" height="160" class="box"/>
+  <text x="1400" y="824" class="label">PROVIDER EGRESS</text>
+  <text x="1400" y="857" class="heading">Configured providers</text>
+  <text x="1400" y="887" class="small">Either capability uses a model.</text>
+  <text x="1400" y="913" class="small">Authorized content leaves the host</text>
+  <text x="1400" y="939" class="small">for model / search processing.</text>
+  <path d="M1260 870 H1380" class="access"/>
+  <text x="1276" y="856" class="small" style="font-size:14px">egress</text>
+
+  <!-- Parent-side collection, sanitization and result assembly. -->
+  <rect x="70" y="535" width="560" height="240" class="blue-box"/>
+  <text x="90" y="564" class="label">COLLECTOR / SANITIZER / RESULT ASSEMBLY</text>
+  <text x="90" y="600" class="heading">Parent-side result gate</text>
+  <text x="90" y="632" class="body">Verify readiness after child exit.</text>
+  <text x="90" y="660" class="body">Keep the last eligible assistant answer.</text>
+  <text x="90" y="688" class="body">Replace control characters; cap text at 12 KiB.</text>
+  <rect x="85" y="706" width="530" height="54" fill="#fff2f1" stroke="#b3261e" stroke-dasharray="4 3"/>
+  <text x="100" y="728" class="label" style="fill:#b3261e;font-size:14px">EXCLUDE INTERMEDIATE MESSAGES + TOOL RESULTS</text>
+  <text x="100" y="750" class="small" style="font-size:17px">Not semantic redaction: final text can still quote sources.</text>
+  <path d="M350 775 V805" class="flow"/>
+
+  <!-- Successful and partial tool-result channels. -->
+  <rect x="70" y="805" width="560" height="180" class="blue-box"/>
+  <text x="90" y="831" class="label">COMPLETE / PARTIAL</text>
+  <line x1="350" y1="843" x2="350" y2="985" stroke="#cbd2d8"/>
+  <text x="90" y="860" class="label">A / MODEL CONTEXT</text>
+  <text x="90" y="892" style="font-size:22px;font-weight:700">Bounded final text</text>
+  <text x="90" y="922" class="small">Partial reason prefixed</text>
+  <text x="90" y="948" class="small">when incomplete;</text>
+  <text x="90" y="974" class="small">included in the 12 KiB cap.</text>
+  <text x="370" y="860" class="label">B / HOST-ONLY DETAILS</text>
+  <text x="370" y="892" style="font-size:22px;font-weight:700">Execution metadata</text>
+  <text x="370" y="922" class="small">Status, duration, usage,</text>
+  <text x="370" y="948" class="small">budget counters; no tasks,</text>
+  <text x="370" y="974" class="small">paths, URLs or tool content.</text>
+
+  <!-- Failure is a separate model-visible error, not a final answer. -->
+  <path d="M630 655 H640 V1068 H630" class="error-flow"/>
+  <rect x="70" y="1015" width="560" height="105" fill="#fff2f1" stroke="#b3261e"/>
+  <text x="90" y="1044" class="label" style="fill:#b3261e">FAILURE / INCLUDING PREFLIGHT OR CHILD ERRORS</text>
+  <text x="90" y="1077" class="body">Model-visible error + diagnostics, capped at 4 KiB.</text>
+  <text x="90" y="1104" class="small">Reported child usage attached separately when available.</text>
+
+  <!-- Runtime state and trust caveats are not conflated with tool access. -->
+  <rect x="770" y="955" width="470" height="165" class="soft"/>
+  <text x="790" y="984" class="label">BOUNDED LIFETIME, NOT STATELESS</text>
+  <text x="790" y="1017" class="body">Time / tool / web-request budgets</text>
+  <text x="790" y="1047" class="body">In-memory investigation context</text>
+  <text x="790" y="1077" class="body">Private runtime files during execution;</text>
+  <text x="790" y="1105" class="body">Best-effort cleanup on exit / parent loss.</text>
+  <text x="1380" y="1006" class="label">TRUSTED RUNTIME</text>
+  <text x="1380" y="1036" class="small">Runs as the current user.</text>
+  <text x="1380" y="1064" class="small">Web extension may use host</text>
+  <text x="1380" y="1092" class="small">credentials, caches and temp files.</text>
+
+  <line x1="50" y1="1158" x2="1750" y2="1158" stroke="#cbd2d8"/>
+  <text x="50" y="1184" class="eyebrow" style="font-size:13px">PI SUBAGENT / PROCESS + DATA FLOW</text>
+  <line x1="580" y1="1179" x2="610" y2="1179" stroke="#007bb5" stroke-width="2"/>
+  <text x="620" y="1184" class="small" style="font-size:14px">dispatch / collection / result</text>
+  <line x1="880" y1="1179" x2="910" y2="1179" stroke="#101820" stroke-width="2"/>
+  <text x="920" y="1184" class="small" style="font-size:14px">guarded access / egress</text>
+  <text x="1750" y="1184" text-anchor="end" class="small" style="font-size:14px">Parent retains implementation and final verification.</text>
+</svg>

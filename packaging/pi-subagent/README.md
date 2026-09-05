@@ -57,12 +57,14 @@ Without that dependency, local runs remain available.
 ## How it works
 
 1. The parent delegates one focused task with a capability, explicit scope, and preset.
-2. The extension starts an ephemeral `pi --mode json --print --no-session` child process.
-3. A child guard validates tool ownership and applies the local or web boundary.
-4. The child investigates within its time and resource budgets.
+2. The parent extension canonicalizes the authorized scope and starts an ephemeral `pi --mode json --print --no-session` child process.
+3. The child guard validates tool ownership, publishes a private readiness marker, and validates each local or web tool call before execution.
+4. The child investigates within its time and resource budgets. The parent-side collector excludes intermediate messages and verifies readiness after the child exits before accepting its final answer.
 5. The parent model context receives only the bounded final answer, prefixed with `[Subagent partial: REASON]` when a tool budget, investigation deadline, or model output limit leaves it incomplete. The marker is included within the output cap. Content-free execution and budget metadata remain in host-only tool-result details without tasks, paths, queries, URLs, or tool content.
 
-[![Pi Subagent parent, child, capability, resource, and result boundaries](https://raw.githubusercontent.com/MDGChamomile/pi-agent-kit/main/live/extensions/pi-subagent/assets/pi-subagent-architecture.png)](https://github.com/MDGChamomile/pi-agent-kit/blob/main/live/extensions/pi-subagent/assets/pi-subagent-architecture.png)
+[![Pi Subagent with parent-side collection and result assembly, an ephemeral child, separate local and web resource paths, and complete, partial, or error returns](https://raw.githubusercontent.com/MDGChamomile/pi-agent-kit/main/live/extensions/pi-subagent/assets/pi-subagent-architecture.png)](https://github.com/MDGChamomile/pi-agent-kit/blob/main/live/extensions/pi-subagent/assets/pi-subagent-architecture.png)
+
+Collection, control-character sanitization, and result assembly run in the parent extension. Complete/partial calls return bounded answer text and separate host-only metadata; failures return bounded error text. Sanitization does not redact source quotations from the final answer. `--no-session` disables persisted Pi sessions, not in-memory context or private runtime files.
 
 The child cannot write files, run Bash or tests, persist a session, or recursively launch more agents. Final validation and any implementation stay with the parent.
 
@@ -89,7 +91,7 @@ These mappings are fixed in the extension; they do not inherit the parent model 
 
 Authorized local-file contents, web tasks and queries, fetched pages, and the final answer may be sent to the applicable configured model or search providers. Do not delegate secrets that must not leave the host or use the package for untrusted workloads requiring host isolation.
 
-The runtime canonicalizes local paths, blocks lexical and symlink escapes, verifies tool provenance, sanitizes returned text, and rejects child answers produced before the guard publishes its readiness marker.
+The runtime canonicalizes local paths, blocks lexical and symlink escapes, verifies tool provenance, and sanitizes control characters in returned text. After the child exits, the parent verifies the guard's private readiness marker before accepting its final answer.
 
 ## Documentation
 

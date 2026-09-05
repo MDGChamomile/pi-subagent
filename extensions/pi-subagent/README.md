@@ -69,12 +69,14 @@ Restart Pi or run `/reload`. The model can then select the skill automatically, 
 ## How it works
 
 1. The parent calls `pi_subagent` with one focused task, a capability, an explicit scope, and a preset.
-2. The extension starts one ephemeral `pi --mode json --print --no-session` child process.
-3. A child guard validates tool ownership and applies the local or web boundary before publishing a private readiness marker.
-4. The parent discards intermediate child turns and tool results, then retains only the last valid non-tool assistant answer.
+2. The parent extension canonicalizes the authorized scope and starts one ephemeral `pi --mode json --print --no-session` child process.
+3. The child guard validates tool ownership, publishes a private readiness marker, and validates each local or web tool call before execution.
+4. The parent-side collector discards intermediate child turns and tool results. After the child exits, the parent verifies readiness before accepting the last valid non-tool assistant answer, sanitizing control characters, and limiting its size.
 5. The TUI reports per-call progress and, when settled, the elapsed time and estimated context injected into the parent.
 
-[![Pi Subagent parent, child, capability, resource, and result boundaries](assets/pi-subagent-architecture.png)](assets/pi-subagent-architecture.png)
+[![Pi Subagent with parent-side collection and result assembly, an ephemeral child, separate local and web resource paths, and complete, partial, or error returns](assets/pi-subagent-architecture.png)](assets/pi-subagent-architecture.png)
+
+Collection, control-character sanitization, and result assembly run in the parent extension. Complete/partial calls return bounded answer text and separate host-only metadata; failures return bounded error text. Sanitization does not redact source quotations from the final answer. `--no-session` disables persisted Pi sessions, not in-memory context or private runtime files.
 
 One child call is the default. Up to three distinct, independent calls may run in parallel during one parent agent run; local and web calls each count toward that limit and can multiply model, provider, and web-request usage. One corrected retry is allowed only after preflight validation fails.
 
