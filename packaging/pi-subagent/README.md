@@ -2,7 +2,7 @@
 
 [![npm version](https://img.shields.io/npm/v/%40mdgchamomile%2Fpi-subagent)](https://www.npmjs.com/package/@mdgchamomile/pi-subagent)
 [![npm downloads](https://img.shields.io/npm/dm/%40mdgchamomile%2Fpi-subagent)](https://www.npmjs.com/package/@mdgchamomile/pi-subagent)
-[![License](https://img.shields.io/npm/l/%40mdgchamomile%2Fpi-subagent)](https://github.com/MDGChamomile/pi-agent-kit/blob/v0.2.4/LICENSE)
+[![License](https://img.shields.io/npm/l/%40mdgchamomile%2Fpi-subagent)](https://github.com/MDGChamomile/pi-agent-kit/blob/v0.2.5/LICENSE)
 
 Run focused, bounded investigations in an ephemeral child Pi process while keeping intermediate tool output out of the parent context.
 
@@ -11,7 +11,7 @@ Run focused, bounded investigations in an ephemeral child Pi process while keepi
 - **`pi_subagent` extension** — enforces scope, tool ownership, resource budgets, lifecycle, telemetry, and output boundaries.
 - **Companion skill** — helps the parent decide when to delegate and selects the appropriate capability and model preset.
 
-![Pi Subagent showing a completed child investigation and the context returned to the parent](https://raw.githubusercontent.com/MDGChamomile/pi-agent-kit/v0.2.4/live/extensions/pi-subagent/assets/pi-subagent-complete.png)
+![Pi Subagent showing a completed child investigation and the context returned to the parent](https://raw.githubusercontent.com/MDGChamomile/pi-agent-kit/v0.2.5/live/extensions/pi-subagent/assets/pi-subagent-complete.png)
 
 ## Why use it?
 
@@ -62,7 +62,7 @@ Without that dependency, local runs remain available.
 4. The child investigates within its time and resource budgets. The parent-side collector excludes intermediate messages and verifies readiness after the child exits before accepting its final answer.
 5. The parent model context receives only the bounded final answer, prefixed with `[Subagent partial: REASON]` when a tool budget, investigation deadline, or model output limit leaves it incomplete. The marker is included within the output cap. Content-free execution and budget metadata remain in host-only tool-result details without tasks, paths, queries, URLs, or tool content.
 
-[![Pi Subagent with parent-side collection and result assembly, an ephemeral child, separate local and web resource paths, and complete, partial, or error returns](https://raw.githubusercontent.com/MDGChamomile/pi-agent-kit/main/live/extensions/pi-subagent/assets/pi-subagent-architecture.png)](https://github.com/MDGChamomile/pi-agent-kit/blob/main/live/extensions/pi-subagent/assets/pi-subagent-architecture.png)
+[![Pi Subagent with parent-side collection and result assembly, an ephemeral child, separate local and web resource paths, and complete, partial, or error returns](https://raw.githubusercontent.com/MDGChamomile/pi-agent-kit/v0.2.5/live/extensions/pi-subagent/assets/pi-subagent-architecture.png)](https://github.com/MDGChamomile/pi-agent-kit/blob/v0.2.5/live/extensions/pi-subagent/assets/pi-subagent-architecture.png)
 
 Collection, control-character sanitization, and result assembly run in the parent extension. Complete/partial calls return bounded answer text and separate host-only metadata; failures return bounded error text. Sanitization does not redact source quotations from the final answer. `--no-session` disables persisted Pi sessions, not in-memory context or private runtime files.
 
@@ -95,11 +95,11 @@ The runtime canonicalizes local paths, blocks lexical and symlink escapes, verif
 
 ## Documentation
 
-- [extension guide](https://github.com/MDGChamomile/pi-agent-kit/blob/v0.2.4/live/extensions/pi-subagent/README.md) — complete runtime, installation, security, and verification contract.
-- [skill guide](https://github.com/MDGChamomile/pi-agent-kit/blob/v0.2.4/live/skills/pi-subagent/README.md) — when delegation is appropriate and how the workflow selects a child.
+- [extension guide](https://github.com/MDGChamomile/pi-agent-kit/blob/v0.2.5/live/extensions/pi-subagent/README.md) — complete runtime, installation, security, and verification contract.
+- [skill guide](https://github.com/MDGChamomile/pi-agent-kit/blob/v0.2.5/live/skills/pi-subagent/README.md) — when delegation is appropriate and how the workflow selects a child.
 - [Source repository](https://github.com/MDGChamomile/pi-agent-kit)
 - [Issue tracker](https://github.com/MDGChamomile/pi-agent-kit/issues)
 
 ## License
 
-[MIT](https://github.com/MDGChamomile/pi-agent-kit/blob/v0.2.4/LICENSE)
+[MIT](https://github.com/MDGChamomile/pi-agent-kit/blob/v0.2.5/LICENSE)
