@@ -56,6 +56,7 @@ After investigation, return the requested deliverable as concise ordinary assist
 export type Usage = PiUsage;
 
 export type ChildResult = {
+  /** Parent-visible answer, including the runtime's partial-result marker when needed. */
   output: string;
   outputTruncated: boolean;
   status: ResultStatus;
@@ -330,6 +331,7 @@ export class ChildJsonCollector {
     addUsage(this.usage, message.usage);
     if (typeof message.stopReason === "string") this.stopReason = message.stopReason;
     if (typeof message.errorMessage === "string") this.errorMessage = message.errorMessage;
+    // Keep length-limited text as evidence; runChild marks an unrecovered length stop as partial.
     const eligible = this.lastAssistantMode === "text"
       && message.stopReason !== "toolUse"
       && message.stopReason !== "error"
@@ -617,17 +619,25 @@ export async function runChild(options: {
   if (!snapshot.finalOutput.trim()) {
     throw childFailure("Subagent finished without a final assistant answer", "output", snapshot, startedAt, exitCode);
   }
-  const capped = truncateUtf8(sanitizeDisplayText(snapshot.finalOutput));
+  const partialReason: PartialReason | undefined = snapshot.stopReason === "length"
+    ? "model_length"
+    : budget.hardLimitReached
+      ? "tool_budget"
+      : completedAt >= softDeadline ? "time_limit" : undefined;
+  // Pi sends content, not details, to the parent model. Include the marker inside
+  // the byte cap so both the reason and the context estimate survive serialization.
+  const prefix = partialReason ? `[Subagent partial: ${partialReason}]\n\n` : "";
+  const capped = truncateUtf8(prefix + sanitizeDisplayText(snapshot.finalOutput));
   return {
     output: capped.text,
     outputTruncated: capped.truncated,
-    status: completedAt >= softDeadline || budget.hardLimitReached ? "partial" : "complete",
+    status: partialReason ? "partial" : "complete",
     exitCode,
     stopReason: snapshot.stopReason,
     durationMs: Date.now() - startedAt,
     contextTokens: estimateContextTokens(capped.text),
     usage: snapshot.usage,
     budget,
-    partialReason: budget.partialReason,
+    partialReason,
   };
 }

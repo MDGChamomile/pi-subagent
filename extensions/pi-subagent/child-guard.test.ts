@@ -258,6 +258,38 @@ describe("pi-subagent child guard", () => {
     }
   });
 
+  test("requests one tool-disabled finalization after token-limited text without looping", async () => {
+    const harness = await createHarness(["allowed"], "local");
+    const truncatedTurn = {
+      message: {
+        role: "assistant",
+        stopReason: "length",
+        content: [{ type: "text", text: "The primary cause is X, but" }],
+      },
+    };
+    try {
+      await harness.emit("session_start");
+      for (let attempt = 0; attempt < 2; attempt++) {
+        await harness.emit("agent_start");
+        await harness.emit("turn_end", truncatedTurn);
+        await harness.emit("agent_end", { messages: [] });
+        assert.equal(harness.getSentUserMessages().length, 1);
+        assert.deepEqual(harness.getActiveTools(), []);
+      }
+      assert.deepEqual(harness.getSentUserMessages()[0]!.options, { deliverAs: "followUp" });
+      assert.match(harness.getSentUserMessages()[0]!.content, /ordinary assistant text/);
+      const blockedRead = await harness.callTool({
+        toolName: "read",
+        toolCallId: "post-length-finalization-read",
+        input: { path: "allowed/inside.txt" },
+      });
+      assert.equal(blockedRead.block, true);
+      assert.match(blockedRead.reason, /Finalization has started/);
+    } finally {
+      await harness.cleanup();
+    }
+  });
+
   test("accepts an ordinary final answer without requesting another turn", async () => {
     const harness = await createHarness(["allowed"], "local");
     try {

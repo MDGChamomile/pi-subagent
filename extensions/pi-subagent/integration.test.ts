@@ -5,7 +5,9 @@ import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { describe, test } from "node:test";
 import { fileURLToPath } from "node:url";
-import { ChildRunError, runChild } from "./subprocess.ts";
+import type { Message, Model } from "@earendil-works/pi-ai";
+import { convertResponsesMessages } from "@earendil-works/pi-ai/api/openai-responses-shared";
+import { ChildRunError, emptyUsage, runChild, type ChildResult } from "./subprocess.ts";
 import { buildChildPolicy, MAX_FINAL_BYTES, MAX_PARENT_ERROR_BYTES } from "./shared.ts";
 
 const FAKE_CHILD = fileURLToPath(new URL("./fixtures/fake-child.mjs", import.meta.url));
@@ -39,6 +41,47 @@ async function withFixture<T>(scenario: string, run: (options: Parameters<typeof
   }
 }
 
+function modelVisibleOutput(result: ChildResult): string {
+  const model: Model<"openai-codex-responses"> = {
+    id: "test-parent",
+    name: "Test Parent",
+    provider: "openai-codex",
+    api: "openai-codex-responses",
+    baseUrl: "https://example.invalid",
+    reasoning: true,
+    input: ["text"],
+    cost: { input: 0, output: 0, cacheRead: 0, cacheWrite: 0 },
+    contextWindow: 16_000,
+    maxTokens: 1_000,
+  };
+  // Mirror index.ts's content/details boundary, then use Pi's real provider serializer.
+  // No provider request is made; details are deliberately invisible to the parent model.
+  const messages: Message[] = [{
+    role: "assistant",
+    api: model.api,
+    provider: model.provider,
+    model: model.id,
+    stopReason: "toolUse",
+    usage: emptyUsage(),
+    timestamp: 0,
+    content: [{ type: "toolCall", id: "child-call", name: "pi_subagent", arguments: {} }],
+  }, {
+    role: "toolResult",
+    toolCallId: "child-call",
+    toolName: "pi_subagent",
+    content: [{ type: "text", text: result.output }],
+    details: { status: result.status, partialReason: result.partialReason },
+    isError: false,
+    timestamp: 0,
+  }];
+  const serialized = convertResponsesMessages(model, { messages }, new Set([model.provider]));
+  const toolOutput = serialized.find((item) => item.type === "function_call_output");
+  assert.ok(toolOutput?.type === "function_call_output" && typeof toolOutput.output === "string");
+  assert.equal("details" in toolOutput, false);
+  assert.equal(result.contextTokens, Math.ceil(toolOutput.output.length / 4));
+  return toolOutput.output;
+}
+
 async function waitForProcessExit(pid: number, timeoutMs = 3_000): Promise<void> {
   const deadline = Date.now() + timeoutMs;
   while (Date.now() < deadline) {
@@ -53,6 +96,8 @@ describe("pi-subagent spawned-child integration", () => {
     const result = await withFixture("success", (options) => runChild(options));
     assert.equal(result.output, "Only this final assistant answer may reach the parent.");
     assert.equal(result.status, "complete");
+    assert.equal(result.partialReason, undefined);
+    assert.equal(modelVisibleOutput(result), "Only this final assistant answer may reach the parent.");
     assert.doesNotMatch(result.output, /intermediate|noisy child/);
     assert.equal(result.contextTokens, Math.ceil(result.output.length / 4));
     assert.equal(result.usage.totalTokens, 48);
@@ -65,8 +110,9 @@ describe("pi-subagent spawned-child integration", () => {
       killGraceMs: 50,
     }));
     assert.equal(result.status, "partial");
-    assert.equal(result.partialReason, undefined);
-    assert.equal(result.output, "The completed portion remains useful. Coverage is incomplete.");
+    assert.equal(result.partialReason, "time_limit");
+    assert.equal(modelVisibleOutput(result),
+      "[Subagent partial: time_limit]\n\nThe completed portion remains useful. Coverage is incomplete.");
   });
 
   test("passes a budget termination to the parent as partial with numeric telemetry", async () => {
@@ -75,7 +121,47 @@ describe("pi-subagent spawned-child integration", () => {
     assert.equal(result.partialReason, "tool_budget");
     assert.equal(result.budget.hardLimitReached, true);
     assert.equal(result.budget.toolCallsAttempted, 0);
-    assert.equal(result.output, "Budget-limited final answer with explicit coverage gaps.");
+    assert.equal(modelVisibleOutput(result), "[Subagent partial: tool_budget]\n\nThe primary cause is X.");
+  });
+
+  test("labels token-limited text as partial even when the tool budget was also exhausted", async () => {
+    for (const scenario of ["length-output", "budget-length-output"]) {
+      const result = await withFixture(scenario, (options) => runChild(options));
+      assert.equal(result.status, "partial");
+      assert.equal(result.partialReason, "model_length");
+      assert.equal(result.stopReason, "length");
+      assert.equal(result.budget.hardLimitReached, scenario === "budget-length-output");
+      assert.equal(result.outputTruncated, false); // Only the parent's byte cap sets this flag.
+      assert.equal(modelVisibleOutput(result),
+        "[Subagent partial: model_length]\n\nThe primary cause is X, but the second cause is");
+    }
+  });
+
+  test("accepts a recovered final answer without retaining the earlier length stop", async () => {
+    const result = await withFixture("length-recovered", (options) => runChild(options));
+    assert.equal(result.status, "complete");
+    assert.equal(result.partialReason, undefined);
+    assert.equal(result.stopReason, "stop");
+    assert.equal(modelVisibleOutput(result), "Recovered concise final answer.");
+    assert.equal(result.usage.totalTokens, 32);
+  });
+
+  test("does not turn an empty length-limited answer into a status-only success", async () => {
+    await assert.rejects(
+      () => withFixture("length-empty-output", (options) => runChild(options)),
+      /finished without a final assistant answer/,
+    );
+  });
+
+  test("keeps the partial status visible within the UTF-8 final-output cap", async () => {
+    const result = await withFixture("budget-oversized-output", (options) => runChild(options));
+    const output = modelVisibleOutput(result);
+    assert.equal(result.status, "partial");
+    assert.equal(result.outputTruncated, true);
+    assert.ok(Buffer.byteLength(output, "utf8") <= MAX_FINAL_BYTES);
+    assert.equal(output.includes("�"), false);
+    assert.match(output, /^\[Subagent partial: tool_budget\]\n\n가/);
+    assert.match(output, /\[Subagent output truncated\]$/);
   });
 
   test("sanitizes and truncates a large plain final answer at the parent boundary", async () => {

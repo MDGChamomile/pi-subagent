@@ -25,7 +25,7 @@ Keep the work in the parent for simple lookups, implementation, commands, tests,
 2. The workflow selects `local` or `web`, an explicit scope, and the least capable standard preset.
 3. The companion extension starts one ephemeral, read-only child Pi process. Local and web access never coexist in the same child.
 4. Intermediate child turns and tool results stay outside the parent context; only the final bounded answer returns.
-5. A lifetime tool budget gives one soft warning, then returns the best available answer as `partial` if a hard tool-call or web query/fetch limit is reached.
+5. A lifetime tool budget gives one soft warning, then returns the best available answer as `partial` if a hard tool-call or web query/fetch limit is reached. Partial results include a `[Subagent partial: REASON]` prefix in the returned text: `tool_budget`, `time_limit`, or `model_length` identifies an exhausted budget, investigation deadline, or model output limit. The parent reads this marker rather than host-only tool-result details.
 6. The parent verifies decisive claims and performs any implementation or final validation itself.
 
 The three presets are:

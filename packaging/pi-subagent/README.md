@@ -60,7 +60,7 @@ Without that dependency, local runs remain available.
 2. The extension starts an ephemeral `pi --mode json --print --no-session` child process.
 3. A child guard validates tool ownership and applies the local or web boundary.
 4. The child investigates within its time and resource budgets.
-5. For complete and partial results, the parent model context receives only the bounded final answer; content-free execution and budget metadata are returned separately in tool-result details without tasks, paths, queries, URLs, or tool content.
+5. The parent model context receives only the bounded final answer, prefixed with `[Subagent partial: REASON]` when a tool budget, investigation deadline, or model output limit leaves it incomplete. The marker is included within the output cap. Content-free execution and budget metadata remain in host-only tool-result details without tasks, paths, queries, URLs, or tool content.
 
 [![Pi Subagent parent, child, capability, resource, and result boundaries](https://raw.githubusercontent.com/MDGChamomile/pi-agent-kit/main/live/extensions/pi-subagent/assets/pi-subagent-architecture.png)](https://github.com/MDGChamomile/pi-agent-kit/blob/main/live/extensions/pi-subagent/assets/pi-subagent-architecture.png)
 

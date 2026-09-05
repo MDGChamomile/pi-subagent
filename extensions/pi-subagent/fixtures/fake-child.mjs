@@ -28,7 +28,7 @@ const budget = {
   fetchTargetCount: 0,
   softLimitReached: false,
   hardLimitReached: false,
-  ...(scenario === "budget-partial" ? { hardLimitReached: true, partialReason: "tool_budget" } : {}),
+  ...(scenario.startsWith("budget-") ? { hardLimitReached: true, partialReason: "tool_budget" } : {}),
 };
 writeFileSync(budgetTelemetryPath, JSON.stringify(budget), { encoding: "utf8", mode: 0o600, flag: "wx" });
 
@@ -72,13 +72,30 @@ if (scenario === "success") {
     usage,
     stopReason: "stop",
   });
-} else if (scenario === "oversized-output") {
+} else if (scenario === "oversized-output" || scenario === "budget-oversized-output") {
   emit({
     role: "assistant",
     content: [{ type: "text", text: "가".repeat(8_000) }],
     usage,
     stopReason: "stop",
   });
+} else if (scenario === "length-output" || scenario === "budget-length-output" || scenario === "length-recovered") {
+  emit({
+    role: "assistant",
+    content: [{ type: "text", text: "The primary cause is X, but the second cause is" }],
+    usage,
+    stopReason: "length",
+  });
+  if (scenario === "length-recovered") {
+    emit({
+      role: "assistant",
+      content: [{ type: "text", text: "Recovered concise final answer." }],
+      usage,
+      stopReason: "stop",
+    });
+  }
+} else if (scenario === "length-empty-output") {
+  emit({ role: "assistant", content: [], usage, stopReason: "length" });
 } else if (scenario === "provider-error") {
   emit({
     role: "assistant",
@@ -98,7 +115,7 @@ if (scenario === "success") {
 } else if (scenario === "budget-partial") {
   emit({
     role: "assistant",
-    content: [{ type: "text", text: "Budget-limited final answer with explicit coverage gaps." }],
+    content: [{ type: "text", text: "The primary cause is X." }],
     usage,
     stopReason: "stop",
   });

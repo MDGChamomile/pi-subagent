@@ -128,6 +128,24 @@ describe("child JSON stream collector", () => {
     assert.equal(toolOnlyEnding.snapshot().lastAssistantMode, "tool");
   });
 
+  test("retains length-limited answer text but never mixed investigation/tool-call text", () => {
+    const collector = new ChildJsonCollector();
+    collector.push(`${assistantEvent("Truncated answer text", { stopReason: "length" })}\n`);
+    assert.equal(collector.snapshot().finalOutput, "Truncated answer text");
+    assert.equal(collector.snapshot().stopReason, "length");
+
+    collector.push(`${assistantEvent("", {
+      stopReason: "length",
+      content: [
+        { type: "text", text: "private intermediate investigation" },
+        { type: "toolCall", id: "cut-off-call", name: "read", arguments: {} },
+      ],
+    })}\n`);
+    collector.finish();
+    assert.equal(collector.snapshot().finalOutput, "");
+    assert.equal(collector.snapshot().lastAssistantMode, "mixed");
+  });
+
   test("discards an oversized aggregate agent_end record without failing", () => {
     const collector = new ChildJsonCollector();
     const hugeIgnoredEvent = `{"type":"agent_end","messages":"${"x".repeat(MAX_JSON_LINE_BYTES + 1024)}"}\n`;
@@ -234,6 +252,10 @@ describe("child completion boundary", () => {
       await assert.rejects(() => readBudgetTelemetry(telemetryFile), /malformed/);
       await writeFile(telemetryFile, JSON.stringify({ ...telemetry, queryCount: -1 }));
       await assert.rejects(() => readBudgetTelemetry(telemetryFile), /malformed/);
+      for (const partialReason of ["time_limit", "model_length"]) {
+        await writeFile(telemetryFile, JSON.stringify({ ...telemetry, partialReason }));
+        await assert.rejects(() => readBudgetTelemetry(telemetryFile), /malformed/);
+      }
     } finally {
       await rm(root, { recursive: true, force: true });
     }

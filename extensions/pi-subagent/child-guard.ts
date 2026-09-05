@@ -343,7 +343,8 @@ export default function childGuard(
       && !hasToolCall
       && event.message.stopReason !== "error"
       && event.message.stopReason !== "aborted"
-      && event.message.stopReason !== "toolUse";
+      && event.message.stopReason !== "toolUse"
+      && event.message.stopReason !== "length";
   });
 
   pi.on("agent_start", () => {

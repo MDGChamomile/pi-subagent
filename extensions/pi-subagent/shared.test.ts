@@ -230,9 +230,12 @@ describe("pi-subagent model invocation contract", () => {
     assert.match(skill, /not a credential-isolated sandbox/);
     assert.match(skill, /separate `local` and `web` calls/);
     assert.match(skill, /concise conclusion with evidence locations/);
-    assert.match(skill, /result marked `partial`/);
-    assert.match(skill, /inspect `details\.partialReason`/);
-    assert.match(skill, /when it is `tool_budget`/);
+    assert.match(skill, /prefixed with `\[Subagent partial: REASON\]`/);
+    assert.match(skill, /not tool-result `details`/);
+    assert.doesNotMatch(skill, /inspect `details\.partialReason`/);
+    for (const reason of ["tool_budget", "time_limit", "model_length"]) {
+      assert.ok(skill.includes(`\`${reason}\` means`));
+    }
     assert.match(skill, /Do not repeat broad reads/);
   });
 

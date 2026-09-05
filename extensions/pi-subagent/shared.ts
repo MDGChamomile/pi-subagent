@@ -76,7 +76,7 @@ export function normalizePreset(preset: unknown, profile: unknown): Preset | und
 
 export type Capability = "local" | "web";
 export type ResultStatus = "complete" | "partial";
-export type PartialReason = "tool_budget";
+export type PartialReason = "tool_budget" | "time_limit" | "model_length";
 export type BudgetTelemetry = {
   version: 1;
   toolCallsAttempted: number;
@@ -86,7 +86,7 @@ export type BudgetTelemetry = {
   fetchTargetCount: number;
   softLimitReached: boolean;
   hardLimitReached: boolean;
-  partialReason?: PartialReason;
+  partialReason?: "tool_budget";
 };
 export type ScopeRoot = { path: string; kind: "file" | "directory" };
 export type ChildPolicy = { version: 1; cwd: string; capability: Capability; roots: ScopeRoot[] };
