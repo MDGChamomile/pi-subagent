@@ -25,7 +25,7 @@ export const LIFETIME_TOOL_CALL_LIMITS = {
 } as const;
 export const LIFETIME_WEB_QUERY_LIMIT = 32;
 export const LIFETIME_WEB_FETCH_TARGET_LIMIT = 50;
-export const PINNED_WEB_EXTENSION_VERSION = "0.27.0";
+export const MIN_WEB_EXTENSION_VERSION = "0.27.0";
 export const MAX_SCOPE_ROOTS = 8;
 export const MAX_SUBAGENT_CALLS = 3;
 export const MAX_FINAL_BYTES = 12 * 1024;
@@ -232,6 +232,19 @@ export type ToolSourceDescriptor = {
   sourceInfo?: { path?: string; baseDir?: string };
 };
 
+// Accept stable SemVer releases only; build metadata does not affect precedence.
+function meetsWebMinimumVersion(version: unknown): boolean {
+  if (typeof version !== "string") return false;
+  const match = /^(0|[1-9]\d*)\.(0|[1-9]\d*)\.(0|[1-9]\d*)(?:\+[0-9A-Za-z-]+(?:\.[0-9A-Za-z-]+)*)?$/.exec(version);
+  if (!match || match[0] !== version) return false;
+  const minimum = MIN_WEB_EXTENSION_VERSION.split(".").map(BigInt);
+  for (let index = 0; index < 3; index++) {
+    const part = BigInt(match[index + 1]!);
+    if (part !== minimum[index]) return part > minimum[index]!;
+  }
+  return true;
+}
+
 async function verifyWebPackageEntrypoint(canonical: string): Promise<boolean> {
   for (let directory = dirname(canonical);;) {
     try {
@@ -242,7 +255,7 @@ async function verifyWebPackageEntrypoint(canonical: string): Promise<boolean> {
       };
       if (
         manifest.name !== "pi-web-access"
-        || manifest.version !== PINNED_WEB_EXTENSION_VERSION
+        || !meetsWebMinimumVersion(manifest.version)
         || !Array.isArray(manifest.pi?.extensions)
       ) return false;
       for (const entry of manifest.pi.extensions) {
@@ -284,7 +297,7 @@ export async function resolveWebExtensionPath(tools: readonly ToolSourceDescript
       // Try the source base directory fallback.
     }
   }
-  throw new Error(`Web tools must come from the installed pi-web-access ${PINNED_WEB_EXTENSION_VERSION} package entry point`);
+  throw new Error(`Web tools must come from the installed pi-web-access >=${MIN_WEB_EXTENSION_VERSION} (stable releases only) package entry point`);
 }
 
 export class ModelInvocationGate {

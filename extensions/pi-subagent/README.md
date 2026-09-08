@@ -37,7 +37,7 @@ Core requirements:
 Capability-specific requirements:
 
 - `local`: `rg` for `grep`, and `fd` or `fdfind` for `find`;
-- `web`: [`pi-web-access` v0.27.0](https://github.com/nicobailon/pi-web-access) with its default tool names.
+- `web`: [`pi-web-access` v0.27.0 or later (stable releases)](https://github.com/nicobailon/pi-web-access) with its default tool names.
 
 Install the extension and companion skill together from npm:
 
@@ -45,10 +45,10 @@ Install the extension and companion skill together from npm:
 pi install npm:@mdgchamomile/pi-subagent
 ```
 
-For web investigations, also install the exact reviewed web extension version:
+For web investigations, also install the web extension (v0.27.0 or later):
 
 ```bash
-pi install npm:pi-web-access@v0.27.0
+pi install npm:pi-web-access
 ```
 
 Alternatively, install both components from a checkout:
@@ -64,7 +64,7 @@ ln -s "$PWD/live/skills/pi-subagent" ~/.pi/agent/skills/pi-subagent
 Restart Pi or run `/reload`. The model can then select the skill automatically, or the user can invoke `/skill:pi-subagent`.
 
 > [!NOTE]
-> The web guard verifies the dependency's package name, exact version, declared entry point, and tool provenance, so another version or extension exposing the same tool names does not satisfy it. The exact pin prevents unreviewed code drift on reinstall; it does not by itself prove package safety. Without the web dependency, `local` runs remain available. Local child startup is forced offline and never downloads missing search binaries.
+> The web guard verifies the dependency's package name, minimum version (>=0.27.0, stable releases only), declared entry point, and tool provenance. Newer stable versions are allowed without an upper bound so updates are not blocked solely by version; this is not a guarantee of compatibility or package safety. Prereleases and malformed versions are rejected. Existing argument allowlists and execution limits remain enforced, but changes to upstream behavior may require maintenance. Another extension exposing the same tool names does not satisfy the provenance check. Without the web dependency, `local` runs remain available. Local child startup is forced offline and never downloads missing search binaries.
 
 ## How it works
 
