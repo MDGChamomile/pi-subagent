@@ -20,4 +20,4 @@
 
 - If a temporary procedure is needed before it can be measured, record its hypothesis, scope, expected benefits and tradeoffs, review date, and removal criteria. Do not present that decision as a validated conclusion.
 
-- Retain only harness components that measurably improve quality, cost and latency, safety, or operational complexity over an intervention-free baseline. Routine operating procedures may be revised flexibly, but changes to safety, authorization, or data protection boundaries require clear justification and approval from the harness owner.
+- Compare harness procedures and mechanisms against a minimal baseline that preserves the same core boundaries, and adopt or retain them based on their net benefits after weighing the tradeoffs. Revisit temporary procedures at the specified review points and against the established criteria. Routine operating procedures may be revised flexibly, but changes to core boundaries require clear justification and approval from the harness owner.
