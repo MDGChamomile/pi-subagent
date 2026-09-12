@@ -131,6 +131,30 @@ describe("pi-subagent scope policy", () => {
 });
 
 describe("pi-subagent model invocation contract", () => {
+  test("claims preflight once and keeps its reservation until commit or cleanup", () => {
+    const gate = new ModelInvocationGate();
+    gate.startRun();
+    assert.equal(gate.beginPreflight("missing"), false);
+    assert.equal(gate.authorize("first"), true);
+    assert.equal(gate.commit("first"), false);
+    assert.equal(gate.rejectPreflight("first"), false);
+    assert.equal(gate.beginPreflight("first"), true);
+    assert.equal(gate.beginPreflight("first"), false);
+    assert.equal(gate.authorize("first"), false);
+    assert.equal(gate.authorize("second"), true);
+    assert.equal(gate.authorize("third"), true);
+    assert.equal(gate.authorize("overflow"), false);
+    assert.equal(gate.commit("first"), true);
+    assert.equal(gate.commit("first"), false);
+    assert.equal(gate.beginPreflight("first"), false);
+    assert.equal(gate.beginPreflight("second"), true);
+    gate.endRun();
+    assert.equal(gate.beginPreflight("third"), false);
+    assert.equal(gate.commit("second"), false);
+    gate.startRun();
+    assert.equal(gate.beginPreflight("second"), false);
+  });
+
   test("allows three started children plus one corrected preflight retry per parent agent run", () => {
     const gate = new ModelInvocationGate();
     assert.equal(gate.authorize("before-run"), false);
@@ -138,10 +162,12 @@ describe("pi-subagent model invocation contract", () => {
     assert.equal(gate.authorize("call-1"), true);
     assert.equal(gate.authorize("call-2"), true);
     assert.equal(gate.authorize("call-3"), true);
+    for (const id of ["call-1", "call-2", "call-3"]) assert.equal(gate.beginPreflight(id), true);
     assert.equal(gate.authorize("call-4"), false);
     assert.equal(gate.rejectPreflight("wrong-id"), false);
     assert.equal(gate.rejectPreflight("call-1"), true);
     assert.equal(gate.authorize("retry-1"), true);
+    assert.equal(gate.beginPreflight("retry-1"), true);
     assert.equal(gate.authorize("parallel-retry"), false);
     assert.equal(gate.rejectPreflight("retry-1"), true);
     assert.equal(gate.authorize("third-attempt"), false);
@@ -156,6 +182,7 @@ describe("pi-subagent model invocation contract", () => {
     for (let index = 0; index < MAX_SUBAGENT_CALLS; index++) {
       const id = `started-${index}`;
       assert.equal(gate.authorize(id), true);
+      assert.equal(gate.beginPreflight(id), true);
       assert.equal(gate.commit(id), true);
     }
     assert.equal(gate.authorize("after-limit"), false);
@@ -170,22 +197,29 @@ describe("pi-subagent model invocation contract", () => {
     const gate = new ModelInvocationGate();
     gate.startRun();
     assert.equal(gate.authorize("invalid"), true);
+    assert.equal(gate.beginPreflight("invalid"), true);
     assert.equal(gate.rejectPreflight("invalid"), true);
     assert.equal(gate.authorize("replacement"), true);
+    assert.equal(gate.beginPreflight("replacement"), true);
     assert.equal(gate.commit("replacement"), true);
     assert.equal(gate.authorize("second"), true);
+    assert.equal(gate.beginPreflight("second"), true);
     assert.equal(gate.commit("second"), true);
     assert.equal(gate.authorize("third"), true);
+    assert.equal(gate.beginPreflight("third"), true);
     assert.equal(gate.commit("third"), true);
     assert.equal(gate.authorize("fourth"), false);
 
     gate.endRun();
     gate.startRun();
     assert.equal(gate.authorize("first-invalid"), true);
+    assert.equal(gate.beginPreflight("first-invalid"), true);
     assert.equal(gate.rejectPreflight("first-invalid"), true);
     assert.equal(gate.authorize("first-replacement"), true);
+    assert.equal(gate.beginPreflight("first-replacement"), true);
     assert.equal(gate.commit("first-replacement"), true);
     assert.equal(gate.authorize("second-invalid"), true);
+    assert.equal(gate.beginPreflight("second-invalid"), true);
     assert.equal(gate.rejectPreflight("second-invalid"), true);
     assert.equal(gate.authorize("second-replacement"), false);
   });
@@ -204,6 +238,7 @@ describe("pi-subagent model invocation contract", () => {
     for (let index = 0; index < MAX_SUBAGENT_CALLS; index++) {
       const id = `started-after-block-${index}`;
       assert.equal(gate.authorize(id), true);
+      assert.equal(gate.beginPreflight(id), true);
       assert.equal(gate.commit(id), true);
       assert.equal(gate.releaseUnstarted(id), false);
     }
@@ -214,10 +249,12 @@ describe("pi-subagent model invocation contract", () => {
     const gate = new ModelInvocationGate();
     gate.startRun();
     assert.equal(gate.authorize("invalid"), true);
+    assert.equal(gate.beginPreflight("invalid"), true);
     assert.equal(gate.rejectPreflight("invalid"), true);
     assert.equal(gate.authorize("blocked-replacement"), true);
     assert.equal(gate.releaseUnstarted("blocked-replacement"), true);
     assert.equal(gate.authorize("next-replacement"), true);
+    assert.equal(gate.beginPreflight("next-replacement"), true);
     assert.equal(gate.commit("next-replacement"), true);
   });
 

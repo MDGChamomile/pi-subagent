@@ -43,7 +43,6 @@ const Parameters = Type.Object({
 
 export default function piSubagentExtension(pi: ExtensionAPI): void {
   const gate = new ModelInvocationGate();
-  const authorizedCalls = new Set<string>();
   // Pi turns thrown tool errors into fresh results; reattach the child's nested usage in tool_result.
   const failedUsage = new Map<string, ChildRunError["usage"]>();
   let ownSourcePath: string | undefined;
@@ -51,7 +50,6 @@ export default function piSubagentExtension(pi: ExtensionAPI): void {
   const currentOwnSource = () => pi.getAllTools().find((tool) => tool.name === TOOL_NAME)?.sourceInfo?.path;
   const clearRun = () => {
     gate.endRun();
-    authorizedCalls.clear();
     failedUsage.clear();
   };
 
@@ -76,7 +74,7 @@ export default function piSubagentExtension(pi: ExtensionAPI): void {
     async execute(toolCallId, params, signal, onUpdate, ctx) {
       try {
         const currentSource = currentOwnSource();
-        if (!authorizedCalls.delete(toolCallId) || !ownSourcePath || currentSource !== ownSourcePath) {
+        if (!gate.beginPreflight(toolCallId) || !ownSourcePath || currentSource !== ownSourcePath) {
           throw new Error(boundedParentError(
             `pi_subagent allows at most ${MAX_SUBAGENT_CALLS} model-selected calls per parent agent run`,
             { phase: "preflight" },
@@ -198,7 +196,6 @@ export default function piSubagentExtension(pi: ExtensionAPI): void {
     clearRun();
   });
   pi.on("agent_start", () => {
-    authorizedCalls.clear();
     failedUsage.clear();
     gate.startRun();
   });
@@ -208,7 +205,6 @@ export default function piSubagentExtension(pi: ExtensionAPI): void {
     if (!ownSourcePath || currentSource !== ownSourcePath || !gate.authorize(event.toolCallId)) {
       return invocationLimitBlock();
     }
-    authorizedCalls.add(event.toolCallId);
   });
   pi.on("tool_result", (event) => {
     if (event.toolName !== TOOL_NAME) return;
@@ -218,7 +214,6 @@ export default function piSubagentExtension(pi: ExtensionAPI): void {
   });
   pi.on("tool_execution_end", (event) => {
     if (event.toolName !== TOOL_NAME) return;
-    authorizedCalls.delete(event.toolCallId);
     gate.releaseUnstarted(event.toolCallId);
   });
   pi.on("agent_settled", clearRun);

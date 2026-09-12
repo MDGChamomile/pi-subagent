@@ -306,7 +306,7 @@ export class ModelInvocationGate {
   private preflightFailures = 0;
   private preflightReplacementPending = false;
   private replacementToolCallId: string | undefined;
-  private readonly authorizedToolCallIds = new Set<string>();
+  private readonly authorizedToolCallIds = new Map<string, "authorized" | "preflight">();
 
   startRun(): void {
     if (this.runOpen) return;
@@ -335,13 +335,21 @@ export class ModelInvocationGate {
       || this.authorizedToolCallIds.has(toolCallId)
       || this.startedCalls + this.authorizedToolCallIds.size >= MAX_SUBAGENT_CALLS
     ) return false;
-    this.authorizedToolCallIds.add(toolCallId);
+    this.authorizedToolCallIds.set(toolCallId, "authorized");
     if (this.preflightReplacementPending) this.replacementToolCallId = toolCallId;
     return true;
   }
 
+  // Claim execution once, while retaining the reservation until preflight settles.
+  beginPreflight(toolCallId: string): boolean {
+    if (this.authorizedToolCallIds.get(toolCallId) !== "authorized") return false;
+    this.authorizedToolCallIds.set(toolCallId, "preflight");
+    return true;
+  }
+
   commit(toolCallId: string): boolean {
-    if (!this.authorizedToolCallIds.delete(toolCallId)) return false;
+    if (this.authorizedToolCallIds.get(toolCallId) !== "preflight") return false;
+    this.authorizedToolCallIds.delete(toolCallId);
     this.startedCalls += 1;
     if (this.replacementToolCallId === toolCallId) {
       this.preflightReplacementPending = false;
@@ -351,7 +359,8 @@ export class ModelInvocationGate {
   }
 
   rejectPreflight(toolCallId: string): boolean {
-    if (!this.authorizedToolCallIds.delete(toolCallId)) return false;
+    if (this.authorizedToolCallIds.get(toolCallId) !== "preflight") return false;
+    this.authorizedToolCallIds.delete(toolCallId);
     this.preflightFailures += 1;
     if (this.preflightFailures === 1) this.preflightReplacementPending = true;
     if (this.replacementToolCallId === toolCallId) this.replacementToolCallId = undefined;

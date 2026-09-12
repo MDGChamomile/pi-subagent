@@ -81,6 +81,42 @@ describe("pi-subagent extension wiring", () => {
     assert.doesNotMatch(capability.description, /public web only/);
   });
 
+  test("rejects duplicate execution before the first preflight finishes", async () => {
+    const harness = await startHarness();
+    const id = "duplicate";
+    const params = { task: "lookup", scope: ["."], capability: "local", preset: "lookup-standard" };
+    await harness.fire("tool_call", { toolName: TOOL_NAME, toolCallId: id, input: {} });
+    let duplicate: Promise<unknown> | undefined;
+    const ctx = {
+      cwd: process.cwd(),
+      modelRegistry: { find: () => {
+        duplicate = assert.rejects(
+          () => harness.toolDefinition.execute(id, params, undefined, undefined, ctx),
+          /at most 3 model-selected calls/,
+        );
+        return undefined;
+      } },
+    };
+    await assert.rejects(
+      () => harness.toolDefinition.execute(id, params, undefined, undefined, ctx),
+      /Configured subagent model is unavailable/,
+    );
+    assert.ok(duplicate);
+    await duplicate;
+  });
+
+  for (const event of ["agent_settled", "session_shutdown"]) {
+    test(`${event} invalidates an unused execution permit`, async () => {
+      const harness = await startHarness();
+      await harness.fire("tool_call", { toolName: TOOL_NAME, toolCallId: "stale", input: {} });
+      await harness.fire(event);
+      await assert.rejects(
+        () => harness.toolDefinition.execute("stale", {}, undefined, undefined, {}),
+        /at most 3 model-selected calls/,
+      );
+    });
+  }
+
   test("returns permits for downstream blocks regardless of the result error flag", async () => {
     const harness = await startHarness();
 
