@@ -219,7 +219,6 @@ function validateWebCall(toolName: string, input: Record<string, unknown>): stri
   if (toolName === "web_search") {
     const boundedError = validateBoundedQueries(toolName, input);
     if (boundedError) return boundedError;
-    input.workflow = "none";
     return undefined;
   }
   if (toolName === "source_check") return validateBoundedQueries(toolName, input);
@@ -243,6 +242,20 @@ function validateWebCall(toolName: string, input: Record<string, unknown>): stri
     if (violation) return violation;
   }
   return undefined;
+}
+
+// Keep validation side-effect free; apply prepared arguments only after budget admission.
+export function prepareWebCall(
+  toolName: string,
+  input: Record<string, unknown>,
+): { violation: string } | {
+  input: Record<string, unknown>;
+  cost: { queries: number; fetchTargets: number };
+} {
+  const violation = validateWebCall(toolName, input);
+  if (violation) return { violation };
+  const normalizedInput = toolName === "web_search" ? { ...input, workflow: "none" } : { ...input };
+  return { input: normalizedInput, cost: webResourceCost(toolName, normalizedInput) };
 }
 
 export default function childGuard(
@@ -482,11 +495,11 @@ export default function childGuard(
         return block(`Tool ${event.toolName} ownership changed`, true);
       }
       const input = event.input && typeof event.input === "object" ? event.input as Record<string, unknown> : {};
-      const violation = validateWebCall(event.toolName, input);
-      if (violation) {
-        return block(`${violation}. Retry with allowed bounded inputs or return the final answer.`);
+      const prepared = prepareWebCall(event.toolName, input);
+      if ("violation" in prepared) {
+        return block(`${prepared.violation}. Retry with allowed bounded inputs or return the final answer.`);
       }
-      const cost = webResourceCost(event.toolName, input);
+      const { cost } = prepared;
       if (
         budget.queryCount + cost.queries > LIFETIME_WEB_QUERY_LIMIT
         || budget.fetchTargetCount + cost.fetchTargets > LIFETIME_WEB_FETCH_TARGET_LIMIT
@@ -494,6 +507,7 @@ export default function childGuard(
         requestBudgetPartialAnswer();
         return block("The child lifetime web query/fetch budget would be exceeded; finalization has started");
       }
+      Object.assign(input, prepared.input);
       // Pi preflights sibling calls sequentially. Reserve synchronously before execution so a parallel batch cannot oversubscribe.
       budget.queryCount += cost.queries;
       budget.fetchTargetCount += cost.fetchTargets;
