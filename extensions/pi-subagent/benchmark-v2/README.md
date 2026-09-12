@@ -2,6 +2,8 @@
 
 Status: **confirmatory design only; not executable yet**. No confirmatory corpus has been selected and no benchmark or judge model calls are authorized by this document. A separate [12-task exploratory production-preset pilot](pilots/2026-09-01-production-12-task/REPORT.md) is archived below; it is calibration material and does not execute or validate this confirmatory protocol.
 
+A standalone [offline evidence diagnostic evaluator](OFFLINE_SCORING.md) is executable now. It checks citation bounds, gold-span overlap, line precision, lexical rules, and answer formatting using synthetic contract tests and no model calls. It does not implement this protocol's complete scorer, corpus validation, runner, or judge; its diagnostics are not confirmatory quality scores. Archived pilot code and results remain unchanged.
+
 This benchmark estimates context, quality, cost, and latency effects without targeting or attempting to reproduce the earlier 85.2% calibration result. The old three-fixture evaluator and the future 12-task calibration set are excluded from the confirmatory results.
 
 ## 1. Claims this benchmark may support
