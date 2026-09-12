@@ -23,8 +23,6 @@ jobs:
           node-version: "22.22.0"
           cache: npm
           cache-dependency-path: live/extensions/pi-subagent/package-lock.json
-      - name: Install native search test dependency
-        run: sudo apt-get update && sudo apt-get install -y --no-install-recommends ripgrep
       - run: npm ci --ignore-scripts
       - name: Select latest Pi packages
         run: |

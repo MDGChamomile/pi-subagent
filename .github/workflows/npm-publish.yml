@@ -46,8 +46,6 @@ jobs:
           NODE
           git fetch origin main
           git merge-base --is-ancestor "$GITHUB_SHA" origin/main
-      - name: Install native search test dependency
-        run: sudo apt-get update && sudo apt-get install -y --no-install-recommends ripgrep
       - name: Install locked development dependencies
         working-directory: live/extensions/pi-subagent
         run: npm ci --ignore-scripts
