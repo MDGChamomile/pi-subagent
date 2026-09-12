@@ -1,6 +1,6 @@
 # Pi Subagent package maintenance
 
-The npm package is assembled from the canonical files under `live/extensions/pi-subagent` and `live/skills/pi-subagent`. Do not edit generated files under `dist/`.
+The npm package is assembled from the canonical files under `live/extensions/pi-subagent` and `live/skills/pi-subagent`. The package-only root entrypoint is maintained in `packaging/pi-subagent/index.ts`; its relative import targets the staged layout. It forwards to the unchanged extension implementation so Pi's compact npm label is `@mdgchamomile/pi-subagent`, without the redundant `:pi-subagent` suffix. Do not edit generated files under `dist/`.
 
 ## Verify a package candidate
 

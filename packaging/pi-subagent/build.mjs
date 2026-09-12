@@ -9,6 +9,7 @@ export const stagingDirectory = join(packageRoot, "dist");
 
 export const packageFiles = [
   ["packaging/pi-subagent/manifest.json", "package.json"],
+  ["packaging/pi-subagent/index.ts", "index.ts"],
   ["packaging/pi-subagent/README.md", "README.md"],
   ["LICENSE", "LICENSE"],
   ["live/extensions/pi-subagent/index.ts", "extensions/pi-subagent/index.ts"],

@@ -10,6 +10,7 @@ await buildPackage();
 const manifest = JSON.parse(await readFile(join(stagingDirectory, "package.json"), "utf8"));
 assert.equal(manifest.name, "@mdgchamomile/pi-subagent");
 assert.equal(manifest.private, undefined);
+assert.deepEqual(manifest.pi.extensions, ["./index.ts"], "load only the root entrypoint");
 assert.deepEqual(manifest.keywords.includes("pi-package"), true);
 assert.match(manifest.pi.image, new RegExp(`/v${manifest.version.replaceAll(".", "\\.")}/`));
 

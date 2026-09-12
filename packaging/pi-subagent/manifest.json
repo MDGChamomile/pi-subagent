@@ -30,7 +30,7 @@
   },
   "pi": {
     "extensions": [
-      "./extensions/pi-subagent/index.ts"
+      "./index.ts"
     ],
     "skills": [
       "./skills/pi-subagent"
