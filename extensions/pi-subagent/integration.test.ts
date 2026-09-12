@@ -1,6 +1,6 @@
 import assert from "node:assert/strict";
 import { spawn } from "node:child_process";
-import { mkdtemp, readFile, rm, writeFile } from "node:fs/promises";
+import { mkdir, mkdtemp, readFile, rm, symlink, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { describe, test } from "node:test";
@@ -101,6 +101,38 @@ describe("pi-subagent spawned-child integration", () => {
     assert.doesNotMatch(result.output, /intermediate|noisy child/);
     assert.equal(result.contextTokens, Math.ceil(result.output.length / 4));
     assert.equal(result.usage.totalTokens, 48);
+  });
+
+  test("local grep ignores inherited rg config without changing the parent environment", {
+    skip: process.platform === "win32",
+  }, async () => {
+    const previousConfig = process.env.RIPGREP_CONFIG_PATH;
+    try {
+      for (const inheritConfig of [true, false]) {
+        await withFixture("scoped-grep", async (options) => {
+          const root = options.policy.cwd;
+          await mkdir(join(root, "allowed"));
+          await mkdir(join(root, "outside"));
+          await writeFile(join(root, "allowed", "inside.txt"), "SYNTHETIC_SCOPE_MARKER_INSIDE\n");
+          await writeFile(join(root, "outside", "outside.txt"), "SYNTHETIC_SCOPE_MARKER_OUTSIDE\n");
+          await symlink(join(root, "outside"), join(root, "allowed", "link"));
+          const config = join(root, "rg.conf");
+          await writeFile(config, "--follow\n");
+          if (inheritConfig) process.env.RIPGREP_CONFIG_PATH = config;
+          else delete process.env.RIPGREP_CONFIG_PATH;
+          const policy = await buildChildPolicy(root, ["allowed"], "local");
+          await writeFile(options.policyFile, JSON.stringify(policy), { mode: 0o600 });
+
+          const result = await runChild({ ...options, policy, timeoutMs: 10_000 });
+          assert.match(result.output, /SYNTHETIC_SCOPE_MARKER_INSIDE/);
+          assert.doesNotMatch(result.output, /SYNTHETIC_SCOPE_MARKER_OUTSIDE/);
+          assert.equal(process.env.RIPGREP_CONFIG_PATH, inheritConfig ? config : undefined);
+        });
+      }
+    } finally {
+      if (previousConfig === undefined) delete process.env.RIPGREP_CONFIG_PATH;
+      else process.env.RIPGREP_CONFIG_PATH = previousConfig;
+    }
   });
 
   test("runtime-labels an answer completed after the soft deadline as partial", async () => {
@@ -258,6 +290,54 @@ describe("pi-subagent spawned-child integration", () => {
       },
     );
   });
+
+  for (const reason of ["abort", "timeout", "protocol"] as const) {
+    test(`finishes group escalation after the leader exits during ${reason}`, {
+      skip: process.platform === "win32",
+    }, async () => {
+      await withFixture(`orphan-${reason}`, async (options) => {
+        const controller = new AbortController();
+        const killGraceMs = 150;
+        let pids: { childPid: number; descendantPid: number } | undefined;
+        const running = runChild({
+          ...options,
+          timeoutMs: reason === "timeout" ? 1_500 : 5_000,
+          killGraceMs,
+          signal: controller.signal,
+        }).then(() => undefined, (error: unknown) => error);
+        try {
+          const deadline = Date.now() + 3_000;
+          while (!pids && Date.now() < deadline) {
+            try {
+              pids = JSON.parse(await readFile(join(options.policy.cwd, "pids.json"), "utf8"));
+            } catch {
+              await new Promise((resolve) => setTimeout(resolve, 10));
+            }
+          }
+          assert.ok(pids, "descendant must install its SIGTERM handler before stopping");
+          if (reason === "abort") controller.abort();
+          const error = await running;
+          assert.ok(error instanceof ChildRunError);
+          assert.match(error.message, new RegExp(`"phase":"${reason === "abort" ? "cancelled" : reason}"`));
+          const leaderStoppedAt = Number(await readFile(join(options.policy.cwd, "leader-stopped"), "utf8"));
+          assert.ok(Date.now() - leaderStoppedAt >= killGraceMs - 30,
+            "runChild must not settle when only the leader has exited");
+          await Promise.all([
+            waitForProcessExit(pids.childPid),
+            waitForProcessExit(pids.descendantPid),
+          ]);
+        } finally {
+          controller.abort();
+          await running;
+          if (pids) {
+            try { process.kill(-pids.childPid, "SIGKILL"); } catch {}
+            try { process.kill(pids.descendantPid, "SIGKILL"); } catch {}
+            await waitForProcessExit(pids.descendantPid);
+          }
+        }
+      });
+    });
+  }
 
   test("terminates the child process group when its parent exits abruptly", {
     skip: process.platform === "win32",

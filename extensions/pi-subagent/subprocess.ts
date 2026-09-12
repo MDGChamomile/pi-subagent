@@ -3,6 +3,7 @@ import { existsSync } from "node:fs";
 import { readFile } from "node:fs/promises";
 import { basename } from "node:path";
 import { StringDecoder } from "node:string_decoder";
+import { setTimeout as delay } from "node:timers/promises";
 import { fileURLToPath } from "node:url";
 import type { Usage as PiUsage } from "@earendil-works/pi-ai";
 import { killProcessGroup, PARENT_LIVENESS_ENV, PARENT_LIVENESS_FD } from "./parent-liveness.ts";
@@ -480,6 +481,8 @@ export async function runChild(options: {
     [BUDGET_TELEMETRY_ENV]: options.budgetTelemetryFile,
     [SOFT_DEADLINE_ENV]: String(softDeadline),
   };
+  // Pi's native grep inherits rg's config; --follow there can escape scoped roots.
+  if (options.policy.capability === "local") delete env.RIPGREP_CONFIG_PATH;
   if (options.webExtensionPath) env[WEB_EXTENSION_ENV] = options.webExtensionPath;
   else delete env[WEB_EXTENSION_ENV];
   for (const name of [
@@ -520,7 +523,7 @@ export async function runChild(options: {
   let aborted = false;
   let latestReportedTokens = 0;
   let stopping = false;
-  let killTimer: ReturnType<typeof setTimeout> | undefined;
+  let stopCleanup: Promise<void> | undefined;
   let progressTimer: ReturnType<typeof setInterval> | undefined;
 
   const requestStop = (reason: "timeout" | "aborted" | "protocol") => {
@@ -529,8 +532,10 @@ export async function runChild(options: {
     if (stopping) return;
     stopping = true;
     killProcessGroup(child.pid, "SIGTERM");
-    killTimer = setTimeout(() => killProcessGroup(child.pid, "SIGKILL"), options.killGraceMs ?? 5_000);
-    killTimer.unref?.();
+    // Keep this timer referenced: the leader may close while descendants survive.
+    stopCleanup = delay(options.killGraceMs ?? 5_000).then(() => {
+      killProcessGroup(child.pid, "SIGKILL");
+    });
   };
 
   const emitProgress = () => {
@@ -578,11 +583,13 @@ export async function runChild(options: {
     waitError = error;
   } finally {
     clearTimeout(timeout);
-    if (killTimer) clearTimeout(killTimer);
     if (progressTimer) clearInterval(progressTimer);
     options.signal?.removeEventListener("abort", onAbort);
+    // Finish before waiting: an unterminated final JSON line can request a stop too.
+    collector.finish();
+    // close only settles the direct child and its pipes, not its process group.
+    await stopCleanup;
   }
-  collector.finish();
   const completedAt = Date.now();
   const snapshot = collector.snapshot();
 

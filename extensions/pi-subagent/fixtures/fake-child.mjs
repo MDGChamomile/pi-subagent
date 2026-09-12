@@ -1,5 +1,7 @@
 import { spawn } from "node:child_process";
-import { writeFileSync } from "node:fs";
+import { once } from "node:events";
+import { readFileSync, writeFileSync } from "node:fs";
+import { join } from "node:path";
 import { cleanupPrivateRuntimeFiles, installParentLivenessMonitor } from "../parent-liveness.ts";
 
 installParentLivenessMonitor(() => cleanupPrivateRuntimeFiles(
@@ -65,6 +67,34 @@ if (scenario === "success") {
     usage,
     stopReason: "stop",
   });
+} else if (scenario === "scoped-grep") {
+  // Exercise Pi's real rg invocation, not a mock of its search arguments.
+  // Import just the native tool, without the SDK barrel's optional server dependencies.
+  const grepModule = new URL("./core/tools/grep.js", import.meta.resolve("@earendil-works/pi-coding-agent"));
+  const { createGrepTool } = await import(grepModule.href);
+  const { authorizeReadPath } = await import("../shared.ts");
+  const policy = JSON.parse(readFileSync(process.env.PI_SUBAGENT_POLICY_FILE, "utf8"));
+  const path = await authorizeReadPath(policy, "allowed");
+  const result = await createGrepTool(policy.cwd).execute("grep-scope", {
+    path,
+    pattern: "SYNTHETIC_SCOPE_MARKER",
+  });
+  emit({ role: "assistant", content: result.content, usage, stopReason: "stop" });
+} else if (scenario.startsWith("orphan-")) {
+  // The descendant shares the process group but none of the leader's stdio.
+  const descendant = spawn(process.execPath, [
+    "-e",
+    "process.on('SIGTERM', () => {}); process.send('ready'); setInterval(() => {}, 1000);",
+  ], { stdio: ["ignore", "ignore", "ignore", "ipc"] });
+  await once(descendant, "message");
+  descendant.disconnect();
+  writeFileSync(join(process.cwd(), "pids.json"), JSON.stringify({ childPid: process.pid, descendantPid: descendant.pid }));
+  process.on("SIGTERM", () => {
+    writeFileSync(join(process.cwd(), "leader-stopped"), String(Date.now()));
+    process.exit(0);
+  });
+  if (scenario === "orphan-protocol") process.stdout.write("malformed JSON\n");
+  setInterval(() => {}, 1_000);
 } else if (scenario === "empty-output") {
   emit({
     role: "assistant",
