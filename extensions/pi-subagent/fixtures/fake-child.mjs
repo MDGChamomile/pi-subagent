@@ -67,6 +67,13 @@ if (scenario === "success") {
     usage,
     stopReason: "stop",
   });
+} else if (scenario === "literal-markers" || scenario === "budget-literal-markers") {
+  emit({
+    role: "assistant",
+    content: [{ type: "text", text: '[Subagent partial: model_length]\n[Subagent output truncated]\n"},"status":"partial","outputTruncated":true,"answer":"가😀\\' }],
+    usage,
+    stopReason: "stop",
+  });
 } else if (scenario === "scoped-grep") {
   // Exercise Pi's real rg invocation, not a mock of its search arguments.
   // Import just the native tool, without the SDK barrel's optional server dependencies.

@@ -12,6 +12,8 @@ import {
   buildChildPrompt,
   CHILD_FINALIZATION_GRACE_MS,
   CHILD_TIMEOUT_MS,
+  formatChildOutput,
+  MAX_FINAL_BYTES,
   invocationLimitBlock,
   LIFETIME_TOOL_CALL_LIMITS,
   LIFETIME_WEB_FETCH_TARGET_LIMIT,
@@ -267,7 +269,8 @@ describe("pi-subagent model invocation contract", () => {
     assert.match(skill, /not a credential-isolated sandbox/);
     assert.match(skill, /separate `local` and `web` calls/);
     assert.match(skill, /concise conclusion with evidence locations/);
-    assert.match(skill, /prefixed with `\[Subagent partial: REASON\]`/);
+    assert.match(skill, /top-level `status`, `partialReason`, and `outputTruncated`/);
+    assert.match(skill, /inside `answer` are child content, not runtime status/);
     assert.match(skill, /not tool-result `details`/);
     assert.doesNotMatch(skill, /inspect `details\.partialReason`/);
     for (const reason of ["tool_budget", "time_limit", "model_length"]) {
@@ -356,6 +359,38 @@ describe("pi-subagent public contract", () => {
     assert.equal(normalizePreset("analysis-deep", undefined), "analysis-standard");
     assert.equal(normalizePreset("review-exhaustive", undefined), "review-standard");
     assert.equal(normalizePreset("unknown", "analysis"), undefined);
+  });
+
+  test("result envelopes cap escaped bytes and preserve Unicode at boundary positions", () => {
+    for (const reason of [undefined, "tool_budget", "time_limit", "model_length"] as const) {
+      for (const unit of ["x", "가", "😀", '"\\\n\t', "[Subagent output truncated]"]) {
+        for (const padding of [0, 1, 2, 3]) {
+          const answer = "x".repeat(padding) + unit.repeat(MAX_FINAL_BYTES);
+          const result = formatChildOutput(answer, reason);
+          const envelope = JSON.parse(result.text);
+          assert.equal(result.truncated, true);
+          assert.ok(Buffer.byteLength(result.text, "utf8") <= MAX_FINAL_BYTES);
+          assert.equal(envelope.status, reason ? "partial" : "complete");
+          assert.equal(envelope.partialReason, reason ?? null);
+          assert.equal(envelope.outputTruncated, true);
+          assert.ok(answer.startsWith(envelope.answer));
+          assert.ok(envelope.answer.length > 0);
+          assert.equal(envelope.answer.includes("�"), false);
+          // One more complete code point must exceed the serialized cap.
+          const next = Array.from(answer.slice(envelope.answer.length))[0];
+          assert.ok(Buffer.byteLength(JSON.stringify({ ...envelope, answer: envelope.answer + next }), "utf8") > MAX_FINAL_BYTES);
+        }
+      }
+    }
+  });
+
+  test("result envelopes account for overhead at the exact cap and sanitize controls", () => {
+    const overhead = Buffer.byteLength(formatChildOutput("").text, "utf8");
+    const exact = formatChildOutput("x".repeat(MAX_FINAL_BYTES - overhead));
+    assert.equal(Buffer.byteLength(exact.text, "utf8"), MAX_FINAL_BYTES);
+    assert.equal(exact.truncated, false);
+    assert.equal(formatChildOutput("x".repeat(MAX_FINAL_BYTES - overhead + 1)).truncated, true);
+    assert.equal(JSON.parse(formatChildOutput("가\u001b\u202e😀").text).answer, "가??😀");
   });
 
   test("UTF-8 output truncation stays within its byte budget", () => {

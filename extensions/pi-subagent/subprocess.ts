@@ -24,10 +24,9 @@ import {
   POLICY_ENV,
   READY_ENV,
   READY_MARKER,
-  sanitizeDisplayText,
+  formatChildOutput,
   SOFT_DEADLINE_ENV,
   toolsForCapability,
-  truncateUtf8,
   WEB_EXTENSION_ENV,
   WEB_INPUT_KEYS,
   type BudgetTelemetry,
@@ -57,7 +56,7 @@ After investigation, return the requested deliverable as concise ordinary assist
 export type Usage = PiUsage;
 
 export type ChildResult = {
-  /** Parent-visible answer, including the runtime's partial-result marker when needed. */
+  /** Parent-visible JSON envelope with runtime status and an untrusted answer string. */
   output: string;
   outputTruncated: boolean;
   status: ResultStatus;
@@ -631,10 +630,8 @@ export async function runChild(options: {
     : budget.hardLimitReached
       ? "tool_budget"
       : completedAt >= softDeadline ? "time_limit" : undefined;
-  // Pi sends content, not details, to the parent model. Include the marker inside
-  // the byte cap so both the reason and the context estimate survive serialization.
-  const prefix = partialReason ? `[Subagent partial: ${partialReason}]\n\n` : "";
-  const capped = truncateUtf8(prefix + sanitizeDisplayText(snapshot.finalOutput));
+  // Pi sends content, not details, to the parent model. Bound the entire envelope.
+  const capped = formatChildOutput(snapshot.finalOutput, partialReason);
   return {
     output: capped.text,
     outputTruncated: capped.truncated,
