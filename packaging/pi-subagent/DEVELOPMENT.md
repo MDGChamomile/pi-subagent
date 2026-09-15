@@ -12,7 +12,7 @@ npm --prefix live/extensions/pi-subagent test
 npm --prefix live/extensions/pi-subagent run package:check
 ```
 
-`package:check` rebuilds the ignored `packaging/pi-subagent/dist/` directory, runs `npm pack --dry-run`, verifies the exact tarball file set and Pi resource paths, checks bundled relative Markdown links and version-matched absolute top-level guide links, and loads the staged package through Pi with an isolated offline configuration.
+`package:check` rebuilds the ignored `packaging/pi-subagent/dist/` directory, runs `npm pack --dry-run`, verifies the exact tarball file set and Pi resource paths, checks bundled relative Markdown links and version-matched absolute top-level guide links, and loads the staged package manifest through Pi's SDK resource loader with an isolated offline configuration. It uses the development package's selected Pi version, asserts error-free extension loading, exactly one `pi_subagent` tool and the companion skill, and runs negative controls for broken imports, missing tool registration, and missing skill discovery. No model session or provider request is created.
 
 Before publishing, inspect the generated manifest and dry-run report:
 

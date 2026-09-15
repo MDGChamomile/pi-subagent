@@ -1,8 +1,9 @@
 import assert from "node:assert/strict";
 import { spawnSync } from "node:child_process";
-import { mkdtemp, readFile, rm, stat } from "node:fs/promises";
+import { cp, mkdir, mkdtemp, readFile, rm, stat, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { dirname, join } from "node:path";
+import { fileURLToPath } from "node:url";
 import { buildPackage, packageFiles, stagingDirectory } from "./build.mjs";
 
 await buildPackage();
@@ -73,19 +74,51 @@ for (const markdownPath of actualFiles.filter((path) => path.endsWith(".md"))) {
 
 const temporaryConfig = await mkdtemp(join(tmpdir(), "pi-subagent-package-check-"));
 try {
-  const loaded = spawnSync("pi", ["-e", stagingDirectory, "--list-models"], {
+  const home = join(temporaryConfig, "home");
+  await mkdir(home);
+  const discoveryScript = fileURLToPath(new URL("../../live/extensions/pi-subagent/scripts/package-discovery.mjs", import.meta.url));
+  const discover = (directory) => spawnSync(process.execPath, [discoveryScript, directory], {
+    cwd: temporaryConfig,
     encoding: "utf8",
+    timeout: 30_000,
+    // Do not inherit credentials, active Pi configuration, or Node preload hooks.
     env: {
-      ...process.env,
-      PI_CODING_AGENT_DIR: join(temporaryConfig, "agent"),
+      PATH: process.env.PATH,
+      HOME: home,
+      PI_CODING_AGENT_DIR: join(home, ".pi/agent"),
       PI_OFFLINE: "1",
     },
   });
-  if (loaded.status !== 0 || loaded.stderr) {
-    throw new Error(`Pi package discovery failed:\n${loaded.stderr || loaded.stdout}`);
+  const loaded = discover(stagingDirectory);
+  if (loaded.error || loaded.status !== 0 || loaded.stderr) {
+    throw new Error(`Pi package discovery failed:\n${loaded.error || loaded.stderr || loaded.stdout}`);
+  }
+
+  // Negative controls exercise the same subprocess and assertions as the release check.
+  // Copy the staged package: never corrupt the release candidate to test the checker.
+  for (const [name, mutate, expectedError] of [
+    ["broken-import", async (directory) => {
+      await writeFile(join(directory, "index.ts"), 'import "./missing-extension.ts";\n');
+    }, /Pi extension loading failed/],
+    ["missing-tool", async (directory) => {
+      await writeFile(join(directory, "index.ts"), "export default function () {}\n");
+    }, /expected pi_subagent tool registration/],
+    ["missing-skill", async (directory) => {
+      await writeFile(join(directory, "package.json"), JSON.stringify({
+        ...manifest, pi: { ...manifest.pi, skills: [] },
+      }));
+    }, /expected exactly one companion skill/],
+  ]) {
+    const directory = join(temporaryConfig, name);
+    await cp(stagingDirectory, directory, { recursive: true });
+    await mutate(directory);
+    const rejected = discover(directory);
+    assert.ifError(rejected.error);
+    assert.equal(rejected.status, 1, `${name} must fail package discovery`);
+    assert.match(rejected.stderr, expectedError, `${name} must fail for the intended reason`);
   }
 } finally {
   await rm(temporaryConfig, { recursive: true, force: true });
 }
 
-console.log(`${manifest.name}@${manifest.version}: ${actualFiles.length} package files and Pi discovery verified`);
+console.log(`${manifest.name}@${manifest.version}: ${actualFiles.length} package files, Pi discovery, and 3 negative controls verified`);
