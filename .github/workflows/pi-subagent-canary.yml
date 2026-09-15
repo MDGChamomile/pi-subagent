@@ -12,7 +12,6 @@ jobs:
   latest-pi:
     runs-on: ubuntu-24.04
     timeout-minutes: 10
-    continue-on-error: true
     defaults:
       run:
         working-directory: live/extensions/pi-subagent
@@ -33,4 +32,9 @@ jobs:
             @earendil-works/pi-ai@latest \
             @earendil-works/pi-coding-agent@latest \
             @earendil-works/pi-tui@latest
-      - run: npm test
+      - name: Typecheck latest Pi
+        id: typecheck
+        run: npm run typecheck
+      - name: Test latest Pi
+        if: ${{ !cancelled() && (success() || steps.typecheck.outcome == 'failure') }}
+        run: npm test
