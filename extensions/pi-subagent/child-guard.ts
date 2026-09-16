@@ -469,7 +469,7 @@ export default function childGuard(
         ? "The child lifetime tool-call hard limit has been exceeded; finalization has started"
         : "Finalization has started; return the final answer without further tool calls");
     }
-    const allowed = new Set(toolsForCapability(policy.capability));
+    const allowed = policy.capability === "local" ? FILE_TOOLS : WEB_TOOLS;
     if (!allowed.has(event.toolName)) {
       return block(`Tool ${event.toolName} is not allowed in the subagent. Use an available tool or return the final answer`);
     }

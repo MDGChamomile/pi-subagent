@@ -311,11 +311,6 @@ export class ModelInvocationGate {
   startRun(): void {
     if (this.runOpen) return;
     this.runOpen = true;
-    this.startedCalls = 0;
-    this.preflightFailures = 0;
-    this.preflightReplacementPending = false;
-    this.replacementToolCallId = undefined;
-    this.authorizedToolCallIds.clear();
   }
 
   endRun(): void {
