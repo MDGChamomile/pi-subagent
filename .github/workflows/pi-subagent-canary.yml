@@ -38,3 +38,5 @@ jobs:
       - name: Test latest Pi
         if: ${{ !cancelled() && (success() || steps.typecheck.outcome == 'failure') }}
         run: npm test
+      - name: Verify package with latest Pi
+        run: npm run package:check
