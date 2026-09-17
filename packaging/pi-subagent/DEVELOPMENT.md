@@ -20,6 +20,14 @@ Before publishing, inspect the generated manifest and dry-run report:
 npm pack --dry-run --json ./packaging/pi-subagent/dist
 ```
 
+## Historical live verification
+
+### Astra-parent source smoke (2026-09-15)
+
+With Pi 0.85.1, Node.js 22.22.3, and `pi-web-access` 0.29.0, the source extension was tested with `openai-codex/gpt-6-astra` / `medium` parents and unchanged Luna/Terra/Sol / `medium` child presets. **Five of six checks passed**: all three local presets and web lookup/analysis. Web review returned a complete, cited answer but omitted the required documentation-purpose quotation, so that case failed and was not retried. All six runs passed the remaining checks, including effective and wire model/thinking, response identity, usage, scope, and no parent investigation. This is not an all-green web compatibility result or an Astra performance benchmark; the earlier Sol-parent performance evidence remains unchanged.
+
+The authorized rerun made 24 provider requests. Its temporary harness used isolated settings and synthetic/public inputs, forced SSE, disabled retries and automatic compaction, imposed a 60-second signal per request, and gated the actual transport fetch callback at four requests per parent and eight per child, with at most one child per parent. These extra limits are not implemented by the standard smoke commands in the [extension guide](../../live/extensions/pi-subagent/README.md#verification). A preliminary local lookup passed the functional checks but exposed a fetch-instrumentation gap after two observed parent and two observed child requests; it was stopped and retained separately. The corrected gate passed offline tests against SDK and bundled Codex transports before the explicitly authorized rerun. Source-only checks, counts, failure details, and source/harness hashes are recorded in the [verification record](../../live/extensions/pi-subagent/verification/2026-09-15-astra-medium.json); temporary harnesses and raw provider streams are not bundled.
+
 ## Trusted Publishing setup
 
 The package publishes through `.github/workflows/npm-publish.yml` without an npm token. Configure its single trusted publisher on the npm package settings page with:
