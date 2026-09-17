@@ -1,167 +1,90 @@
-<svg xmlns="http://www.w3.org/2000/svg" width="1800" height="1200" viewBox="0 0 1800 1200" role="img" aria-labelledby="title desc">
-  <title id="title">Pi Subagent — process and data flow</title>
-  <desc id="desc">The parent canonicalizes scope and launches an ephemeral child with no persisted Pi session. The child guard verifies tool ownership and guards each call, allowing local read-only tools or web tools, never both. Local tools connect to scoped files; web tools connect to a pinned web extension. Either capability sends authorized content to configured model providers. The child emits JSON events and private control files. A parent-side collector verifies readiness after exit, excludes intermediate messages, sanitizes control characters, and bounds the last eligible answer. Complete or partial answer text enters the parent model context; execution metadata stays in host-only details. Failures return bounded error text. This is not an OS, network, or credential-isolated sandbox.</desc>
+<svg xmlns="http://www.w3.org/2000/svg" width="1600" height="900" viewBox="0 0 1600 900" role="img" aria-labelledby="title desc">
+  <title id="title">Pi Subagent — delegate the investigation, keep the result</title>
+  <desc id="desc">Parent Pi delegates a scoped task to a temporary, read-only subagent. The child investigates local files or the web, never both in one call. Only a bounded final result returns to the parent; incomplete results are marked partial. Intermediate investigation messages and tool results stay out of the parent model context. The parent handles implementation and final checks. These are application-level controls, not an OS, network, or credential-isolated sandbox. Authorized content may be sent to configured providers.</desc>
   <defs>
     <style>
-      text { font-family: 'DejaVu Sans', sans-serif; fill: #101820; }
-      .eyebrow { font-size: 15px; font-weight: 700; letter-spacing: 1.5px; }
-      .section { font-size: 17px; font-weight: 700; letter-spacing: 1px; fill: white; }
-      .label { font-size: 15px; font-weight: 700; letter-spacing: 1px; fill: #007bb5; }
-      .heading { font-size: 25px; font-weight: 700; }
-      .body { font-size: 20px; fill: #455361; }
-      .small { font-size: 18px; fill: #455361; }
-      .mono { font-family: 'DejaVu Sans Mono', monospace; font-size: 18px; }
-      .flow-label { font-size: 13px; font-weight: 700; fill: #007bb5; letter-spacing: .5px; }
-      .box { fill: white; stroke: #101820; stroke-width: 1; }
-      .soft { fill: #f4f6f8; stroke: #cbd2d8; stroke-width: 1; }
-      .blue-box { fill: #f3f9fd; stroke: #007bb5; stroke-width: 1.5; }
-      .flow { fill: none; stroke: #007bb5; stroke-width: 2; marker-end: url(#blue-arrow); }
-      .access { fill: none; stroke: #101820; stroke-width: 2; marker-end: url(#black-arrow); }
-      .error-flow { fill: none; stroke: #b3261e; stroke-width: 1.5; stroke-dasharray: 4 3; marker-end: url(#red-arrow); }
+      text { font-family: 'DejaVu Sans', sans-serif; fill: #18243b; }
+      .label { font-size: 18px; font-weight: 700; letter-spacing: 2px; fill: #576b89; }
+      .heading { font-size: 34px; font-weight: 700; }
+      .body { font-size: 25px; fill: #435571; }
+      .small { font-size: 21px; fill: #576b89; }
+      .blue { fill: #245fdb; }
+      .teal { fill: #087f79; }
+      .flow { fill: none; stroke: #245fdb; stroke-width: 4; marker-end: url(#blue-arrow); }
+      .return { fill: none; stroke: #087f79; stroke-width: 4; marker-end: url(#teal-arrow); }
+      .access { fill: none; stroke: #788ba6; stroke-width: 3; marker-end: url(#gray-arrow); }
+      .icon { fill: none; stroke: currentColor; stroke-width: 3; stroke-linecap: round; stroke-linejoin: round; }
     </style>
-    <marker id="blue-arrow" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="8" markerHeight="8" orient="auto-start-reverse"><path d="M0 0 L10 5 L0 10 Z" fill="#007bb5"/></marker>
-    <marker id="black-arrow" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="8" markerHeight="8" orient="auto-start-reverse"><path d="M0 0 L10 5 L0 10 Z" fill="#101820"/></marker>
-    <marker id="red-arrow" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="7" markerHeight="7" orient="auto-start-reverse"><path d="M0 0 L10 5 L0 10 Z" fill="#b3261e"/></marker>
+    <marker id="blue-arrow" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="8" markerHeight="8" orient="auto"><path d="M0 0 L10 5 L0 10 Z" fill="#245fdb"/></marker>
+    <marker id="teal-arrow" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="8" markerHeight="8" orient="auto"><path d="M0 0 L10 5 L0 10 Z" fill="#087f79"/></marker>
+    <marker id="gray-arrow" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="8" markerHeight="8" orient="auto"><path d="M0 0 L10 5 L0 10 Z" fill="#788ba6"/></marker>
   </defs>
 
-  <rect width="1800" height="1200" fill="white"/>
-  <text x="50" y="55" class="eyebrow">PI EXTENSION + SKILL / BOUNDED DELEGATION</text>
-  <text x="50" y="119" style="font-family:'DejaVu Serif',serif;font-size:58px">Pi Subagent</text>
-  <text x="50" y="160" class="body" style="font-size:23px">Focused investigation outside the parent context — with parent-side control over returned output.</text>
-  <rect x="1260" y="40" width="490" height="122" class="box"/>
-  <text x="1280" y="69" class="eyebrow">TRUST BOUNDARY</text>
-  <text x="1280" y="99" class="body">Application-level controls, not an OS,</text>
-  <text x="1280" y="127" class="body">network, or credential-isolated sandbox.</text>
-  <line x1="50" y1="183" x2="1750" y2="183" stroke="#cbd2d8"/>
+  <rect width="1600" height="900" fill="#f8faff"/>
+  <text x="60" y="67" class="label blue">PI SUBAGENT / HOW IT WORKS</text>
+  <text x="60" y="139" font-size="52" font-weight="700">Delegate the investigation. Keep the result.</text>
+  <text x="60" y="191" font-size="28" fill="#435571">A focused child process keeps exploratory work out of your main conversation.</text>
 
-  <!-- Process columns. The collector belongs to the parent, not the child. -->
-  <rect x="50" y="200" width="600" height="940" class="box"/>
-  <rect x="50" y="200" width="600" height="44" fill="#101820"/>
-  <text x="70" y="229" class="section">01 / PARENT PI + EXTENSION</text>
-  <rect x="750" y="200" width="510" height="940" class="box"/>
-  <rect x="750" y="200" width="510" height="44" fill="#101820"/>
-  <text x="770" y="229" class="section">02 / EPHEMERAL CHILD PROCESS</text>
-  <rect x="1360" y="200" width="390" height="940" class="box"/>
-  <rect x="1360" y="200" width="390" height="44" fill="#101820"/>
-  <text x="1380" y="229" class="section">03 / RESOURCES + EGRESS</text>
+  <!-- The parent owns the task and all subsequent implementation. -->
+  <text x="60" y="265" class="label">YOUR MAIN CONVERSATION</text>
+  <rect x="60" y="290" width="350" height="370" rx="24" fill="white" stroke="#ccd7e7" stroke-width="2"/>
+  <rect x="88" y="320" width="66" height="66" rx="18" fill="#edf3ff"/>
+  <g class="icon" color="#245fdb" transform="translate(100 334)">
+    <path d="M3 2 H39 V28 H18 L8 37 V28 H3 Z"/>
+    <path d="M11 11 H31 M11 19 H25"/>
+  </g>
+  <text x="88" y="438" class="heading">Parent Pi</text>
+  <text x="88" y="482" class="body">Choose task + scope</text>
+  <line x1="88" y1="512" x2="382" y2="512" stroke="#e0e7f1" stroke-width="2"/>
+  <text x="88" y="555" class="body">Use the findings</text>
+  <text x="88" y="597" class="body">Implement + verify</text>
 
-  <!-- Parent authority and preflight. -->
-  <rect x="70" y="265" width="560" height="105" class="box"/>
-  <text x="90" y="294" class="label">TASK + AUTHORITY</text>
-  <text x="90" y="326" class="heading">Parent conversation</text>
-  <text x="90" y="355" class="body">Task + authorization; implementation + final checks.</text>
-  <path d="M350 370 V390" class="flow"/>
-  <rect x="70" y="390" width="560" height="115" class="soft"/>
-  <text x="90" y="419" class="label">PI_SUBAGENT / PREFLIGHT + DISPATCH</text>
-  <text x="90" y="450" class="heading">One task · preset · local or web</text>
-  <text x="90" y="482" class="body">Canonicalize authorized scope before spawning.</text>
-  <path d="M630 447 H700 V335 H770" class="flow"/>
-  <text x="662" y="322" class="flow-label">DISPATCH</text>
+  <!-- A child is temporary and read-only, not an implementation agent. -->
+  <text x="560" y="265" class="label blue">FOCUSED INVESTIGATION</text>
+  <rect x="560" y="290" width="440" height="370" rx="24" fill="#edf3ff" stroke="#acc4f5" stroke-width="2"/>
+  <rect x="588" y="320" width="66" height="66" rx="18" fill="#dbe7ff"/>
+  <g class="icon" color="#245fdb" transform="translate(602 332)">
+    <circle cx="16" cy="16" r="12"/>
+    <path d="M25 25 L37 37"/>
+  </g>
+  <text x="588" y="438" class="heading">Read-only subagent</text>
+  <text x="588" y="482" class="body">Read, search, analyze</text>
+  <line x1="588" y1="512" x2="972" y2="512" stroke="#cad9f3" stroke-width="2"/>
+  <text x="588" y="555" class="body">Return a bounded answer</text>
+  <text x="588" y="597" class="small">Temporary · time + tool limits</text>
+  <text x="588" y="630" class="small">Incomplete? Marked as partial.</text>
 
-  <!-- Child guard and mutually exclusive capabilities. -->
-  <text x="770" y="270" class="label">NO PERSISTED PI SESSION</text>
-  <rect x="770" y="290" width="470" height="125" class="soft"/>
-  <text x="790" y="319" class="label">CHILD GUARD</text>
-  <text x="790" y="350" class="body">Verify tool ownership; publish readiness.</text>
-  <text x="790" y="378" class="body">Validate each tool call before execution.</text>
-  <text x="790" y="403" class="small">Local paths / web argument allowlists.</text>
+  <!-- Separate task and result arrows make the context boundary visible. -->
+  <text x="485" y="354" text-anchor="middle" font-size="23" font-weight="700" class="blue">Task</text>
+  <path d="M410 376 H555" class="flow"/>
+  <text x="485" y="535" text-anchor="middle" font-size="23" font-weight="700" class="teal">Result</text>
+  <path d="M560 557 H415" class="return"/>
 
-  <rect x="770" y="450" width="470" height="120" class="box"/>
-  <text x="790" y="479" class="label">LOCAL / PI-OWNED TOOLS</text>
-  <text x="790" y="513" class="mono">read · grep · find · ls</text>
-  <text x="790" y="548" class="body">1–8 authorized roots · read-only</text>
-  <text x="1005" y="596" text-anchor="middle" class="label">XOR / NEVER COEXIST</text>
-  <rect x="770" y="615" width="470" height="130" class="box"/>
-  <text x="790" y="644" class="label">WEB / PINNED EXTENSION TOOLS</text>
-  <text x="790" y="675" class="mono">web_search · source_check</text>
-  <text x="790" y="702" class="mono">fetch_content · get_search_content</text>
-  <text x="790" y="730" class="body">Empty local scope · no local-file tools</text>
+  <!-- These branches are alternatives, not simultaneous capabilities. -->
+  <text x="1160" y="265" class="label">ONE SOURCE TYPE PER CALL</text>
+  <rect x="1160" y="290" width="380" height="155" rx="24" fill="white" stroke="#ccd7e7" stroke-width="2"/>
+  <g class="icon" color="#576b89" transform="translate(1190 321)">
+    <path d="M0 9 V1 H18 L25 9 H43 V37 H0 Z"/>
+  </g>
+  <text x="1251" y="351" font-size="30" font-weight="700">Local files</text>
+  <text x="1190" y="405" class="body">Only authorized paths</text>
+  <text x="1350" y="485" text-anchor="middle" class="label">OR — NEVER BOTH</text>
+  <rect x="1160" y="505" width="380" height="155" rx="24" fill="white" stroke="#ccd7e7" stroke-width="2"/>
+  <g class="icon" color="#576b89" transform="translate(1190 535)">
+    <circle cx="21" cy="21" r="20"/>
+    <ellipse cx="21" cy="21" rx="9" ry="20"/>
+    <path d="M1 21 H41"/>
+  </g>
+  <text x="1251" y="568" font-size="30" font-weight="700">Web</text>
+  <text x="1190" y="620" class="body">Guarded search + fetch</text>
+  <path d="M1000 475 H1078 V368 H1155" class="access"/>
+  <path d="M1078 475 V583 H1155" class="access"/>
+  <circle cx="1078" cy="475" r="6" fill="#788ba6"/>
 
-  <!-- Access arrows attach to their actual resources. -->
-  <rect x="1380" y="450" width="350" height="120" class="box"/>
-  <text x="1400" y="479" class="label">LOCAL ONLY</text>
-  <text x="1400" y="513" class="heading">Scoped files</text>
-  <text x="1400" y="548" class="small">Canonical, authorized read paths.</text>
-  <path d="M1240 510 H1380" class="access"/>
-  <text x="1275" y="497" class="small" style="font-size:14px">read</text>
+  <rect x="60" y="706" width="1480" height="82" rx="20" fill="#e5f4f1"/>
+  <text x="800" y="740" text-anchor="middle" font-size="25" font-weight="700" class="teal">Intermediate reads and searches stay out of the parent context.</text>
+  <text x="800" y="771" text-anchor="middle" font-size="21" fill="#396b66">Only the final result returns — and it may still quote source material.</text>
 
-  <rect x="1380" y="615" width="350" height="130" class="soft"/>
-  <text x="1400" y="644" class="label">WEB ONLY</text>
-  <text x="1400" y="677" class="heading">Pinned web extension</text>
-  <text x="1400" y="705" class="small">Default-deny search and</text>
-  <text x="1400" y="731" class="small">readable HTTP(S) retrieval.</text>
-  <path d="M1240 680 H1380" class="access"/>
-  <text x="1275" y="666" class="small" style="font-size:14px">web</text>
-
-  <!-- Child transport is not the parent tool-result contract. -->
-  <rect x="770" y="795" width="470" height="120" class="soft"/>
-  <text x="790" y="824" class="label">CHILD OUTPUT / CONTROL FILES</text>
-  <text x="790" y="857" class="body">JSON events → parent collector</text>
-  <text x="790" y="886" class="body">Private readiness + budget telemetry</text>
-  <path d="M770 855 H700 V620 H630" class="flow"/>
-  <text x="665" y="878" class="flow-label">COLLECT</text>
-
-  <!-- Explicit provider egress for either capability. -->
-  <rect x="1380" y="795" width="350" height="160" class="box"/>
-  <text x="1400" y="824" class="label">PROVIDER EGRESS</text>
-  <text x="1400" y="857" class="heading">Configured providers</text>
-  <text x="1400" y="887" class="small">Either capability uses a model.</text>
-  <text x="1400" y="913" class="small">Authorized content leaves the host</text>
-  <text x="1400" y="939" class="small">for model / search processing.</text>
-  <path d="M1260 870 H1380" class="access"/>
-  <text x="1276" y="856" class="small" style="font-size:14px">egress</text>
-
-  <!-- Parent-side collection, sanitization and result assembly. -->
-  <rect x="70" y="535" width="560" height="240" class="blue-box"/>
-  <text x="90" y="564" class="label">COLLECTOR / SANITIZER / RESULT ASSEMBLY</text>
-  <text x="90" y="600" class="heading">Parent-side result gate</text>
-  <text x="90" y="632" class="body">Verify readiness after child exit.</text>
-  <text x="90" y="660" class="body">Keep the last eligible assistant answer.</text>
-  <text x="90" y="688" class="body">Replace control characters; cap text at 12 KiB.</text>
-  <rect x="85" y="706" width="530" height="54" fill="#fff2f1" stroke="#b3261e" stroke-dasharray="4 3"/>
-  <text x="100" y="728" class="label" style="fill:#b3261e;font-size:14px">EXCLUDE INTERMEDIATE MESSAGES + TOOL RESULTS</text>
-  <text x="100" y="750" class="small" style="font-size:17px">Not semantic redaction: final text can still quote sources.</text>
-  <path d="M350 775 V805" class="flow"/>
-
-  <!-- Successful and partial tool-result channels. -->
-  <rect x="70" y="805" width="560" height="180" class="blue-box"/>
-  <text x="90" y="831" class="label">COMPLETE / PARTIAL</text>
-  <line x1="350" y1="843" x2="350" y2="985" stroke="#cbd2d8"/>
-  <text x="90" y="860" class="label">A / MODEL CONTEXT</text>
-  <text x="90" y="892" style="font-size:22px;font-weight:700">Bounded final text</text>
-  <text x="90" y="922" class="small">Partial reason prefixed</text>
-  <text x="90" y="948" class="small">when incomplete;</text>
-  <text x="90" y="974" class="small">included in the 12 KiB cap.</text>
-  <text x="370" y="860" class="label">B / HOST-ONLY DETAILS</text>
-  <text x="370" y="892" style="font-size:22px;font-weight:700">Execution metadata</text>
-  <text x="370" y="922" class="small">Status, duration, usage,</text>
-  <text x="370" y="948" class="small">budget counters; no tasks,</text>
-  <text x="370" y="974" class="small">paths, URLs or tool content.</text>
-
-  <!-- Failure is a separate model-visible error, not a final answer. -->
-  <path d="M630 655 H640 V1068 H630" class="error-flow"/>
-  <rect x="70" y="1015" width="560" height="105" fill="#fff2f1" stroke="#b3261e"/>
-  <text x="90" y="1044" class="label" style="fill:#b3261e">FAILURE / INCLUDING PREFLIGHT OR CHILD ERRORS</text>
-  <text x="90" y="1077" class="body">Model-visible error + diagnostics, capped at 4 KiB.</text>
-  <text x="90" y="1104" class="small">Reported child usage attached separately when available.</text>
-
-  <!-- Runtime state and trust caveats are not conflated with tool access. -->
-  <rect x="770" y="955" width="470" height="165" class="soft"/>
-  <text x="790" y="984" class="label">BOUNDED LIFETIME, NOT STATELESS</text>
-  <text x="790" y="1017" class="body">Time / tool / web-request budgets</text>
-  <text x="790" y="1047" class="body">In-memory investigation context</text>
-  <text x="790" y="1077" class="body">Private runtime files during execution;</text>
-  <text x="790" y="1105" class="body">Best-effort cleanup on exit / parent loss.</text>
-  <text x="1380" y="1006" class="label">TRUSTED RUNTIME</text>
-  <text x="1380" y="1036" class="small">Runs as the current user.</text>
-  <text x="1380" y="1064" class="small">Web extension may use host</text>
-  <text x="1380" y="1092" class="small">credentials, caches and temp files.</text>
-
-  <line x1="50" y1="1158" x2="1750" y2="1158" stroke="#cbd2d8"/>
-  <text x="50" y="1184" class="eyebrow" style="font-size:13px">PI SUBAGENT / PROCESS + DATA FLOW</text>
-  <line x1="580" y1="1179" x2="610" y2="1179" stroke="#007bb5" stroke-width="2"/>
-  <text x="620" y="1184" class="small" style="font-size:14px">dispatch / collection / result</text>
-  <line x1="880" y1="1179" x2="910" y2="1179" stroke="#101820" stroke-width="2"/>
-  <text x="920" y="1184" class="small" style="font-size:14px">guarded access / egress</text>
-  <text x="1750" y="1184" text-anchor="end" class="small" style="font-size:14px">Parent retains implementation and final verification.</text>
+  <text x="60" y="832" font-size="20" font-weight="700" fill="#576b89">Application-level controls — not an OS, network, or credential-isolated sandbox.</text>
+  <text x="60" y="866" font-size="20" fill="#576b89">Authorized content may be sent to configured model / search providers.</text>
 </svg>
