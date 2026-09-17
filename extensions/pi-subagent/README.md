@@ -121,7 +121,7 @@ The runtime applies these per-child limits:
 - The parent accepts a final answer only after the child guard validates policy and tool ownership and publishes its readiness marker.
 - Intermediate assistant turns and investigation tool results are discarded. The collector retains only the last assistant message containing non-empty text without a tool call or terminal model error, then sanitizes and bounds it.
 - A tool-only or token-limited ending gets at most one tool-disabled finalization follow-up. A zero-exit child that still has no final answer is rejected.
-- Each running call reports `mm:ss · model (thinking) running · N reported tokens` once per second. A settled row reports `✓ Complete · 14.2s · Context injected: ~1,820 tokens`, or `⚠ Partial`; expanding it reveals the answer.
+- Each running call reports `mm:ss · model (thinking) running · N reported tokens` once per second. A settled row reports `✓ Complete · 14.2s · Context injected: ~1,820 tokens`, or `⚠ Partial`; expanding it reveals the result envelope and answer. If the runtime byte cap shortened the answer, both views also show an `Output truncated` warning. Truncation does not change the child's complete/partial execution status.
 - Answers completed during the text-finalization window are labelled `partial` with `partialReason: "time_limit"`; termination starts at the hard deadline. Cancellation, timeout, or a child JSON protocol error sends SIGTERM to the process group, then SIGKILL after a 5-second grace period. The call waits for escalation even if the direct child exits first, so shutdown can extend beyond the investigation deadline. Normal completion does not add this wait.
 - If the last answer still has `stopReason: "length"`, its available text is returned as `partial` with `partialReason: "model_length"`, never as complete. This reason takes precedence over a simultaneous budget or time limit. `outputTruncated` continues to report only truncation by the runtime's byte cap.
 - Allowed and denied tool attempts both count. A soft warning leaves later calls available; a hard stop disables tools, reuses text finalization, and returns a `partial` result with `partialReason: "tool_budget"`.
@@ -172,11 +172,18 @@ The source-only `benchmark-v2/pilots/2026-09-05-astra-routing/REPORT.md` records
 
 ## Verification
 
+Offline checks from the repository root (dependency installation may access npm; the checks make no model requests):
+
 ```bash
 npm --prefix live/extensions/pi-subagent ci --include=dev --ignore-scripts
 npm --prefix live/extensions/pi-subagent run typecheck
 npm --prefix live/extensions/pi-subagent test
 npm --prefix live/extensions/pi-subagent run package:check
+```
+
+Opt-in live checks, only with authorization for model/provider usage:
+
+```bash
 python3 -B live/extensions/pi-subagent/scripts/context_isolation_eval.py --mode smoke --capability local --preset all
 python3 -B live/extensions/pi-subagent/scripts/context_isolation_eval.py --mode smoke --capability web --preset all
 ```

@@ -1,7 +1,7 @@
 import assert from "node:assert/strict";
 import { describe, test } from "node:test";
 import piSubagentExtension from "./index.ts";
-import { MAX_SUBAGENT_CALLS, TOOL_NAME } from "./shared.ts";
+import { formatChildOutput, MAX_FINAL_BYTES, MAX_SUBAGENT_CALLS, TOOL_NAME } from "./shared.ts";
 
 const SOURCE_PATH = "/test/pi-subagent/index.ts";
 
@@ -71,6 +71,49 @@ function toolEvent(toolCallId: string, isError: boolean) {
     isError,
   };
 }
+
+describe("pi-subagent result rendering", () => {
+  for (const partialReason of [undefined, "tool_budget"] as const) {
+    for (const truncated of [false, true]) {
+      test(`${partialReason ?? "complete"} result with truncation=${truncated}`, () => {
+        const harness = createExtensionHarness();
+        const formatted = formatChildOutput(truncated ? "x".repeat(MAX_FINAL_BYTES * 2) : "answer", partialReason);
+        const envelope = JSON.parse(formatted.text);
+        const result = {
+          content: [{ type: "text", text: formatted.text }],
+          details: {
+            status: envelope.status,
+            outputTruncated: formatted.truncated,
+            durationMs: 1000,
+            contextTokens: 3072,
+          },
+        };
+        const colors: string[] = [];
+        const theme = { fg(color: string, text: string) { colors.push(color); return text; } };
+        for (const expanded of [false, true]) {
+          colors.length = 0;
+          const component = harness.toolDefinition.renderResult(result, { expanded, isPartial: false }, theme);
+          const rendered = component.render(200).join("\n");
+          assert.match(rendered, partialReason ? /⚠ Partial/ : /✓ Complete/);
+          assert.equal(rendered.includes("Output truncated"), truncated);
+          assert.equal(colors.includes("warning"), truncated || !!partialReason);
+          assert.equal(rendered.includes('"outputTruncated":'), expanded);
+        }
+        assert.equal(result.details.status, partialReason ? "partial" : "complete");
+      });
+    }
+  }
+
+  test("keeps streaming and metadata-free fallback output unchanged", () => {
+    const harness = createExtensionHarness();
+    const theme = { fg(_color: string, text: string) { return text; } };
+    const result = { content: [{ type: "text", text: "progress or diagnostic" }] };
+    for (const isPartial of [false, true]) {
+      const component = harness.toolDefinition.renderResult(result, { expanded: false, isPartial }, theme);
+      assert.equal(component.render(100).join("\n").trim(), "progress or diagnostic");
+    }
+  });
+});
 
 describe("pi-subagent extension wiring", () => {
   test("describes web mode without promising credential-isolated public-only access", async () => {

@@ -178,6 +178,7 @@ export default function piSubagentExtension(pi: ExtensionAPI): void {
 
       const details = result.details as {
         status?: "complete" | "partial";
+        outputTruncated?: boolean;
         durationMs?: number;
         contextTokens?: number;
       } | undefined;
@@ -186,7 +187,8 @@ export default function piSubagentExtension(pi: ExtensionAPI): void {
       }
 
       const summary = formatResultSummary(details.status, details.durationMs, details.contextTokens);
-      const styled = theme.fg(details.status === "partial" ? "warning" : "success", summary);
+      const styled = theme.fg(details.status === "partial" ? "warning" : "success", summary)
+        + (details.outputTruncated ? theme.fg("warning", " · Output truncated") : "");
       return new Text(expanded && output ? `${styled}\n\n${output}` : styled, 0, 0);
     },
   });
