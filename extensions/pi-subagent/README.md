@@ -16,15 +16,17 @@ The companion [skill](../../skills/pi-subagent/README.md) decides when and how t
 
 ## In action
 
-These screenshots show a real local lookup against this repository. Machine-specific paths and account details were removed from the rendered output.
+Trimmed excerpts from two real English-language Pi sessions investigating a retry bug in **Parcel Client**, a synthetic shipping SDK. Typing and waiting are accelerated; model responses and tool execution are not scripted.
 
-**Running — elapsed time, child model, thinking level, and reported tokens**
+**Automatic delegation** — after a short onboarding exchange, the user asks why increasing the retry limit did not help. The model chooses to delegate the investigation without being asked to use a subagent.
 
-![Pi Subagent reporting elapsed time, child model, thinking level, and reported tokens while running](assets/pi-subagent-running.png)
+![An English onboarding conversation followed by automatic pi_subagent investigation, live progress, and a retry diagnosis](assets/pi-subagent-automatic.gif)
 
-**Complete — completion time, injected context size, and expanded final answer**
+**Explicit skill invocation** — the user sets up a read-only incident review, then invokes `/skill:pi-subagent` with the investigation scope.
 
-![Pi Subagent reporting completion time, injected context size, and the expanded final answer](assets/pi-subagent-complete.png)
+![A user invoking /skill:pi-subagent to investigate skipped retries, followed by live progress and a cited diagnosis](assets/pi-subagent-manual.gif)
+
+Both runs show the bounded result returning to the parent for the final answer. The explicit-invocation session also shows a targeted parent check of the decisive source file. The skill command supplies guidance to the parent; the parent then calls the extension.
 
 ## Requirements and installation
 

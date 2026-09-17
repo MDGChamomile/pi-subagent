@@ -11,7 +11,17 @@ Run focused, bounded investigations in an ephemeral child Pi process while keepi
 - **`pi_subagent` extension** — enforces scope, tool ownership, resource budgets, lifecycle, telemetry, and output boundaries.
 - **Companion skill** — helps the parent decide when to delegate and selects the appropriate capability and model preset.
 
-![Pi Subagent showing a completed child investigation and the context returned to the parent](https://raw.githubusercontent.com/MDGChamomile/pi-agent-kit/v0.2.8/live/extensions/pi-subagent/assets/pi-subagent-complete.png)
+### See it in action
+
+Trimmed excerpts from real English-language Pi sessions investigating a retry bug in a synthetic shipping SDK. Typing and waiting are accelerated; model responses and tool execution are not scripted.
+
+**Automatic delegation** — an onboarding conversation turns into a focused investigation; the model chooses to call `pi_subagent`.
+
+![A natural conversation leading to automatic delegation, live progress, and a retry diagnosis](https://raw.githubusercontent.com/MDGChamomile/pi-agent-kit/main/live/extensions/pi-subagent/assets/pi-subagent-automatic.gif)
+
+**Explicit invocation** — the user requests a scoped investigation with `/skill:pi-subagent`; the parent calls the extension and checks the result.
+
+![An explicit /skill:pi-subagent request followed by investigation progress and a cited diagnosis](https://raw.githubusercontent.com/MDGChamomile/pi-agent-kit/main/live/extensions/pi-subagent/assets/pi-subagent-manual.gif)
 
 ## Why use it?
 

@@ -19,6 +19,14 @@ export const packageFiles = [
   ["live/extensions/pi-subagent/parent-liveness.ts", "extensions/pi-subagent/parent-liveness.ts"],
   ["live/extensions/pi-subagent/README.md", "extensions/pi-subagent/README.md"],
   [
+    "live/extensions/pi-subagent/assets/pi-subagent-automatic.gif",
+    "extensions/pi-subagent/assets/pi-subagent-automatic.gif",
+  ],
+  [
+    "live/extensions/pi-subagent/assets/pi-subagent-manual.gif",
+    "extensions/pi-subagent/assets/pi-subagent-manual.gif",
+  ],
+  [
     "live/extensions/pi-subagent/assets/pi-subagent-running.png",
     "extensions/pi-subagent/assets/pi-subagent-running.png",
   ],
