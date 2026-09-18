@@ -2,7 +2,7 @@
 
 A foreground, model-invocable Pi extension that runs focused local-file or web investigations outside the parent context.
 
-The companion [skill](../../skills/pi-subagent/README.md) decides when and how to delegate. This extension enforces the runtime boundary, launches the child, reports progress, and returns only the bounded final answer.
+The companion [skill](../../skills/pi-subagent/README.md) decides when and how to delegate. This extension enforces the runtime boundary, launches the child, reports progress, and returns a bounded result envelope containing the final answer.
 
 [Install](#requirements-and-installation) · [Runtime contract](#runtime-contract) · [Security](#security-boundary) · [Evaluation](#evaluation) · [Verification](#verification)
 
@@ -53,17 +53,37 @@ For web investigations, also install the web extension (v0.27.0 or later):
 pi install npm:pi-web-access
 ```
 
-Alternatively, install both components from a checkout:
+Alternatively, install both components from a checkout. These commands are for a new source installation and stop if either destination already exists, including as a broken symbolic link:
 
 ```bash
 git clone https://github.com/MDGChamomile/pi-agent-kit.git
 cd pi-agent-kit
 mkdir -p ~/.pi/agent/extensions ~/.pi/agent/skills
-ln -s "$PWD/live/extensions/pi-subagent" ~/.pi/agent/extensions/pi-subagent
-ln -s "$PWD/live/skills/pi-subagent" ~/.pi/agent/skills/pi-subagent
+
+extension_target="$HOME/.pi/agent/extensions/pi-subagent"
+skill_target="$HOME/.pi/agent/skills/pi-subagent"
+for target in "$extension_target" "$skill_target"; do
+  if [ -e "$target" ] || [ -L "$target" ]; then
+    printf 'Refusing to replace existing path: %s\n' "$target" >&2
+    exit 1
+  fi
+done
+
+ln -s "$PWD/live/extensions/pi-subagent" "$extension_target"
+ln -s "$PWD/live/skills/pi-subagent" "$skill_target"
 ```
 
-Restart Pi or run `/reload`. The model can then select the skill automatically, or the user can invoke `/skill:pi-subagent`.
+To update a linked source installation, update the checkout after reviewing its changes; do not rerun the link commands. Restart Pi or run `/reload` after installation or update.
+
+### First investigation
+
+The model can select the skill automatically. For an explicit first investigation from this repository root, use a scoped request such as:
+
+```text
+/skill:pi-subagent Investigate how cancellation terminates child processes within live/extensions/pi-subagent/. Return conclusions with file and line evidence.
+```
+
+The command loads delegation guidance for the parent, which then calls the `pi_subagent` tool. The child investigates only: it does not modify files or run tests, and final verification remains with the parent.
 
 > [!NOTE]
 > The web guard verifies the dependency's package name, minimum version (>=0.27.0, stable releases only), declared entry point, and tool provenance. Newer stable versions are allowed without an upper bound so updates are not blocked solely by version; this is not a guarantee of compatibility or package safety. Prereleases and malformed versions are rejected. Existing argument allowlists and execution limits remain enforced, but changes to upstream behavior may require maintenance. Another extension exposing the same tool names does not satisfy the provenance check. Without the web dependency, `local` runs remain available. Local child startup is forced offline and never downloads missing search binaries.
@@ -126,7 +146,18 @@ The runtime applies these per-child limits:
 - If the last answer still has `stopReason: "length"`, its available text is returned as `partial` with `partialReason: "model_length"`, never as complete. This reason takes precedence over a simultaneous budget or time limit. `outputTruncated` continues to report only truncation by the runtime's byte cap.
 - Allowed and denied tool attempts both count. A soft warning leaves later calls available; a hard stop disables tools, reuses text finalization, and returns a `partial` result with `partialReason: "tool_budget"`.
 - Web calls reserve their full cost synchronously during sequential Pi tool preflight, before parallel execution: `web_search` charges its normalized `query`/`queries`; `source_check` charges its effective queries and, with `fetchContent: true`, conservatively up to five result pages (`min(5, queries × results per query)`); `fetch_content` charges its normalized unique `url`/`urls`; and each `get_search_content` retrieval charges one content target. A batch that would cross either limit does not execute or consume query/fetch counters.
-- Only the bounded result text (`content`) enters the parent model context. Every successful call returns a JSON envelope with runtime-owned `status` (`complete` or `partial`), `partialReason` (`null`, `tool_budget`, `time_limit`, or `model_length`), and `outputTruncated` (boolean), followed by an untrusted child `answer` string. JSON escaping keeps literal markers, quotes, and forged envelope text inside `answer`, not in the runtime fields. The whole serialized envelope, including escaping overhead, fits within the 12 KiB cap and determines the injected-context estimate. Byte truncation shortens the answer at a UTF-8 boundary while preserving valid JSON and the runtime fields; it adds no in-body status marker. This separates status provenance but does not make the answer trustworthy or prevent all model-level prompt injection. Update the companion skill together with the runtime when adopting this result format. Parent tool-result `details` retain content-free execution and budget metadata for the UI and host, such as the selected capability, preset, model, scope-root count, status, duration, usage, limits, and counters. They are not sent to the parent model and never include tasks, queries, URLs, paths, or tool content.
+Only the bounded result text (`content`) enters the parent model context. Every successful call returns this JSON envelope:
+
+| Field | Meaning |
+| --- | --- |
+| `status` | Runtime-owned `complete` or `partial` execution status |
+| `partialReason` | `null`, `tool_budget`, `time_limit`, or `model_length` |
+| `outputTruncated` | Whether the runtime byte cap shortened the answer |
+| `answer` | Untrusted child answer text |
+
+JSON escaping keeps literal markers, quotes, and forged envelope text inside `answer`, not in the runtime fields. The whole serialized envelope, including escaping overhead, fits within the 12 KiB cap and determines the injected-context estimate. Byte truncation shortens `answer` at a UTF-8 boundary while preserving valid JSON and the runtime fields; it adds no in-body status marker. This separates status provenance but does not make the answer trustworthy or prevent all model-level prompt injection.
+
+Parent tool-result `details` retain content-free execution and budget metadata for the UI and host, such as the selected capability, preset, model, scope-root count, status, duration, usage, limits, and counters. They are not sent to the parent model and never include tasks, queries, URLs, paths, or tool content. Update the companion skill together with the runtime when adopting this result format.
 - A dedicated parent-liveness pipe makes the child remove private runtime files and terminate its POSIX process group if the parent exits abruptly. The implementation has a native-Windows fallback that terminates the child process itself, but native Windows is not officially supported or tested.
 - Final diff, audit, test, and retrieval validation stays with the parent when it holds the edited files or may need to make follow-up fixes.
 
@@ -156,13 +187,19 @@ This is an application-level capability boundary, not an OS or network sandbox. 
 
 ## Evaluation
 
-From the repository root, run:
+> [!CAUTION]
+> The context evaluation starts fresh parent and child model sessions, sends the synthetic fixtures to the configured provider, and consumes model usage. Obtain authorization before running it. The default three-case run starts six parent sessions, with one child session in each delegated arm; a session may make more than one provider request.
+
+From the repository root, specify an available parent model and thinking level explicitly:
 
 ```bash
-python3 live/extensions/pi-subagent/scripts/context_isolation_eval.py --mode context
+python3 live/extensions/pi-subagent/scripts/context_isolation_eval.py \
+  --mode context \
+  --main-model openai-codex/gpt-6-astra \
+  --main-thinking medium
 ```
 
-The command compares direct and delegated investigation against three fixed synthetic fixtures. It starts fresh model sessions, so outcomes are not deterministic; use it as a bounded sanity check rather than durable performance evidence.
+The command compares direct and delegated investigation against three fixed synthetic fixtures. Outcomes are not deterministic; use it as a bounded sanity check rather than durable performance evidence. If both `PI_PROVIDER` and `PI_MODEL` are set, the script can derive the parent model when `--main-model` is omitted, but explicit arguments are preferred for reproducibility.
 
 The source-only evaluator documented in `benchmark-v2/OFFLINE_SCORING.md` checks citations, gold-evidence overlap, and lexical rules without model calls; it does not assess semantic validity or overall answer quality.
 
@@ -181,21 +218,37 @@ npm --prefix live/extensions/pi-subagent test
 npm --prefix live/extensions/pi-subagent run package:check
 ```
 
-Opt-in live checks, only with authorization for model/provider usage:
+Opt-in local smoke, only with authorization for model/provider usage:
 
 ```bash
-python3 -B live/extensions/pi-subagent/scripts/context_isolation_eval.py --mode smoke --capability local --preset all
-python3 -B live/extensions/pi-subagent/scripts/context_isolation_eval.py --mode smoke --capability web --preset all
+python3 -B live/extensions/pi-subagent/scripts/context_isolation_eval.py \
+  --mode smoke --capability local --preset all \
+  --main-model openai-codex/gpt-6-astra --main-thinking medium
 ```
 
-The development dependencies are pinned to Pi 0.85.0. The default offline suite includes Python evaluation-contract tests as well as the TypeScript runtime tests; Python 3 and `rg` are required. The scoped-search regression uses Pi's native grep tool and an existing ripgrep binary without downloading tools or making model requests. Live checks are opt-in and consume model/provider usage. They require the Node.js Pi installation. `--preset all` (the default) runs every current runtime preset in a fresh parent session; select one with, for example, `--preset review-standard`. Set `--main-model openai-codex/gpt-6-astra --main-thinking medium` explicitly for reproducible parent configuration.
+The development dependencies are pinned to Pi 0.85.0. The default offline suite includes Python evaluation-contract tests as well as the TypeScript runtime tests; Python 3 and `rg` are required. The scoped-search regression uses Pi's native grep tool and an existing ripgrep binary without downloading tools or making model requests. Live checks require the Node.js Pi installation and consume model/provider usage. `--preset all` (the default) runs every current runtime preset in a fresh parent session; select one with, for example, `--preset review-standard`. If both `PI_PROVIDER` and `PI_MODEL` are set, `--main-model` may be omitted, but explicit parent model and thinking arguments are preferred for reproducibility.
 
 Live checks verify the requested preset/capability/scope, returned model/thinking, complete untruncated output, usage, evidence, and absence of parent investigation. A test-only observer loads before the production guard and independently checks the effective child model/thinking, outgoing model/reasoning fields, and returned model identity. It records only configuration metadata in temporary files, never prompts, response text, headers, or credentials. Missing observations and silent thinking clamping fail the check. It does not change production presets or global model configuration.
 
-The web smoke test reproduces the normal loader arrangement: `pi-web-access` tools stay registered for provenance checks but remain inactive in the parent model. It fetches IANA's example-domain documentation without searching, requires verbatim body evidence for both the documentation purpose and registration/transfer restriction, and fails if the parent activates `load_web_tools` or calls a web tool directly. It does not depend on the best-effort HTTP service at `example.com`, whose short page can be rejected as incomplete by the extractor. Page-title metadata is not assumed to be present in extracted body text.
+The web smoke is a maintainer-environment check, not a command reproducible from this repository or the npm installation alone. Before it starts, the script requires both of these regular files under the active Pi agent root (`PI_CODING_AGENT_DIR`, or the default agent root):
 
-### Astra-parent source smoke (2026-09-15)
+```text
+npm/node_modules/pi-web-access/index.ts
+extensions/web-tool-loader.ts
+```
 
-With Pi 0.85.1 and `pi-web-access` 0.29.0, Astra/medium parents passed all three local presets and web lookup/analysis: **five of six checks passed**. Web review omitted a required evidence quotation despite completing its answer; this is not an all-green web compatibility result or an Astra performance benchmark. See the [maintenance record](https://github.com/MDGChamomile/pi-agent-kit/blob/main/packaging/pi-subagent/DEVELOPMENT.md#astra-parent-source-smoke-2026-09-15) for the environment, temporary harness, and detailed verification evidence.
+The package supplies neither the second loader nor a setup procedure for it. Run the web smoke only in an environment that already provides and has reviewed a compatible loader; otherwise skip it and report the gap. In that maintainer environment, the command is:
 
-The default suite covers final-answer isolation, complete and partial outcomes, tool-disabled finalization, empty answers, bounded provider errors, cancellation, timeout escalation, abrupt parent exit, usage aggregation, scope, recoverable web denials, and tool ownership. Regression cases include inherited ripgrep config with an out-of-scope symlink, and a direct child that exits before a SIGTERM-ignoring descendant during cancellation, timeout, or a protocol error. Opt-in smoke tests additionally cover live model selection and the local/web runtime boundaries.
+```bash
+python3 -B live/extensions/pi-subagent/scripts/context_isolation_eval.py \
+  --mode smoke --capability web --preset all \
+  --main-model openai-codex/gpt-6-astra --main-thinking medium
+```
+
+The web smoke keeps `pi-web-access` tools registered for provenance checks but inactive in the parent model. It fetches IANA's example-domain documentation without searching, requires verbatim body evidence for both the documentation purpose and registration/transfer restriction, and fails if the parent activates `load_web_tools` or calls a web tool directly.
+
+### Verified environment summary
+
+With Pi 0.85.1 and `pi-web-access` 0.29.0, Astra/medium parents passed all three local presets and web lookup/analysis: **five of six checks passed**. Web review omitted a required evidence quotation, so this is not an all-green web compatibility result or a performance benchmark. See the [maintenance record](https://github.com/MDGChamomile/pi-agent-kit/blob/main/packaging/pi-subagent/DEVELOPMENT.md#astra-parent-source-smoke-2026-09-15) and [source verification record](https://github.com/MDGChamomile/pi-agent-kit/blob/main/live/extensions/pi-subagent/verification/2026-09-15-astra-medium.json) for the environment, harness, request counts, and detailed evidence.
+
+The default offline suite covers final-answer isolation, complete and partial outcomes, tool-disabled finalization, empty answers, bounded provider errors, cancellation, timeout escalation, abrupt parent exit, usage aggregation, scope, recoverable web denials, and tool ownership. Opt-in smoke tests cover live model selection and the local/web runtime boundaries.

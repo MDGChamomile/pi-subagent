@@ -48,11 +48,13 @@ Requirements:
 pi install npm:@mdgchamomile/pi-subagent
 ```
 
-Restart Pi or run `/reload`. The model can select the skill automatically, or you can invoke it directly:
+Restart Pi or run `/reload`. The model can select the skill automatically. To invoke it explicitly, include a focused task and scope. For example, from a project with a `src/` directory:
 
 ```text
-/skill:pi-subagent
+/skill:pi-subagent Investigate how cancellation terminates child processes within src/. Return conclusions with file and line evidence.
 ```
+
+This command gives delegation guidance to the parent, which then calls the `pi_subagent` tool. The child investigates only: it does not modify files or run tests, and final verification remains with the parent.
 
 ### Optional web capability
 
