@@ -157,6 +157,59 @@ describe("child JSON stream collector", () => {
     assert.equal(result.finalOutput, "bounded final");
   });
 
+  test("accepts native-sized image tool results before the final answer", () => {
+    // Protocol fixtures: the collector does not decode images. Cover the reported
+    // PNG payload size and Pi's default 4.5 MiB base64 ceiling, plus metadata.
+    for (const imageBytes of [3_245_812, 4.5 * 1024 * 1024]) {
+      for (const chunkBytes of [65_536, Infinity]) {
+        const collector = new ChildJsonCollector();
+        const image = toolResultEvent("read", "", {
+          content: [
+            { type: "text", text: "Read image file [image/png]" },
+            { type: "image", data: "A".repeat(imageBytes), mimeType: "image/png" },
+          ],
+        });
+        const stream = Buffer.from(`${image}\n${assistantEvent("Image investigation complete.")}\n`);
+        for (let offset = 0; offset < stream.length; offset += chunkBytes) {
+          collector.push(stream.subarray(offset, Math.min(offset + chunkBytes, stream.length)));
+        }
+        collector.finish();
+        const result = collector.snapshot();
+        assert.equal(result.protocolError, undefined);
+        assert.equal(result.finalOutput, "Image investigation complete.");
+        assert.equal(result.assistantMessageCount, 1);
+        assert.equal(result.toolErrorCount, 0);
+        assert.equal(result.usage.totalTokens, 22);
+      }
+    }
+  });
+
+  test("keeps a strict byte boundary for image tool results", () => {
+    const empty = toolResultEvent("read", "", {
+      content: [{ type: "image", data: "", mimeType: "image/png" }],
+    });
+    const remaining = MAX_JSON_LINE_BYTES - Buffer.byteLength(empty);
+    for (const extra of [0, 1]) {
+      let failures = 0;
+      const collector = new ChildJsonCollector(undefined, () => failures++);
+      const record = empty.replace('"data":""', `"data":"${"A".repeat(remaining + extra)}"`);
+      assert.equal(Buffer.byteLength(record), MAX_JSON_LINE_BYTES + extra);
+      const stream = Buffer.from(`${record}\n${assistantEvent("bounded final")}\n`);
+      for (let offset = 0; offset < stream.length; offset += 65_536) {
+        collector.push(stream.subarray(offset, offset + 65_536));
+      }
+      collector.finish();
+      assert.equal(failures, extra);
+      if (extra) {
+        assert.match(collector.snapshot().protocolError ?? "", /message_end record exceeded/);
+        assert.equal(collector.snapshot().finalOutput, "");
+      } else {
+        assert.equal(collector.snapshot().protocolError, undefined);
+        assert.equal(collector.snapshot().finalOutput, "bounded final");
+      }
+    }
+  });
+
   test("fails closed on malformed or oversized message_end records", () => {
     const malformed = new ChildJsonCollector();
     malformed.push('{"type":"message_end",broken}\n');

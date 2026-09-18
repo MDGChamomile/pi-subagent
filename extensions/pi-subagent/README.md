@@ -137,6 +137,9 @@ The runtime applies these per-child limits:
 | Executed web queries | — | 32 |
 | Executed fetch/content targets | — | 50 |
 | Final answer | 12 KiB | 12 KiB |
+| Captured JSON record | 6 MiB | 6 MiB |
+
+The JSON record cap accommodates Pi's default 4.5 MiB base64 image payload plus text and metadata. Larger `message_end` records still fail closed; this is not an unlimited or arbitrary multi-image response allowance. Intermediate image content is discarded, not returned to the parent.
 
 - The parent accepts a final answer only after the child guard validates policy and tool ownership and publishes its readiness marker.
 - Intermediate assistant turns and investigation tool results are discarded. The collector retains only the last assistant message containing non-empty text without a tool call or terminal model error, then sanitizes and bounds it.

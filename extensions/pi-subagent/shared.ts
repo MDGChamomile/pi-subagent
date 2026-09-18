@@ -30,7 +30,9 @@ export const MAX_SCOPE_ROOTS = 8;
 export const MAX_SUBAGENT_CALLS = 3;
 export const MAX_FINAL_BYTES = 12 * 1024;
 export const MAX_PARENT_ERROR_BYTES = 4 * 1024;
-export const MAX_JSON_LINE_BYTES = 2 * 1024 * 1024;
+// Pi's native read can emit 4.5 MiB of base64 image data in one toolResult.
+// Leave room for JSON/text/metadata while keeping every captured record bounded.
+export const MAX_JSON_LINE_BYTES = 6 * 1024 * 1024;
 export const CHILD_TIMEOUT_MS = 20 * 60 * 1000;
 export const CHILD_FINALIZATION_GRACE_MS = 2 * 60 * 1000;
 export const POLICY_ENV = "PI_SUBAGENT_POLICY_FILE";
