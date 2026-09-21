@@ -1,0 +1,54 @@
+name: validation
+
+on:
+  push:
+  pull_request:
+
+permissions:
+  contents: read
+
+jobs:
+  skills:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 5
+    steps:
+      - uses: actions/checkout@v6
+      - uses: actions/setup-python@v6
+        with:
+          python-version: "3.10"
+      - run: python3 -B -m unittest discover -s .github/scripts -p 'test_*.py' -v
+      - run: python3 -B .github/scripts/validate_skills.py
+
+  subagent:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 10
+    strategy:
+      fail-fast: false
+      matrix:
+        pi-version: ["0.84.2", "0.85.0"]
+    defaults:
+      run:
+        working-directory: extensions/pi-subagent
+    steps:
+      - uses: actions/checkout@v6
+      - uses: actions/setup-node@v6
+        with:
+          node-version: "22.22.0"
+          cache: npm
+          cache-dependency-path: extensions/pi-subagent/package-lock.json
+      - uses: actions/setup-python@v6
+        with:
+          python-version: "3.10"
+      - name: Install native search test dependency
+        run: sudo apt-get update && sudo apt-get install -y --no-install-recommends ripgrep
+      - run: npm ci --include=dev --ignore-scripts
+      - name: Select tested Pi version
+        run: |
+          npm install --no-save --package-lock=false --ignore-scripts \
+            @earendil-works/pi-agent-core@${{ matrix.pi-version }} \
+            @earendil-works/pi-ai@${{ matrix.pi-version }} \
+            @earendil-works/pi-coding-agent@${{ matrix.pi-version }} \
+            @earendil-works/pi-tui@${{ matrix.pi-version }}
+      - run: npm run typecheck
+      - run: npm test
+      - run: npm run package:check

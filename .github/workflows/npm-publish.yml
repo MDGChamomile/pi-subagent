@@ -15,7 +15,7 @@ concurrency:
 
 jobs:
   publish:
-    if: github.repository == 'MDGChamomile/pi-agent-kit'
+    if: github.repository == 'MDGChamomile/pi-subagent'
     runs-on: ubuntu-24.04
     timeout-minutes: 10
     steps:
@@ -43,7 +43,7 @@ jobs:
           node-version: "24"
           registry-url: "https://registry.npmjs.org"
           cache: npm
-          cache-dependency-path: live/extensions/pi-subagent/package-lock.json
+          cache-dependency-path: extensions/pi-subagent/package-lock.json
       - name: Use an OIDC-capable npm CLI
         if: steps.package_release.outputs.publish == 'true'
         run: npm install --global npm@11.15.0
@@ -57,19 +57,19 @@ jobs:
         run: sudo apt-get update && sudo apt-get install -y --no-install-recommends ripgrep
       - name: Install locked development dependencies
         if: steps.package_release.outputs.publish == 'true'
-        working-directory: live/extensions/pi-subagent
+        working-directory: extensions/pi-subagent
         run: npm ci --ignore-scripts
       - name: Typecheck
         if: steps.package_release.outputs.publish == 'true'
-        working-directory: live/extensions/pi-subagent
+        working-directory: extensions/pi-subagent
         run: npm run typecheck
       - name: Test
         if: steps.package_release.outputs.publish == 'true'
-        working-directory: live/extensions/pi-subagent
+        working-directory: extensions/pi-subagent
         run: npm test
       - name: Build and verify package
         if: steps.package_release.outputs.publish == 'true'
-        working-directory: live/extensions/pi-subagent
+        working-directory: extensions/pi-subagent
         run: npm run package:check
       - name: Publish package with npm Trusted Publishing
         if: steps.package_release.outputs.publish == 'true'

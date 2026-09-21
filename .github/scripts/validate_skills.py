@@ -64,6 +64,6 @@ def validate_skills(root: Path) -> list[str]:
 
 
 if __name__ == "__main__":
-    failures = validate_skills(Path("live/skills"))
+    failures = validate_skills(Path(__file__).resolve().parents[2] / "skills")
     if failures:
         raise SystemExit("\n".join(failures))

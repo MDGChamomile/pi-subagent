@@ -14,14 +14,14 @@ jobs:
     timeout-minutes: 10
     defaults:
       run:
-        working-directory: live/extensions/pi-subagent
+        working-directory: extensions/pi-subagent
     steps:
       - uses: actions/checkout@v4
       - uses: actions/setup-node@v4
         with:
           node-version: "22.22.0"
           cache: npm
-          cache-dependency-path: live/extensions/pi-subagent/package-lock.json
+          cache-dependency-path: extensions/pi-subagent/package-lock.json
       - name: Install native search test dependency
         run: sudo apt-get update && sudo apt-get install -y --no-install-recommends ripgrep
       - run: npm ci --ignore-scripts

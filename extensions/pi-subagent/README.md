@@ -56,8 +56,8 @@ pi install npm:pi-web-access
 Alternatively, install both components from a checkout. These commands are for a new source installation and stop if either destination already exists, including as a broken symbolic link:
 
 ```bash
-git clone https://github.com/MDGChamomile/pi-agent-kit.git
-cd pi-agent-kit
+git clone https://github.com/MDGChamomile/pi-subagent.git
+cd pi-subagent
 mkdir -p ~/.pi/agent/extensions ~/.pi/agent/skills
 
 extension_target="$HOME/.pi/agent/extensions/pi-subagent"
@@ -69,8 +69,8 @@ for target in "$extension_target" "$skill_target"; do
   fi
 done
 
-ln -s "$PWD/live/extensions/pi-subagent" "$extension_target"
-ln -s "$PWD/live/skills/pi-subagent" "$skill_target"
+ln -s "$PWD/extensions/pi-subagent" "$extension_target"
+ln -s "$PWD/skills/pi-subagent" "$skill_target"
 ```
 
 To update a linked source installation, update the checkout after reviewing its changes; do not rerun the link commands. Restart Pi or run `/reload` after installation or update.
@@ -80,7 +80,7 @@ To update a linked source installation, update the checkout after reviewing its 
 The model can select the skill automatically. For an explicit first investigation from this repository root, use a scoped request such as:
 
 ```text
-/skill:pi-subagent Investigate how cancellation terminates child processes within live/extensions/pi-subagent/. Return conclusions with file and line evidence.
+/skill:pi-subagent Investigate how cancellation terminates child processes within extensions/pi-subagent/. Return conclusions with file and line evidence.
 ```
 
 The command loads delegation guidance for the parent, which then calls the `pi_subagent` tool. The child investigates only: it does not modify files or run tests, and final verification remains with the parent.
@@ -196,7 +196,7 @@ This is an application-level capability boundary, not an OS or network sandbox. 
 From the repository root, specify an available parent model and thinking level explicitly:
 
 ```bash
-python3 live/extensions/pi-subagent/scripts/context_isolation_eval.py \
+python3 extensions/pi-subagent/scripts/context_isolation_eval.py \
   --mode context \
   --main-model openai-codex/gpt-6-astra \
   --main-thinking medium
@@ -215,16 +215,16 @@ The source-only `benchmark-v2/pilots/2026-09-05-astra-routing/REPORT.md` records
 Offline checks from the repository root (dependency installation may access npm; the checks make no model requests):
 
 ```bash
-npm --prefix live/extensions/pi-subagent ci --include=dev --ignore-scripts
-npm --prefix live/extensions/pi-subagent run typecheck
-npm --prefix live/extensions/pi-subagent test
-npm --prefix live/extensions/pi-subagent run package:check
+npm --prefix extensions/pi-subagent ci --include=dev --ignore-scripts
+npm --prefix extensions/pi-subagent run typecheck
+npm --prefix extensions/pi-subagent test
+npm --prefix extensions/pi-subagent run package:check
 ```
 
 Opt-in local smoke, only with authorization for model/provider usage:
 
 ```bash
-python3 -B live/extensions/pi-subagent/scripts/context_isolation_eval.py \
+python3 -B extensions/pi-subagent/scripts/context_isolation_eval.py \
   --mode smoke --capability local --preset all \
   --main-model openai-codex/gpt-6-astra --main-thinking medium
 ```
@@ -243,7 +243,7 @@ extensions/web-tool-loader.ts
 The package supplies neither the second loader nor a setup procedure for it. Run the web smoke only in an environment that already provides and has reviewed a compatible loader; otherwise skip it and report the gap. In that maintainer environment, the command is:
 
 ```bash
-python3 -B live/extensions/pi-subagent/scripts/context_isolation_eval.py \
+python3 -B extensions/pi-subagent/scripts/context_isolation_eval.py \
   --mode smoke --capability web --preset all \
   --main-model openai-codex/gpt-6-astra --main-thinking medium
 ```
@@ -252,6 +252,6 @@ The web smoke keeps `pi-web-access` tools registered for provenance checks but i
 
 ### Verified environment summary
 
-With Pi 0.85.1 and `pi-web-access` 0.29.0, Astra/medium parents passed all three local presets and web lookup/analysis: **five of six checks passed**. Web review omitted a required evidence quotation, so this is not an all-green web compatibility result or a performance benchmark. See the [maintenance record](https://github.com/MDGChamomile/pi-agent-kit/blob/main/packaging/pi-subagent/DEVELOPMENT.md#astra-parent-source-smoke-2026-09-15) and [source verification record](https://github.com/MDGChamomile/pi-agent-kit/blob/main/live/extensions/pi-subagent/verification/2026-09-15-astra-medium.json) for the environment, harness, request counts, and detailed evidence.
+With Pi 0.85.1 and `pi-web-access` 0.29.0, Astra/medium parents passed all three local presets and web lookup/analysis: **five of six checks passed**. Web review omitted a required evidence quotation, so this is not an all-green web compatibility result or a performance benchmark. See the [maintenance record](https://github.com/MDGChamomile/pi-subagent/blob/main/packaging/pi-subagent/DEVELOPMENT.md#astra-parent-source-smoke-2026-09-15) and [source verification record](https://github.com/MDGChamomile/pi-subagent/blob/main/extensions/pi-subagent/verification/2026-09-15-astra-medium.json) for the environment, harness, request counts, and detailed evidence.
 
 The default offline suite covers final-answer isolation, complete and partial outcomes, tool-disabled finalization, empty answers, bounded provider errors, cancellation, timeout escalation, abrupt parent exit, usage aggregation, scope, recoverable web denials, and tool ownership. Opt-in smoke tests cover live model selection and the local/web runtime boundaries.

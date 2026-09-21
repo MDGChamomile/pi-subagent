@@ -12,26 +12,26 @@ export const packageFiles = [
   ["packaging/pi-subagent/index.ts", "index.ts"],
   ["packaging/pi-subagent/README.md", "README.md"],
   ["LICENSE", "LICENSE"],
-  ["live/extensions/pi-subagent/index.ts", "extensions/pi-subagent/index.ts"],
-  ["live/extensions/pi-subagent/shared.ts", "extensions/pi-subagent/shared.ts"],
-  ["live/extensions/pi-subagent/subprocess.ts", "extensions/pi-subagent/subprocess.ts"],
-  ["live/extensions/pi-subagent/child-guard.ts", "extensions/pi-subagent/child-guard.ts"],
-  ["live/extensions/pi-subagent/parent-liveness.ts", "extensions/pi-subagent/parent-liveness.ts"],
-  ["live/extensions/pi-subagent/README.md", "extensions/pi-subagent/README.md"],
+  ["extensions/pi-subagent/index.ts", "extensions/pi-subagent/index.ts"],
+  ["extensions/pi-subagent/shared.ts", "extensions/pi-subagent/shared.ts"],
+  ["extensions/pi-subagent/subprocess.ts", "extensions/pi-subagent/subprocess.ts"],
+  ["extensions/pi-subagent/child-guard.ts", "extensions/pi-subagent/child-guard.ts"],
+  ["extensions/pi-subagent/parent-liveness.ts", "extensions/pi-subagent/parent-liveness.ts"],
+  ["extensions/pi-subagent/README.md", "extensions/pi-subagent/README.md"],
   [
-    "live/extensions/pi-subagent/assets/pi-subagent-automatic.gif",
+    "extensions/pi-subagent/assets/pi-subagent-automatic.gif",
     "extensions/pi-subagent/assets/pi-subagent-automatic.gif",
   ],
   [
-    "live/extensions/pi-subagent/assets/pi-subagent-manual.gif",
+    "extensions/pi-subagent/assets/pi-subagent-manual.gif",
     "extensions/pi-subagent/assets/pi-subagent-manual.gif",
   ],
   [
-    "live/extensions/pi-subagent/assets/pi-subagent-architecture.png",
+    "extensions/pi-subagent/assets/pi-subagent-architecture.png",
     "extensions/pi-subagent/assets/pi-subagent-architecture.png",
   ],
-  ["live/skills/pi-subagent/SKILL.md", "skills/pi-subagent/SKILL.md"],
-  ["live/skills/pi-subagent/README.md", "skills/pi-subagent/README.md"],
+  ["skills/pi-subagent/SKILL.md", "skills/pi-subagent/SKILL.md"],
+  ["skills/pi-subagent/README.md", "skills/pi-subagent/README.md"],
 ];
 
 export async function buildPackage() {

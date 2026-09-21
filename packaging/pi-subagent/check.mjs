@@ -19,7 +19,7 @@ const topLevelReadme = await readFile(join(stagingDirectory, "README.md"), "utf8
 const topLevelLinks = new Map(
   [...topLevelReadme.matchAll(/\[([^\]]+)\]\(([^)]+)\)/g)].map(([, label, target]) => [label, target]),
 );
-const releaseRoot = `https://github.com/MDGChamomile/pi-agent-kit/blob/v${manifest.version}/live`;
+const releaseRoot = `https://github.com/MDGChamomile/pi-subagent/blob/v${manifest.version}`;
 assert.equal(
   topLevelLinks.get("extension guide"),
   `${releaseRoot}/extensions/pi-subagent/README.md`,
@@ -32,7 +32,7 @@ assert.equal(
 );
 
 const pinnedReleaseUrls = topLevelReadme.match(
-  /https:\/\/(?:raw\.githubusercontent\.com\/MDGChamomile\/pi-agent-kit\/v[^/]+|github\.com\/MDGChamomile\/pi-agent-kit\/(?:blob|tree)\/v[^/]+)/g,
+  /https:\/\/(?:raw\.githubusercontent\.com\/MDGChamomile\/pi-subagent\/v[^/]+|github\.com\/MDGChamomile\/pi-subagent\/(?:blob|tree)\/v[^/]+)/g,
 ) ?? [];
 assert.ok(pinnedReleaseUrls.length >= 4, "package README must pin its release assets and documentation links");
 for (const url of pinnedReleaseUrls) {
@@ -76,7 +76,7 @@ const temporaryConfig = await mkdtemp(join(tmpdir(), "pi-subagent-package-check-
 try {
   const home = join(temporaryConfig, "home");
   await mkdir(home);
-  const discoveryScript = fileURLToPath(new URL("../../live/extensions/pi-subagent/scripts/package-discovery.mjs", import.meta.url));
+  const discoveryScript = fileURLToPath(new URL("../../extensions/pi-subagent/scripts/package-discovery.mjs", import.meta.url));
   const discover = (directory) => spawnSync(process.execPath, [discoveryScript, directory], {
     cwd: temporaryConfig,
     encoding: "utf8",

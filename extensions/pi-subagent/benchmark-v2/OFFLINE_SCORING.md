@@ -9,13 +9,13 @@ This is **not** the confirmatory benchmark runner or its 100-point scorer. Its o
 From the repository root:
 
 ```bash
-python3 -B live/extensions/pi-subagent/benchmark-v2/offline_scoring.py \
+python3 -B extensions/pi-subagent/benchmark-v2/offline_scoring.py \
   --task /path/to/task.json \
   --answer /path/to/answer.md \
   --snapshot /path/to/frozen-snapshot
 
 python3 -B -m unittest discover \
-  -s live/extensions/pi-subagent/benchmark-v2/tests -v
+  -s extensions/pi-subagent/benchmark-v2/tests -v
 ```
 
 All three input paths are explicit. A successful diagnostic run exits 0; an unreadable or malformed input exits 2 with an `invalid_input` JSON diagnostic on stderr and no result on stdout. An empty answer is a valid observation, not an input failure: it returns `status: "empty_answer"`, zero citation/coverage metrics, and no total score. Other answers return `status: "diagnostics_only"`; this is not a passing grade. Inspect `format_ok`, citations, and diagnostics separately.
