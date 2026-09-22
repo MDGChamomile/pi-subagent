@@ -2,7 +2,7 @@ import assert from "node:assert/strict";
 import { spawnSync } from "node:child_process";
 import { cp, mkdir, mkdtemp, readFile, rm, stat, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
-import { dirname, join } from "node:path";
+import { dirname, join, resolve } from "node:path";
 import { fileURLToPath } from "node:url";
 import { buildPackage, packageFiles, stagingDirectory } from "./build.mjs";
 
@@ -16,6 +16,31 @@ assert.deepEqual(manifest.keywords.includes("pi-package"), true);
 assert.match(manifest.pi.image, new RegExp(`/v${manifest.version.replaceAll(".", "\\.")}/`));
 
 const topLevelReadme = await readFile(join(stagingDirectory, "README.md"), "utf8");
+const sourceRoot = resolve(dirname(fileURLToPath(import.meta.url)), "../..");
+const sourceReadme = await readFile(join(sourceRoot, "README.md"), "utf8");
+
+const sharedRequirementPatterns = [
+  ["minimum Pi version", /Pi 0\.84\.2 or later/],
+  ["provider authentication requirement", /authentication for Pi's `openai-codex` provider/],
+  ["minimum web extension version", /pi-web-access` v0\.27\.0 or later/],
+  ["npm installation command", /pi install npm:@mdgchamomile\/pi-subagent/],
+];
+for (const [description, pattern] of sharedRequirementPatterns) {
+  assert.match(sourceReadme, pattern, `source README is missing ${description}`);
+  assert.match(topLevelReadme, pattern, `package README is missing ${description}`);
+}
+
+const presetRows = (markdown) => [...markdown.matchAll(
+  /^\| `(lookup-standard|analysis-standard|review-standard)` \| `([^`]+)` \| `([^`]+)` \|/gm,
+)].map(([, preset, model, thinking]) => ({ preset, model, thinking }));
+const expectedPresets = [
+  { preset: "lookup-standard", model: "openai-codex/gpt-5.6-luna", thinking: "medium" },
+  { preset: "analysis-standard", model: "openai-codex/gpt-5.6-terra", thinking: "medium" },
+  { preset: "review-standard", model: "openai-codex/gpt-5.6-sol", thinking: "medium" },
+];
+assert.deepEqual(presetRows(sourceReadme), expectedPresets, "source README preset contract is inaccurate");
+assert.deepEqual(presetRows(topLevelReadme), expectedPresets, "package README preset contract is inaccurate");
+
 const topLevelLinks = new Map(
   [...topLevelReadme.matchAll(/\[([^\]]+)\]\(([^)]+)\)/g)].map(([, label, target]) => [label, target]),
 );
