@@ -109,6 +109,8 @@ export type SubagentFailurePhase =
 export type SubagentFailureDiagnostics = {
   phase: SubagentFailurePhase;
   exitCode?: number;
+  exitSignal?: NodeJS.Signals;
+  guardReady?: boolean;
   stopReason?: string;
   durationMs?: number;
   assistantMessages?: number;
@@ -446,6 +448,8 @@ function failureDiagnosticSuffix(diagnostics: SubagentFailureDiagnostics): strin
   const safe = {
     phase: diagnostics.phase,
     ...(Number.isInteger(diagnostics.exitCode) ? { exitCode: diagnostics.exitCode } : {}),
+    ...(diagnostics.exitSignal ? { exitSignal: safeDiagnosticText(diagnostics.exitSignal) } : {}),
+    ...(typeof diagnostics.guardReady === "boolean" ? { guardReady: diagnostics.guardReady } : {}),
     ...(diagnostics.stopReason ? { stopReason: safeDiagnosticText(diagnostics.stopReason) } : {}),
     ...(Number.isFinite(diagnostics.durationMs) ? { durationMs: Math.max(0, Math.round(diagnostics.durationMs!)) } : {}),
     ...(Number.isInteger(diagnostics.assistantMessages) ? { assistantMessages: diagnostics.assistantMessages } : {}),
