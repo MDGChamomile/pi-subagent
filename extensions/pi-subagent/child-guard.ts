@@ -364,8 +364,12 @@ export default function childGuard(
     finalAnswerSeen = false;
   });
 
-  pi.on("agent_end", () => {
+  pi.on("agent_end", (event) => {
     if (!policy || finalAnswerSeen || finalizationRequested) return;
+    // Pi decides whether to retry after dispatching agent_end. Do not queue a
+    // finalization or disable investigation tools for a terminal model error.
+    const lastAssistant = [...event.messages].reverse().find((message) => message.role === "assistant");
+    if (lastAssistant?.stopReason === "error" || lastAssistant?.stopReason === "aborted") return;
     if (timeLimitReached()) {
       requestPartialAnswer();
       return;
