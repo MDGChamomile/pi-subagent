@@ -314,6 +314,43 @@ describe("pi-subagent child guard", () => {
     }
   });
 
+  for (const stopReason of ["error", "aborted"]) {
+    test(`does not finalize ${stopReason} endings or disable tools on the next run`, async () => {
+      const harness = await createHarness(["allowed"]);
+      const message = { role: "assistant", stopReason, content: [{ type: "text", text: "Incomplete" }] };
+      try {
+        await harness.emit("session_start");
+        await harness.emit("agent_start");
+        await harness.emit("turn_end", { message });
+        await harness.emit("agent_end", { messages: [message, { role: "toolResult" }] });
+        await harness.emit("agent_start");
+        assert.equal(harness.getSentUserMessages().length, 0);
+        assert.deepEqual(harness.getActiveTools(), [...ALLOWED_FILE_TOOLS]);
+        assert.equal(await harness.callTool({
+          toolName: "read", toolCallId: "retry-read", input: { path: "allowed/inside.txt" },
+        }), undefined);
+      } finally {
+        await harness.cleanup();
+      }
+    });
+  }
+
+  test("does not restore tools after a deadline finalization followed by an error", async () => {
+    const harness = await createHarness(["allowed"], "local", Date.now() - 1);
+    try {
+      await harness.emit("session_start");
+      await harness.callTool({ toolName: "read", toolCallId: "expired", input: { path: "allowed/inside.txt" } });
+      const message = { role: "assistant", stopReason: "error", content: [] };
+      await harness.emit("turn_end", { message });
+      await harness.emit("agent_end", { messages: [message] });
+      await harness.emit("agent_start");
+      assert.deepEqual(harness.getActiveTools(), []);
+      assert.equal(harness.getSentUserMessages().length, 1);
+    } finally {
+      await harness.cleanup();
+    }
+  });
+
   test("accepts an ordinary final answer without requesting another turn", async () => {
     const harness = await createHarness(["allowed"], "local");
     try {
