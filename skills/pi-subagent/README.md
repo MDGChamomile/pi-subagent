@@ -33,12 +33,12 @@ The three presets are:
 | Preset | Child profile | Use for |
 | --- | --- | --- |
 | `lookup-standard` | Luna / medium | Bounded fact-finding |
-| `analysis-standard` | Terra / medium | Synthesis and causal comparison |
-| `review-standard` | Sol / medium | Adversarial review |
+| `analysis-standard` | Sol 6 / medium | Synthesis and causal comparison |
+| `review-standard` | Sol 6 / medium | Adversarial review |
 
 ## Requirements and installation
 
-This skill requires the companion global extension, Pi 0.84.2 or later, and authentication for Pi's `openai-codex` provider with access to the selected child model. The extension's [preset table](../../extensions/pi-subagent/README.md#presets) lists the exact, fixed provider/model IDs behind Luna, Terra, and Sol; they do not inherit the parent model. Web investigations also require `pi-web-access` v0.27.0 or later (stable releases) with its default tool names. Newer versions are allowed without an upper bound, not guaranteed compatible; upstream behavior changes may require extension maintenance.
+This skill requires the companion global extension, Pi 0.84.2 or later, and authentication for Pi's `openai-codex` provider with access to the selected child model. The extension's [preset table](../../extensions/pi-subagent/README.md#presets) lists the exact, fixed provider/model IDs behind Luna and Sol; they do not inherit the parent model. Web investigations also require `pi-web-access` v0.27.0 or later (stable releases) with its default tool names. Newer versions are allowed without an upper bound, not guaranteed compatible; upstream behavior changes may require extension maintenance.
 
 Follow the extension's [requirements and installation guide](../../extensions/pi-subagent/README.md#requirements-and-installation) to install both components together.
 

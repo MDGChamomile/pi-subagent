@@ -94,8 +94,8 @@ Mixed local-and-web work uses separate child calls, with synthesis performed by 
 | Preset | Provider/model ID | Thinking | Best for |
 | --- | --- | --- | --- |
 | `lookup-standard` | `openai-codex/gpt-5.6-luna` | `medium` | Bounded fact-finding |
-| `analysis-standard` | `openai-codex/gpt-5.6-terra` | `medium` | Synthesis and causal comparison |
-| `review-standard` | `openai-codex/gpt-5.6-sol` | `medium` | Adversarial review |
+| `analysis-standard` | `openai-codex/gpt-6-sol` | `medium` | Synthesis and causal comparison |
+| `review-standard` | `openai-codex/gpt-6-sol` | `medium` | Adversarial review |
 
 These mappings are fixed in the extension; they do not inherit the parent model or fall back to another provider. The preset does not alter the main model's thinking level. Installing this package does not grant model access: the selected model must be present in Pi's model registry and accessible to your authenticated account. If it is absent from the registry, the call fails during preflight with `Configured subagent model is unavailable`.
 

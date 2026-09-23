@@ -53,8 +53,8 @@ export type Thinking = "low" | "medium";
 
 export const SUBAGENT_PRESETS = {
   "lookup-standard": { model: "openai-codex/gpt-5.6-luna", thinking: "medium" },
-  "analysis-standard": { model: "openai-codex/gpt-5.6-terra", thinking: "medium" },
-  "review-standard": { model: "openai-codex/gpt-5.6-sol", thinking: "medium" },
+  "analysis-standard": { model: "openai-codex/gpt-6-sol", thinking: "medium" },
+  "review-standard": { model: "openai-codex/gpt-6-sol", thinking: "medium" },
 } as const satisfies Record<string, { model: string; thinking: Thinking }>;
 export type Preset = keyof typeof SUBAGENT_PRESETS;
 export const PRESET_NAMES = Object.keys(SUBAGENT_PRESETS) as Preset[];
