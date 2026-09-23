@@ -247,6 +247,28 @@ function meetsWebMinimumVersion(version: unknown): boolean {
   return true;
 }
 
+// Resolve only Pi's supported directory entry points, never an arbitrary sibling file.
+async function webEntryFile(path: string): Promise<string | undefined> {
+  try {
+    const info = await stat(path);
+    if (info.isFile()) return realpath(path);
+    if (!info.isDirectory()) return undefined;
+    for (const name of ["index.ts", "index.js"]) {
+      const candidate = join(path, name);
+      try {
+        // Pi prefers index.ts when both exist. Do not fall through if it exists but is invalid.
+        await lstat(candidate);
+        return (await stat(candidate)).isFile() ? realpath(candidate) : undefined;
+      } catch (error) {
+        if ((error as NodeJS.ErrnoException).code !== "ENOENT") return undefined;
+      }
+    }
+  } catch {
+    // Missing or unusable entry point.
+  }
+  return undefined;
+}
+
 async function verifyWebPackageEntrypoint(canonical: string): Promise<boolean> {
   for (let directory = dirname(canonical);;) {
     try {
@@ -260,13 +282,13 @@ async function verifyWebPackageEntrypoint(canonical: string): Promise<boolean> {
         || !meetsWebMinimumVersion(manifest.version)
         || !Array.isArray(manifest.pi?.extensions)
       ) return false;
+      const packageRoot = await realpath(directory);
       for (const entry of manifest.pi.extensions) {
         if (typeof entry !== "string") continue;
-        try {
-          if (await realpath(resolve(directory, entry)) === canonical) return true;
-        } catch {
-          // Ignore malformed or missing manifest entries.
-        }
+        const declared = await webEntryFile(resolve(directory, entry));
+        if (!declared) continue;
+        const rel = relative(packageRoot, declared);
+        if (rel !== ".." && !rel.startsWith(`..${sep}`) && !isAbsolute(rel) && declared === canonical) return true;
       }
       return false;
     } catch (error) {
@@ -287,17 +309,11 @@ export async function resolveWebExtensionPath(tools: readonly ToolSourceDescript
   if (sourceKeys.size !== 1) throw new Error("Web subagent tools must come from one trusted extension source");
 
   const source = selected[0]!.sourceInfo;
-  const candidates = [source?.path, source?.baseDir ? join(source.baseDir, "index.ts") : undefined].filter(
-    (value): value is string => Boolean(value),
-  );
-  for (const candidate of candidates) {
-    try {
-      const canonical = await realpath(candidate);
-      const info = await lstat(canonical);
-      if (info.isFile() && await verifyWebPackageEntrypoint(canonical)) return canonical;
-    } catch {
-      // Try the source base directory fallback.
-    }
+  // Pi supplies the loaded extension path (which may be a directory) and its
+  // baseDir. A baseDir alone cannot establish which file owns the tools.
+  if (source?.path) {
+    const canonical = await webEntryFile(source.path);
+    if (canonical && await verifyWebPackageEntrypoint(canonical)) return canonical;
   }
   throw new Error(`Web tools must come from the installed pi-web-access >=${MIN_WEB_EXTENSION_VERSION} (stable releases only) package entry point`);
 }

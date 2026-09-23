@@ -331,6 +331,67 @@ describe("pi-subagent model invocation contract", () => {
       await rm(root, { recursive: true, force: true });
     }
   });
+
+  test("resolves packaged directory entries without trusting sibling files or source fallbacks", async () => {
+    const root = await mkdtemp(join(tmpdir(), "pi-subagent-web-entry-"));
+    try {
+      const pkg = join(root, "package");
+      const dist = join(pkg, "dist");
+      await mkdir(dist, { recursive: true });
+      const js = join(dist, "index.js");
+      const ts = join(dist, "index.ts");
+      const helper = join(dist, "helper.js");
+      await writeFile(js, "export default () => {};\n");
+      await writeFile(helper, "export default () => {};\n");
+      const manifest = async (extensions: string[], name = "pi-web-access") => writeFile(
+        join(pkg, "package.json"), JSON.stringify({ name, version: "0.31.0", pi: { extensions } }),
+      );
+      const tools = (path: string, baseDir = dist) => ALLOWED_WEB_TOOLS.map((name) => ({
+        name, sourceInfo: { path, baseDir },
+      }));
+      await manifest(["./dist"]);
+      for (const version of ["0.30.0", "0.31.0"]) {
+        await writeFile(join(pkg, "package.json"), JSON.stringify({
+          name: "pi-web-access", version, pi: { extensions: ["./dist"] },
+        }));
+        assert.equal(await resolveWebExtensionPath(tools(dist, pkg)), js, version);
+      }
+      assert.equal(await resolveWebExtensionPath(tools(js)), js);
+      await assert.rejects(() => resolveWebExtensionPath(tools(helper)), /package entry point/);
+      await assert.rejects(() => resolveWebExtensionPath(tools(join(pkg, "missing.js"))), /package entry point/);
+      await assert.rejects(() => resolveWebExtensionPath(ALLOWED_WEB_TOOLS.map((name) => ({
+        name, sourceInfo: { baseDir: dist },
+      }))), /package entry point/);
+      await assert.rejects(() => resolveWebExtensionPath([
+        ...tools(js).slice(0, -1), tools(helper).at(-1)!,
+      ]), /one trusted extension source/);
+
+      await writeFile(ts, "export default () => {};\n");
+      assert.equal(await resolveWebExtensionPath(tools(dist, pkg)), ts);
+      await assert.rejects(() => resolveWebExtensionPath(tools(js)), /package entry point/);
+      await manifest(["./dist/index.js"]);
+      assert.equal(await resolveWebExtensionPath(tools(js)), js);
+      await assert.rejects(() => resolveWebExtensionPath(tools(dist, pkg)), /package entry point/);
+      await manifest(["./dist"]);
+      await symlink(dist, join(pkg, "dist-link"));
+      assert.equal(await resolveWebExtensionPath(tools(join(pkg, "dist-link"), pkg)), ts);
+      await symlink(helper, join(dist, "other-link.js"));
+      await manifest(["./dist/other-link.js"]);
+      assert.equal(await resolveWebExtensionPath(tools(helper)), helper);
+
+      const outside = join(root, "outside.js");
+      await writeFile(outside, "export default () => {};\n");
+      await symlink(outside, join(dist, "escape.js"));
+      await manifest(["./dist/escape.js"]);
+      await assert.rejects(() => resolveWebExtensionPath(tools(outside)), /package entry point/);
+      await manifest(["../outside.js"]);
+      await assert.rejects(() => resolveWebExtensionPath(tools(outside)), /package entry point/);
+      await manifest(["./dist"], "not-pi-web-access");
+      await assert.rejects(() => resolveWebExtensionPath(tools(ts)), /package entry point/);
+    } finally {
+      await rm(root, { recursive: true, force: true });
+    }
+  });
 });
 
 describe("pi-subagent public contract", () => {
