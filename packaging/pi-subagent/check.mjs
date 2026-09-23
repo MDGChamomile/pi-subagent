@@ -35,8 +35,8 @@ const presetRows = (markdown) => [...markdown.matchAll(
 )].map(([, preset, model, thinking]) => ({ preset, model, thinking }));
 const expectedPresets = [
   { preset: "lookup-standard", model: "openai-codex/gpt-5.6-luna", thinking: "medium" },
-  { preset: "analysis-standard", model: "openai-codex/gpt-5.6-terra", thinking: "medium" },
-  { preset: "review-standard", model: "openai-codex/gpt-5.6-sol", thinking: "medium" },
+  { preset: "analysis-standard", model: "openai-codex/gpt-6-sol", thinking: "medium" },
+  { preset: "review-standard", model: "openai-codex/gpt-6-sol", thinking: "medium" },
 ];
 assert.deepEqual(presetRows(sourceReadme), expectedPresets, "source README preset contract is inaccurate");
 assert.deepEqual(presetRows(topLevelReadme), expectedPresets, "package README preset contract is inaccurate");
