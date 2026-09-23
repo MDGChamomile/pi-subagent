@@ -271,11 +271,38 @@ describe("pi-subagent spawned-child integration", () => {
         const message = error instanceof Error ? error.message : String(error);
         assert.match(message, /Subagent exited with code 7/);
         assert.match(message, /"phase":"process"/);
+        assert.match(message, /"guardReady":true/);
+        assert.doesNotMatch(message, /exitSignal/);
         assert.doesNotMatch(message, /private child stderr/);
         return true;
       },
     );
   });
+
+  for (const scenario of ["startup-error", "invalid-ready-error", "startup-signal", "ready-signal"]) {
+    test(`reports content-free process diagnostics for ${scenario}`, async () => {
+      await assert.rejects(
+        () => withFixture(scenario, (options) => runChild(options)),
+        (error: unknown) => {
+          assert.ok(error instanceof ChildRunError);
+          const message = error.message;
+          assert.match(message, /"phase":"process"/);
+          assert.match(message, new RegExp(`"guardReady":${scenario === "ready-signal"}`));
+          if (scenario.endsWith("signal")) {
+            assert.match(message, /Subagent exited with signal SIGKILL/);
+            assert.match(message, /"exitSignal":"SIGKILL"/);
+            assert.doesNotMatch(message, /exitCode/);
+          } else {
+            assert.match(message, new RegExp(`"exitCode":${scenario === "startup-error" ? 1 : 7}`));
+            assert.doesNotMatch(message, /exitSignal/);
+          }
+          assert.doesNotMatch(message, /private|stderr|guard\.ready|policy\.json/);
+          assert.ok(Buffer.byteLength(message, "utf8") <= MAX_PARENT_ERROR_BYTES);
+          return true;
+        },
+      );
+    });
+  }
 
   test("terminates a child process that ignores the timeout SIGTERM", async () => {
     const startedAt = Date.now();

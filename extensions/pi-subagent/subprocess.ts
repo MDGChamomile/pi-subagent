@@ -359,10 +359,12 @@ function childFailure(
   snapshot: ChildJsonSnapshot,
   startedAt: number,
   exitCode?: number,
+  processDiagnostics: Pick<SubagentFailureDiagnostics, "guardReady" | "exitSignal"> = {},
 ): ChildRunError {
   const diagnostics: SubagentFailureDiagnostics = {
     phase,
     exitCode,
+    ...processDiagnostics,
     stopReason: snapshot.stopReason,
     durationMs: Date.now() - startedAt,
     assistantMessages: snapshot.assistantMessageCount,
@@ -572,11 +574,15 @@ export async function runChild(options: {
   child.stdin.end(buildChildPrompt(options.task, options.policy));
 
   let exitCode = 1;
+  let exitSignal: NodeJS.Signals | undefined;
   let waitError: unknown;
   try {
     exitCode = await new Promise<number>((resolveExit, reject) => {
       child.once("error", reject);
-      child.once("close", (code) => resolveExit(code ?? 1));
+      child.once("close", (code, signal) => {
+        exitSignal = signal ?? undefined;
+        resolveExit(code ?? 1);
+      });
     });
   } catch (error) {
     waitError = error;
@@ -604,7 +610,16 @@ export async function runChild(options: {
   if (waitError) throw childFailure(waitError, "spawn", snapshot, startedAt);
   if (snapshot.protocolError) throw childFailure(snapshot.protocolError, "protocol", snapshot, startedAt, exitCode);
   if (exitCode !== 0) {
-    throw childFailure(`Subagent exited with code ${exitCode}`, "process", snapshot, startedAt, exitCode);
+    // Readiness is an observation, not a diagnosis of why startup failed.
+    const guardReady = await assertChildReady(options.readyFile).then(() => true, () => false);
+    throw childFailure(
+      exitSignal ? `Subagent exited with signal ${exitSignal}` : `Subagent exited with code ${exitCode}`,
+      "process",
+      snapshot,
+      startedAt,
+      exitSignal ? undefined : exitCode,
+      { guardReady, exitSignal },
+    );
   }
   let budget: BudgetTelemetry;
   try {
