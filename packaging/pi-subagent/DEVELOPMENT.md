@@ -48,7 +48,7 @@ The workflow must exist on the default branch before this relationship is config
 1. Set the new immutable version in `manifest.json`; its pinned gallery image URL must use the same version tag.
 2. Run all verification commands above.
 3. Merge the release commit into `main` and wait for `validation` to pass.
-4. Push the matching `v<version>` tag. The tag triggers `npm-publish.yml`.
+4. Push the matching `v<version>` tag. The tag triggers `npm-publish.yml`. All `v*` tags are reserved for package releases; a tag that does not exactly match the stable manifest version fails before installation or publishing. Use a non-`v*` tag name for non-package milestones; those tags do not trigger npm publishing.
 5. Wait for the publish workflow to pass, then confirm the registry metadata and Pi package manifest:
 
    ```bash
