@@ -2,6 +2,18 @@
 
 Keep changes focused and consistent with [PRINCIPLE.md](PRINCIPLE.md). Explain the problem, observable benefit, and affected runtime or packaging contract. Preserve scope, privacy, authorization, and lifecycle boundaries.
 
+## Pull requests
+
+Create your contribution branch from the latest `updates` branch, and select
+`updates` as the base branch when opening a pull request. GitHub may suggest
+`main` because it is the repository's default branch; please change the base
+to `updates` before submitting.
+
+Contributions are reviewed and merged into `updates`. Maintainers open pull
+requests from `updates` to `main` only when preparing a release. If you
+accidentally target `main`, the base can be changed to `updates`; the resulting
+diff and checks should then be reviewed again.
+
 ## Source and checks
 
 Edit `extensions/pi-subagent/`, `skills/pi-subagent/`, or the maintained files in `packaging/pi-subagent/`, not generated `packaging/pi-subagent/dist/`.
