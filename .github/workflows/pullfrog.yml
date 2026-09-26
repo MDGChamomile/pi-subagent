@@ -1,0 +1,43 @@
+name: Pullfrog
+run-name: ${{ inputs.name || github.workflow }}
+
+# No push/PR/schedule triggers. Pullfrog console automations must also stay OFF.
+on:
+  workflow_dispatch:
+    inputs:
+      prompt:
+        type: string
+        description: Explicitly authorized review request or Pullfrog event payload
+        required: true
+      name:
+        type: string
+        description: Run name
+
+permissions:
+  contents: read
+
+jobs:
+  pullfrog:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 20
+    permissions:
+      contents: read
+      # Pullfrog obtains its separate GitHub App installation token via OIDC.
+      id-token: write
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v6
+        with:
+          fetch-depth: 1
+          persist-credentials: false
+      - name: Run reviewer
+        # v0 resolved on 2026-09-27; this pins the entrypoint, not all runtime code.
+        uses: pullfrog/pullfrog@99c5e781dd54463197d1109998386d37c84f6853
+        with:
+          prompt: ${{ inputs.prompt }}
+          # Explicit workflow permissions override the console settings.
+          push: disabled
+          shell: restricted
+          timeout: 15m
+        # Model/authentication and Review instructions are configured in console.
+        # Do not forward deployment keys, local sessions, or unrelated secrets.
