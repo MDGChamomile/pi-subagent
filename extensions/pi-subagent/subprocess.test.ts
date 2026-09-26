@@ -86,6 +86,43 @@ describe("child JSON stream collector", () => {
     assert.equal(updates, 2);
   });
 
+  test("timestamps the latest eligible answer with the parent clock, not child metadata", (t) => {
+    let now = 100;
+    t.mock.method(Date, "now", () => now);
+    const collector = new ChildJsonCollector();
+    assert.equal(collector.snapshot().finalOutputReceivedAt, undefined);
+    collector.push(`${assistantEvent("early answer", { timestamp: 99_999 })}\n`);
+    assert.equal(collector.snapshot().finalOutputReceivedAt, 100);
+
+    now = 200;
+    collector.push(`${toolResultEvent("read", "discarded contents")}\n`);
+    collector.finish();
+    assert.equal(collector.snapshot().finalOutputReceivedAt, 100);
+
+    collector.push(`${assistantEvent("later answer", { timestamp: 0 })}\n`);
+    assert.equal(collector.snapshot().finalOutputReceivedAt, 200);
+    assert.equal(collector.snapshot().finalOutput, "later answer");
+
+    for (const ending of [
+      { stopReason: "toolUse", content: [{ type: "toolCall", id: "next", name: "read", arguments: {} }] },
+      { stopReason: "error" },
+      { stopReason: "aborted" },
+      { content: [] },
+    ]) {
+      collector.push(`${assistantEvent("eligible answer")}\n`);
+      collector.push(`${assistantEvent("not an answer", ending)}\n`);
+      assert.equal(collector.snapshot().finalOutput, "");
+      assert.equal(collector.snapshot().finalOutputReceivedAt, undefined);
+    }
+
+    now = 300;
+    collector.push(`${assistantEvent("truncated answer", { stopReason: "length" })}\n`);
+    assert.equal(collector.snapshot().finalOutputReceivedAt, 300);
+    now = 400;
+    collector.push(`${assistantEvent("recovered answer")}\n`);
+    assert.equal(collector.snapshot().finalOutputReceivedAt, 400);
+  });
+
   test("preserves optional reasoning and long-cache usage only when providers report them", () => {
     const withoutBreakdown = new ChildJsonCollector();
     withoutBreakdown.push(`${assistantEvent("ordinary usage")}\n`);

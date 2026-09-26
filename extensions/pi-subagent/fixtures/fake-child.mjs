@@ -147,6 +147,20 @@ if (scenario === "success") {
     stopReason: "error",
     errorMessage: `provider\u001b[31m\u202efailed ${"x".repeat(64 * 1024)}`,
   });
+} else if (scenario === "early-answer-delayed-exit" || scenario === "early-answer-timeout") {
+  emit({
+    role: "assistant",
+    content: [{ type: "text", text: "Answer delivered before shutdown cleanup." }],
+    usage,
+    stopReason: "stop",
+  });
+  if (scenario === "early-answer-timeout") {
+    process.on("SIGTERM", () => {});
+    setInterval(() => {}, 1_000);
+  } else {
+    const softDeadline = Number(process.env.PI_SUBAGENT_SOFT_DEADLINE_EPOCH_MS);
+    await new Promise((resolve) => setTimeout(resolve, Math.max(0, softDeadline - Date.now()) + 50));
+  }
 } else if (scenario === "partial-success") {
   await new Promise((resolve) => setTimeout(resolve, 300));
   emit({

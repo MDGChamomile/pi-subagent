@@ -153,6 +153,24 @@ describe("pi-subagent spawned-child integration", () => {
     }
   });
 
+  test("keeps an early answer complete when child shutdown crosses the soft deadline", async () => {
+    const result = await withFixture("early-answer-delayed-exit", (options) => runChild(options));
+    assert.ok(result.durationMs >= 1_000, "child must exit after the soft deadline");
+    assert.equal(result.status, "complete");
+    assert.equal(result.partialReason, undefined);
+    assert.deepEqual(JSON.parse(modelVisibleOutput(result)), {
+      status: "complete", partialReason: null, outputTruncated: false,
+      answer: "Answer delivered before shutdown cleanup.",
+    });
+  });
+
+  test("still enforces the hard deadline after receiving an early final answer", async () => {
+    await assert.rejects(
+      () => withFixture("early-answer-timeout", (options) => runChild({ ...options, timeoutMs: 500 })),
+      /"phase":"timeout"/,
+    );
+  });
+
   test("runtime-labels an answer completed after the soft deadline as partial", async () => {
     const result = await withFixture("partial-success", (options) => runChild({
       ...options,

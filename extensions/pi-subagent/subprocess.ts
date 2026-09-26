@@ -171,6 +171,7 @@ function assistantMode(message: { content?: unknown }): AssistantMode {
 
 export type ChildJsonSnapshot = {
   finalOutput: string;
+  finalOutputReceivedAt?: number;
   toolErrorCount: number;
   lastToolError?: string;
   assistantMessageCount: number;
@@ -192,6 +193,7 @@ export class ChildJsonCollector {
   private lineBytes = 0;
   private disposition: "unknown" | "capture" | "discard" = "unknown";
   private finalOutput = "";
+  private finalOutputReceivedAt: number | undefined;
   private toolErrorCount = 0;
   private lastToolError: string | undefined;
   private assistantMessageCount = 0;
@@ -231,6 +233,7 @@ export class ChildJsonCollector {
   snapshot(): ChildJsonSnapshot {
     return {
       finalOutput: this.finalOutput,
+      finalOutputReceivedAt: this.finalOutputReceivedAt,
       toolErrorCount: this.toolErrorCount,
       lastToolError: this.lastToolError,
       assistantMessageCount: this.assistantMessageCount,
@@ -337,6 +340,8 @@ export class ChildJsonCollector {
       && message.stopReason !== "error"
       && message.stopReason !== "aborted";
     this.finalOutput = eligible ? assistantText(message) : "";
+    // Use the parent's receipt clock, never an untrusted child timestamp or exit time.
+    this.finalOutputReceivedAt = eligible ? Date.now() : undefined;
     this.onAssistantMessage?.(this.usage);
   }
 
@@ -644,7 +649,7 @@ export async function runChild(options: {
     ? "model_length"
     : budget.hardLimitReached
       ? "tool_budget"
-      : completedAt >= softDeadline ? "time_limit" : undefined;
+      : (snapshot.finalOutputReceivedAt ?? completedAt) >= softDeadline ? "time_limit" : undefined;
   // Pi sends content, not details, to the parent model. Bound the entire envelope.
   const capped = formatChildOutput(snapshot.finalOutput, partialReason);
   return {
