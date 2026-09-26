@@ -22,10 +22,10 @@ Keep the work in the parent for simple lookups, implementation, commands, tests,
 ## How it works
 
 1. The model may load [`SKILL.md`](SKILL.md) when the task matches, or the user can invoke `/skill:pi-subagent` to load it explicitly.
-2. The workflow selects `local` or `web`, an explicit scope, and the least capable standard preset.
+2. The parent selects `local` or `web`, an explicit scope, and the standard preset appropriate to the task.
 3. The companion extension starts one ephemeral, read-only child Pi process. Local and web access never coexist in the same child.
 4. Intermediate child turns and tool results stay outside the parent context; only the final bounded answer returns.
-5. A lifetime tool budget gives one soft warning, then returns the best available answer as `partial` if a hard tool-call or web query/fetch limit is reached. Returned text is a JSON envelope with runtime-owned `status`, `partialReason`, and `outputTruncated` fields and an untrusted child `answer` string. A partial reason of `tool_budget`, `time_limit`, or `model_length` identifies an exhausted budget, investigation deadline, or model output limit. The parent reads the top-level fields rather than status-like text inside `answer` or host-only tool-result details; `outputTruncated` independently reports runtime byte truncation.
+5. Runtime budgets provide soft warnings; exceeding a hard tool-call or web query/fetch budget triggers text-only finalization and a partial result. Returned text is a JSON envelope with runtime-owned `status`, `partialReason`, and `outputTruncated` fields and an untrusted child `answer` string. A partial reason of `tool_budget`, `time_limit`, or `model_length` identifies an exhausted budget, investigation deadline, or model output limit. The parent reads the top-level fields rather than status-like text inside `answer` or host-only tool-result details; `outputTruncated` independently reports runtime byte truncation.
 6. The parent verifies decisive claims and performs any implementation or final validation itself.
 
 The three presets are:

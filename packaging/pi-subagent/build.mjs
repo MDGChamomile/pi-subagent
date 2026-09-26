@@ -1,4 +1,4 @@
-import { copyFile, mkdir, rm } from "node:fs/promises";
+import { copyFile, mkdir, readFile, rm, writeFile } from "node:fs/promises";
 import { dirname, join, resolve } from "node:path";
 import { fileURLToPath, pathToFileURL } from "node:url";
 
@@ -34,13 +34,32 @@ export const packageFiles = [
   ["skills/pi-subagent/README.md", "skills/pi-subagent/README.md"],
 ];
 
+// Rebase only this repository's version-pinned presentation/documentation URLs.
+// Maintained files stay readable; manifest.version is authoritative for the artifact.
+export function releaseUrls(text, version) {
+  if (!/^\d+\.\d+\.\d+$/.test(version)) {
+    throw new Error("Package URL generation requires a stable release version");
+  }
+  return text.replace(
+    /(https:\/\/(?:raw\.githubusercontent\.com\/MDGChamomile\/pi-subagent|github\.com\/MDGChamomile\/pi-subagent\/(?:blob|tree))\/)v\d+\.\d+\.\d+(?=\/)/g,
+    `$1v${version}`,
+  );
+}
+
 export async function buildPackage() {
+  const manifest = JSON.parse(await readFile(join(packageRoot, "manifest.json"), "utf8"));
+  const image = releaseUrls(manifest.pi.image, manifest.version);
+  const readme = releaseUrls(await readFile(join(packageRoot, "README.md"), "utf8"), manifest.version);
   await rm(stagingDirectory, { recursive: true, force: true });
   for (const [source, target] of packageFiles) {
     const output = join(stagingDirectory, target);
     await mkdir(dirname(output), { recursive: true });
     await copyFile(join(repositoryRoot, source), output);
   }
+  await writeFile(join(stagingDirectory, "package.json"), `${JSON.stringify({
+    ...manifest, pi: { ...manifest.pi, image },
+  }, null, 2)}\n`);
+  await writeFile(join(stagingDirectory, "README.md"), readme);
   return stagingDirectory;
 }
 

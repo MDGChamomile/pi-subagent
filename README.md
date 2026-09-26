@@ -9,19 +9,21 @@ Run focused, bounded investigations in an ephemeral child Pi process while keepi
 `@mdgchamomile/pi-subagent` bundles two parts that work together:
 
 - **`pi_subagent` extension** — enforces scope, tool ownership, resource budgets, lifecycle, telemetry, and output boundaries.
-- **Companion skill** — helps the parent decide when to delegate and selects the appropriate capability and model preset.
+- **Companion skill** — guides the parent in deciding when to delegate and selecting the appropriate capability and model preset.
 
 ### See it in action
 
-Trimmed excerpts from real English-language Pi sessions investigating a retry bug in a synthetic shipping SDK. Typing and waiting are accelerated; model responses and tool execution are not scripted.
+Illustrated CLI walkthroughs of Pi Subagent's delegation workflow. The examples use a synthetic retry bug; dialogue, timing, and usage figures are illustrative rather than recordings of live model sessions.
 
-**Automatic delegation** — an onboarding conversation turns into a focused investigation; the model chooses to call `pi_subagent`.
+**Model invoked** — ask a normal question. When a focused investigation is appropriate, Pi can select the skill and delegate the investigation to a scoped, read-only child.
 
-![A natural conversation leading to automatic delegation, live progress, and a retry diagnosis](extensions/pi-subagent/assets/pi-subagent-automatic.gif)
+![Model-invoked investigation: a normal question leads Pi to delegate a scoped investigation, receive a bounded result, verify the decisive source lines, and answer](extensions/pi-subagent/assets/pi-subagent-automatic.gif)
 
-**Explicit invocation** — the user requests a scoped investigation with `/skill:pi-subagent`; the parent calls the extension and checks the result.
+**User invoked** — invoke `/skill:pi-subagent` explicitly with a focused task and scope. The parent follows the skill guidance and calls the same `pi_subagent` tool.
 
-![An explicit /skill:pi-subagent request followed by investigation progress and a cited diagnosis](extensions/pi-subagent/assets/pi-subagent-manual.gif)
+![User-invoked investigation: an explicit skill invocation leads to a scoped read-only investigation, bounded result, targeted verification, and final answer](extensions/pi-subagent/assets/pi-subagent-manual.gif)
+
+In both flows, intermediate child reads stay out of the parent context. The child investigates only; implementation, tests, and final verification remain with the parent.
 
 ## Why use it?
 
