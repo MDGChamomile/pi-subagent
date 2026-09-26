@@ -134,8 +134,8 @@ The runtime applies these per-child limits:
 | --- | --- | --- |
 | Investigation deadline | 18 minutes, then a 2-minute text-finalization window within the 20-minute hard limit | Same |
 | Tool-call budget | Warn at 36 attempts; stop before attempt 49 | Warn at 30 attempts; stop before attempt 41 |
-| Executed web queries | — | 32 |
-| Executed fetch/content targets | — | 50 |
+| Executed web queries | — | Warn at 24 reserved queries; limit 32 |
+| Executed fetch/content targets | — | Warn at 38 reserved targets; limit 50 |
 | Final answer | 12 KiB | 12 KiB |
 | Captured JSON record | 6 MiB | 6 MiB |
 
@@ -148,7 +148,7 @@ The JSON record cap accommodates Pi's default 4.5 MiB base64 image payload plus 
 - Answers received by the parent during the text-finalization window are labelled `partial` with `partialReason: "time_limit"`. The receipt time of the last eligible answer determines this label, not the child's timestamp or subsequent shutdown duration; termination still starts at the hard deadline. Cancellation, timeout, or a child JSON protocol error sends SIGTERM to the process group, then SIGKILL after a 5-second grace period. The call waits for escalation even if the direct child exits first, so shutdown can extend beyond the investigation deadline. Normal completion does not add this wait.
 - If the last answer still has `stopReason: "length"`, its available text is returned as `partial` with `partialReason: "model_length"`, never as complete. This reason takes precedence over a simultaneous budget or time limit. `outputTruncated` continues to report only truncation by the runtime's byte cap.
 - Allowed and denied tool attempts both count. A soft warning leaves later calls available; a hard stop disables tools, reuses text finalization, and returns a `partial` result with `partialReason: "tool_budget"`.
-- Web calls reserve their full cost synchronously during sequential Pi tool preflight, before parallel execution: `web_search` charges its normalized `query`/`queries`; `source_check` charges its effective queries and, with `fetchContent: true`, conservatively up to five result pages (`min(5, queries × results per query)`); `fetch_content` charges its normalized unique `url`/`urls`; and each `get_search_content` retrieval charges one content target. A batch that would cross either limit does not execute or consume query/fetch counters.
+- Web calls reserve their full cost synchronously during sequential Pi tool preflight, before parallel execution: `web_search` charges its normalized `query`/`queries`; `source_check` charges its effective queries and, with `fetchContent: true`, conservatively up to five result pages (`min(5, queries × results per query)`); `fetch_content` charges its normalized unique `url`/`urls`; and each `get_search_content` retrieval charges one content target. A batch that would cross either limit does not execute or consume query/fetch counters. Each resource gets one soft warning after an admitted reservation first reaches or crosses its warning threshold, reporting reserved and remaining counts without queries or URLs. These notices do not disable tools or mark the result partial; the existing tool-attempt warning and hard limits remain unchanged.
 Only the bounded result text (`content`) enters the parent model context. Every successful call returns this JSON envelope:
 
 | Field | Meaning |
