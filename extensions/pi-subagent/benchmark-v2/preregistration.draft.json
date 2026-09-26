@@ -29,8 +29,8 @@
       "parent_thinking": "xhigh",
       "child_presets": {
         "lookup": { "model": "openai-codex/gpt-5.6-luna", "thinking": "medium" },
-        "analysis": { "model": "openai-codex/gpt-5.6-terra", "thinking": "medium" },
-        "review": { "model": "openai-codex/gpt-5.6-sol", "thinking": "medium" }
+        "analysis": { "model": "openai-codex/gpt-6-sol", "thinking": "medium" },
+        "review": { "model": "openai-codex/gpt-6-sol", "thinking": "medium" }
       }
     }
   },

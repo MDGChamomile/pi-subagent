@@ -11,7 +11,9 @@ import {
   isWithin,
   LIFETIME_TOOL_CALL_LIMITS,
   LIFETIME_WEB_FETCH_TARGET_LIMIT,
+  LIFETIME_WEB_FETCH_TARGET_SOFT_LIMIT,
   LIFETIME_WEB_QUERY_LIMIT,
+  LIFETIME_WEB_QUERY_SOFT_LIMIT,
   MAX_FETCH_URLS_PER_CALL,
   MAX_SCOPE_ROOTS,
   MAX_SOURCE_CHECK_FETCH_TARGETS_PER_CALL,
@@ -276,6 +278,7 @@ export default function childGuard(
   const validatedToolCallIds = new Set<string>();
   const permittedToolCallIds = new Set<string>();
   const deniedToolCallIds = new Set<string>();
+  const warnedWebResources = new Set<"queries" | "content targets">();
   const budget: BudgetTelemetry = {
     version: 1,
     toolCallsAttempted: 0,
@@ -318,13 +321,10 @@ export default function childGuard(
       "steer",
     );
   };
-  const sendSoftBudgetNotice = () => {
+  const sendSoftBudgetNotice = (content = "The child lifetime tool-call soft limit has been reached. Use further calls only for essential missing evidence, then return the concise final answer.") => {
     if (finalizationRequested) return;
     try {
-      pi.sendUserMessage(
-        "The child lifetime tool-call soft limit has been reached. Use further calls only for essential missing evidence, then return the concise final answer.",
-        { deliverAs: "steer" },
-      );
+      pi.sendUserMessage(content, { deliverAs: "steer" });
     } catch (error) {
       policy = undefined;
       policyError = `could not send the tool budget warning: ${error instanceof Error ? error.message : String(error)}`;
@@ -364,8 +364,12 @@ export default function childGuard(
     finalAnswerSeen = false;
   });
 
-  pi.on("agent_end", () => {
+  pi.on("agent_end", (event) => {
     if (!policy || finalAnswerSeen || finalizationRequested) return;
+    // Pi decides whether to retry after dispatching agent_end. Do not queue a
+    // finalization or disable investigation tools for a terminal model error.
+    const lastAssistant = [...event.messages].reverse().find((message) => message.role === "assistant");
+    if (lastAssistant?.stopReason === "error" || lastAssistant?.stopReason === "aborted") return;
     if (timeLimitReached()) {
       requestPartialAnswer();
       return;
@@ -511,6 +515,18 @@ export default function childGuard(
       // Pi preflights sibling calls sequentially. Reserve synchronously before execution so a parallel batch cannot oversubscribe.
       budget.queryCount += cost.queries;
       budget.fetchTargetCount += cost.fetchTargets;
+      for (const [resource, reserved, soft, hard] of [
+        ["queries", budget.queryCount, LIFETIME_WEB_QUERY_SOFT_LIMIT, LIFETIME_WEB_QUERY_LIMIT],
+        ["content targets", budget.fetchTargetCount, LIFETIME_WEB_FETCH_TARGET_SOFT_LIMIT, LIFETIME_WEB_FETCH_TARGET_LIMIT],
+      ] as const) {
+        if (reserved >= soft && !warnedWebResources.has(resource)) {
+          warnedWebResources.add(resource);
+          sendSoftBudgetNotice(
+            `The child lifetime web ${resource} soft limit has been reached: ${reserved}/${hard} reserved, ${hard - reserved} remaining. Use further calls only for essential missing evidence, then return the concise final answer.`,
+          );
+          if (!policy) return block(`Subagent policy is unavailable: ${policyError ?? "unknown error"}`, true);
+        }
+      }
       permit();
       return;
     }

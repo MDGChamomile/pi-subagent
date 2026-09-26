@@ -20,7 +20,13 @@ if (process.env.PI_OFFLINE !== "1") process.exit(5);
 let input = "";
 for await (const chunk of process.stdin) input += chunk;
 if (!input.includes("Objective") || !input.includes("Authorized local scope")) process.exit(3);
-writeFileSync(readyPath, READY_MARKER, { encoding: "utf8", mode: 0o600, flag: "wx" });
+if (scenario === "startup-error") {
+  process.stderr.write("private startup stderr must not reach the parent\n");
+  process.exit(1);
+}
+if (scenario === "startup-signal") process.kill(process.pid, "SIGKILL");
+writeFileSync(readyPath, scenario === "invalid-ready-error" ? "invalid\n" : READY_MARKER, { encoding: "utf8", mode: 0o600, flag: "wx" });
+if (scenario === "ready-signal") process.kill(process.pid, "SIGKILL");
 const budget = {
   version: 1,
   toolCallsAttempted: 0,
@@ -141,6 +147,20 @@ if (scenario === "success") {
     stopReason: "error",
     errorMessage: `provider\u001b[31m\u202efailed ${"x".repeat(64 * 1024)}`,
   });
+} else if (scenario === "early-answer-delayed-exit" || scenario === "early-answer-timeout") {
+  emit({
+    role: "assistant",
+    content: [{ type: "text", text: "Answer delivered before shutdown cleanup." }],
+    usage,
+    stopReason: "stop",
+  });
+  if (scenario === "early-answer-timeout") {
+    process.on("SIGTERM", () => {});
+    setInterval(() => {}, 1_000);
+  } else {
+    const softDeadline = Number(process.env.PI_SUBAGENT_SOFT_DEADLINE_EPOCH_MS);
+    await new Promise((resolve) => setTimeout(resolve, Math.max(0, softDeadline - Date.now()) + 50));
+  }
 } else if (scenario === "partial-success") {
   await new Promise((resolve) => setTimeout(resolve, 300));
   emit({
@@ -156,7 +176,7 @@ if (scenario === "success") {
     usage,
     stopReason: "stop",
   });
-} else if (scenario === "process-error") {
+} else if (scenario === "process-error" || scenario === "invalid-ready-error") {
   process.stderr.write("private child stderr must not reach the parent\n");
   process.exitCode = 7;
 } else if (scenario === "timeout" || scenario === "timeout-after-usage") {

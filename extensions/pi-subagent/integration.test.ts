@@ -153,6 +153,24 @@ describe("pi-subagent spawned-child integration", () => {
     }
   });
 
+  test("keeps an early answer complete when child shutdown crosses the soft deadline", async () => {
+    const result = await withFixture("early-answer-delayed-exit", (options) => runChild(options));
+    assert.ok(result.durationMs >= 1_000, "child must exit after the soft deadline");
+    assert.equal(result.status, "complete");
+    assert.equal(result.partialReason, undefined);
+    assert.deepEqual(JSON.parse(modelVisibleOutput(result)), {
+      status: "complete", partialReason: null, outputTruncated: false,
+      answer: "Answer delivered before shutdown cleanup.",
+    });
+  });
+
+  test("still enforces the hard deadline after receiving an early final answer", async () => {
+    await assert.rejects(
+      () => withFixture("early-answer-timeout", (options) => runChild({ ...options, timeoutMs: 500 })),
+      /"phase":"timeout"/,
+    );
+  });
+
   test("runtime-labels an answer completed after the soft deadline as partial", async () => {
     const result = await withFixture("partial-success", (options) => runChild({
       ...options,
@@ -271,11 +289,38 @@ describe("pi-subagent spawned-child integration", () => {
         const message = error instanceof Error ? error.message : String(error);
         assert.match(message, /Subagent exited with code 7/);
         assert.match(message, /"phase":"process"/);
+        assert.match(message, /"guardReady":true/);
+        assert.doesNotMatch(message, /exitSignal/);
         assert.doesNotMatch(message, /private child stderr/);
         return true;
       },
     );
   });
+
+  for (const scenario of ["startup-error", "invalid-ready-error", "startup-signal", "ready-signal"]) {
+    test(`reports content-free process diagnostics for ${scenario}`, async () => {
+      await assert.rejects(
+        () => withFixture(scenario, (options) => runChild(options)),
+        (error: unknown) => {
+          assert.ok(error instanceof ChildRunError);
+          const message = error.message;
+          assert.match(message, /"phase":"process"/);
+          assert.match(message, new RegExp(`"guardReady":${scenario === "ready-signal"}`));
+          if (scenario.endsWith("signal")) {
+            assert.match(message, /Subagent exited with signal SIGKILL/);
+            assert.match(message, /"exitSignal":"SIGKILL"/);
+            assert.doesNotMatch(message, /exitCode/);
+          } else {
+            assert.match(message, new RegExp(`"exitCode":${scenario === "startup-error" ? 1 : 7}`));
+            assert.doesNotMatch(message, /exitSignal/);
+          }
+          assert.doesNotMatch(message, /private|stderr|guard\.ready|policy\.json/);
+          assert.ok(Buffer.byteLength(message, "utf8") <= MAX_PARENT_ERROR_BYTES);
+          return true;
+        },
+      );
+    });
+  }
 
   test("terminates a child process that ignores the timeout SIGTERM", async () => {
     const startedAt = Date.now();

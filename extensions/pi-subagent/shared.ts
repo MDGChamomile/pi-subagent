@@ -23,7 +23,9 @@ export const LIFETIME_TOOL_CALL_LIMITS = {
   local: { soft: 36, hard: 48 },
   web: { soft: 30, hard: 40 },
 } as const;
+export const LIFETIME_WEB_QUERY_SOFT_LIMIT = 24;
 export const LIFETIME_WEB_QUERY_LIMIT = 32;
+export const LIFETIME_WEB_FETCH_TARGET_SOFT_LIMIT = 38;
 export const LIFETIME_WEB_FETCH_TARGET_LIMIT = 50;
 export const MIN_WEB_EXTENSION_VERSION = "0.27.0";
 export const MAX_SCOPE_ROOTS = 8;
@@ -109,6 +111,8 @@ export type SubagentFailurePhase =
 export type SubagentFailureDiagnostics = {
   phase: SubagentFailurePhase;
   exitCode?: number;
+  exitSignal?: NodeJS.Signals;
+  guardReady?: boolean;
   stopReason?: string;
   durationMs?: number;
   assistantMessages?: number;
@@ -446,6 +450,8 @@ function failureDiagnosticSuffix(diagnostics: SubagentFailureDiagnostics): strin
   const safe = {
     phase: diagnostics.phase,
     ...(Number.isInteger(diagnostics.exitCode) ? { exitCode: diagnostics.exitCode } : {}),
+    ...(diagnostics.exitSignal ? { exitSignal: safeDiagnosticText(diagnostics.exitSignal) } : {}),
+    ...(typeof diagnostics.guardReady === "boolean" ? { guardReady: diagnostics.guardReady } : {}),
     ...(diagnostics.stopReason ? { stopReason: safeDiagnosticText(diagnostics.stopReason) } : {}),
     ...(Number.isFinite(diagnostics.durationMs) ? { durationMs: Math.max(0, Math.round(diagnostics.durationMs!)) } : {}),
     ...(Number.isInteger(diagnostics.assistantMessages) ? { assistantMessages: diagnostics.assistantMessages } : {}),
