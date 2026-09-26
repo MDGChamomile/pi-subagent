@@ -2,7 +2,7 @@
 
 A foreground, model-invocable Pi extension that runs focused local-file or web investigations outside the parent context.
 
-The companion [skill](../../skills/pi-subagent/README.md) decides when and how to delegate. This extension enforces the runtime boundary, launches the child, reports progress, and returns a bounded result envelope containing the final answer.
+The companion [skill](../../skills/pi-subagent/README.md) guides the parent in deciding when and how to delegate. This extension enforces the runtime boundary, launches the child, reports progress, and returns a bounded result envelope containing the final answer.
 
 [Install](#requirements-and-installation) · [Runtime contract](#runtime-contract) · [Security](#security-boundary) · [Evaluation](#evaluation) · [Verification](#verification)
 
@@ -16,17 +16,17 @@ The companion [skill](../../skills/pi-subagent/README.md) decides when and how t
 
 ## In action
 
-Trimmed excerpts from two real English-language Pi sessions investigating a retry bug in **Parcel Client**, a synthetic shipping SDK. Typing and waiting are accelerated; model responses and tool execution are not scripted.
+Two illustrated CLI walkthroughs show Pi Subagent investigating a retry bug in **Parcel Client**, a synthetic shipping client. Dialogue, timing, and usage figures are illustrative rather than recordings of live model sessions.
 
-**Automatic delegation** — after a short onboarding exchange, the user asks why increasing the retry limit did not help. The model chooses to delegate the investigation without being asked to use a subagent.
+**Model invoked** — the user asks a normal debugging question. Pi decides that a focused investigation is appropriate and delegates it to a scoped, read-only child.
 
-![An English onboarding conversation followed by automatic pi_subagent investigation, live progress, and a retry diagnosis](assets/pi-subagent-automatic.gif)
+![A normal retry question leading to model-selected delegation, a bounded investigation result, targeted parent verification, and the final explanation](assets/pi-subagent-automatic.gif)
 
-**Explicit skill invocation** — the user sets up a read-only incident review, then invokes `/skill:pi-subagent` with the investigation scope.
+**User invoked** — the user explicitly requests a scoped investigation with `/skill:pi-subagent`. The parent follows the skill guidance and calls the same `pi_subagent` tool.
 
-![A user invoking /skill:pi-subagent to investigate skipped retries, followed by live progress and a cited diagnosis](assets/pi-subagent-manual.gif)
+![An explicit skill invocation followed by a scoped read-only investigation, bounded result, targeted verification, and final explanation](assets/pi-subagent-manual.gif)
 
-Both runs show the bounded result returning to the parent for the final answer. The explicit-invocation session also shows a targeted parent check of the decisive source file. The skill command supplies guidance to the parent; the parent then calls the extension.
+Both flows use the same bounded `pi_subagent` runtime. Intermediate child tool output stays out of the parent context; the result returns to the parent for targeted verification and synthesis.
 
 ## Requirements and installation
 
