@@ -2,7 +2,9 @@
 
 This repository uses Pullfrog only as a GitHub reviewer, not as an implementer
 or release agent. The workflow is a dispatch entrypoint, not permission to run
-models. Do not dispatch a setup test or review without separate authorization.
+models. Owner-approved automatic reviews and re-reviews may dispatch it under
+the configured model and usage authorization. Manual reviews, setup tests, and
+additional paid runs require separate authorization.
 
 ## Apply before any run
 
@@ -11,12 +13,15 @@ file does not apply settings automatically:
 
 - Security: **No code pushes**; restricted shell; no additional environment
   allowlist. Keep non-collaborator triggers disabled.
-- Turn OFF automatic PR reviews (including re-reviews), addressing reviews,
-  CI fixes, merge-conflict fixes, approvals, auto-merge, and all issue automations.
-- Exclude draft, bot, and external-contributor PRs.
-- Set the future review base-branch filter to `updates` without enabling reviews.
+- Enable **Review PRs** and **Re-review when new commits are pushed** only
+  under the owner's explicit model and usage authorization.
+- Keep Mentions, addressing reviews, CI fixes, merge-conflict fixes, approvals,
+  auto-merge, and all issue automations OFF. Do not use Fix all or Fix thumbs-up.
+- Exclude draft, bot, external-contributor, and Pullfrog's own PRs.
+- Enable **Limit reviews to target branches** and set it to `updates` only.
   This filter is not a push restriction or an implementation branch setting.
-- Keep the approval-verdict check off and do not add Pullfrog as a required
+- Enable **Add Pullfrog's run status as a Check on pull requests**. Keep the
+  approval-verdict check off and do not add Pullfrog as a required
   branch-protection check. The run-status check means execution completed,
   not that code was approved.
 - Select the owner-approved model and authentication centrally. Do not add
@@ -62,11 +67,17 @@ As checked on 2026-09-27, `updates` contains AGENTS.md and the contribution-bran
 rules missing from `main`. Resolve that difference through the approved branch
 flow, not by copying an old default-branch policy into review instructions.
 
-After publication and console verification, leave all automations OFF. A later,
-explicitly authorized manual review can verify the actual PR base/head, agent,
-model, runtime version, usage, and absence of code pushes. Do not use Fix all or
-Fix thumbs-up actions during the review-only phase. Existing offline project
-checks remain authoritative; an agent review does not replace them.
+After console verification and owner authorization, automatic reviews run for
+eligible PRs targeting `updates`, with re-reviews on subsequent pushes. Verify
+review completion against the latest PR head and inspect the actual findings;
+a successful run-status check alone is not review approval. If a review does
+not start, inspect its eligibility and configuration rather than issuing an
+unauthorized manual dispatch or mention.
+
+Pi evaluates findings, implements justified in-scope fixes, verifies and pushes
+changes, and performs the final merge only when authorized and all applicable
+conditions are met. Pullfrog only reviews. Existing offline project checks
+remain authoritative; an agent review does not replace them.
 
 The action SHA pins the entrypoint only: Pullfrog can acquire runtime code
 separately. Offline YAML checks cannot establish App installation, console
