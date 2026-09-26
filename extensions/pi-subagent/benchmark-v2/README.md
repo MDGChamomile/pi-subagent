@@ -11,7 +11,7 @@ This benchmark estimates context, quality, cost, and latency effects without tar
 The benchmark has two predeclared estimands:
 
 1. **Matched-model delegation effect (primary):** direct parent investigation versus bounded delegation when parent and child use the same model and thinking level.
-2. **Production-configuration effect (secondary):** direct parent investigation versus the checked-in Luna/Terra/Sol production presets.
+2. **Production-configuration effect (secondary):** direct parent investigation versus the checked-in Luna/Sol production presets.
 
 The first estimand is not described as a pure context-isolation effect. Delegation also changes the child system prompt, tool budget, and execution topology. Those differences are inherent to the evaluated extension and must remain visible in the report.
 
@@ -27,7 +27,7 @@ All arms use the same parent model, parent thinking level, objective, answer for
 | `delegated_matched` (B) | Same as A | Exactly one bounded local child using `openai-codex/gpt-5.6-sol`, `xhigh` |
 | `delegated_production` (C) | Same as A | Exactly one bounded local child using the checked-in profile preset |
 
-Production child presets at protocol freeze time must be recorded rather than inferred later. The current expected mapping is lookup=`gpt-5.6-luna/medium`, analysis=`gpt-5.6-terra/medium`, and review=`gpt-5.6-sol/medium`.
+Production child presets at protocol freeze time must be recorded rather than inferred later. The current expected mapping is lookup=`gpt-5.6-luna/medium`, analysis=`gpt-6-sol/medium`, and review=`gpt-6-sol/medium`.
 
 Arm B must use a benchmark-only generated copy or wrapper of the extension. It must not modify the checked-in production extension. The generated source, effective model mapping, and SHA-256 hash are preserved with the run artifacts. The runner must fail closed when event telemetry reports a child model or thinking level different from the assigned arm.
 
@@ -182,7 +182,7 @@ Claim aliases, numeric tolerances, evidence spans, and weights are frozen in the
 
 The judge receives only the task, answer, frozen rubric anchors, and gold evidence necessary to score it. It receives no arm, tested model, preset, child output, timing, token, or cost metadata. One answer is judged per request, the response must satisfy a JSON schema, and the exact judge provider/model/version, prompt hash, settings, and raw response are retained.
 
-The judge should be from a different model family from Luna/Terra/Sol. Its exact provider and model must be frozen and authorized before execution. If OpenRouter is used, the provider/model, maximum call count, and maximum spend require explicit approval for that batch.
+The judge should be from a different model family from Luna/Sol. Its exact provider and model must be frozen and authorized before execution. If OpenRouter is used, the provider/model, maximum call count, and maximum spend require explicit approval for that batch.
 
 ### 7.2 Human audit
 
