@@ -1,7 +1,8 @@
 name: Pullfrog
 run-name: ${{ inputs.name || github.workflow }}
 
-# No push/PR/schedule triggers. Pullfrog console automations must also stay OFF.
+# No push/PR/schedule triggers here. Owner-approved console reviews and
+# re-reviews may dispatch this workflow; other automations remain disabled.
 on:
   workflow_dispatch:
     inputs:

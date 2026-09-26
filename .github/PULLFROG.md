@@ -63,9 +63,11 @@ Normal task branches and PRs target `updates`; release PRs to `main` need separa
 authorization. Do not bypass that policy or change the default branch for setup.
 Ensure the latest agent and contribution guidance is available on `main` too.
 
-As checked on 2026-09-27, `updates` contains AGENTS.md and the contribution-branch
-rules missing from `main`. Resolve that difference through the approved branch
-flow, not by copying an old default-branch policy into review instructions.
+The earlier setup check found AGENTS.md and contribution-branch rules on
+`updates` but not `main`. That gap was resolved: both branches contained the
+files at commit `401dda8bc62471c005aecf410f45d6aa47e88459`. For future runs,
+verify the applicable guidance on the actual PR and default branch rather than
+assuming that the branches remain synchronized.
 
 After console verification and owner authorization, automatic reviews run for
 eligible PRs targeting `updates`, with re-reviews on subsequent pushes. Verify
