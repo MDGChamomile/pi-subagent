@@ -409,7 +409,7 @@ describe("pi-subagent public contract", () => {
     const expectedPresets = {
       "lookup-standard": { model: "openai-codex/gpt-5.6-luna", thinking: "medium" },
       "analysis-standard": { model: "openai-codex/gpt-6-sol", thinking: "medium" },
-      "review-standard": { model: "openai-codex/gpt-6-sol", thinking: "medium" },
+      "review-standard": { model: "openai-codex/gpt-6-sol", thinking: "high" },
     };
     assert.deepEqual(SUBAGENT_PRESETS, expectedPresets);
     assert.deepEqual(PRESET_NAMES, Object.keys(expectedPresets));

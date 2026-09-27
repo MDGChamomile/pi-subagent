@@ -53,7 +53,7 @@ assert.equal(
 
 const sharedRequirementPatterns = [
   ["minimum Pi version", /Pi 0\.84\.2 or later/],
-  ["provider authentication requirement", /authentication for Pi's `openai-codex` provider/],
+  ["provider authentication requirement", /authentication for the configured child provider/],
   ["minimum web extension version", /pi-web-access` v0\.27\.0 or later/],
   ["npm installation command", /pi install npm:@mdgchamomile\/pi-subagent/],
 ];
@@ -68,7 +68,7 @@ const presetRows = (markdown) => [...markdown.matchAll(
 const expectedPresets = [
   { preset: "lookup-standard", model: "openai-codex/gpt-5.6-luna", thinking: "medium" },
   { preset: "analysis-standard", model: "openai-codex/gpt-6-sol", thinking: "medium" },
-  { preset: "review-standard", model: "openai-codex/gpt-6-sol", thinking: "medium" },
+  { preset: "review-standard", model: "openai-codex/gpt-6-sol", thinking: "high" },
 ];
 assert.deepEqual(presetRows(sourceReadme), expectedPresets, "source README preset contract is inaccurate");
 assert.deepEqual(presetRows(topLevelReadme), expectedPresets, "package README preset contract is inaccurate");

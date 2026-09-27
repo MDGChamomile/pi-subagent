@@ -1,9 +1,23 @@
 import assert from "node:assert/strict";
-import { describe, test } from "node:test";
+import { after, before, describe, test } from "node:test";
+import { mkdtemp, rm, writeFile } from "node:fs/promises";
+import { tmpdir } from "node:os";
+import { join } from "node:path";
 import piSubagentExtension from "./index.ts";
 import { formatChildOutput, MAX_FINAL_BYTES, MAX_SUBAGENT_CALLS, TOOL_NAME } from "./shared.ts";
 
 const SOURCE_PATH = "/test/pi-subagent/index.ts";
+let agentDir: string;
+const previousAgentDir = process.env.PI_CODING_AGENT_DIR;
+before(async () => {
+  agentDir = await mkdtemp(join(tmpdir(), "pi-subagent-index-test-"));
+  process.env.PI_CODING_AGENT_DIR = agentDir;
+});
+after(async () => {
+  if (previousAgentDir === undefined) delete process.env.PI_CODING_AGENT_DIR;
+  else process.env.PI_CODING_AGENT_DIR = previousAgentDir;
+  await rm(agentDir, { recursive: true, force: true });
+});
 
 type Handler = (event: any, ctx: any) => any;
 
@@ -116,6 +130,26 @@ describe("pi-subagent result rendering", () => {
 });
 
 describe("pi-subagent extension wiring", () => {
+  test("preflight uses configured provider and full model ID before starting a child", async () => {
+    const file = join(agentDir, "pi-subagent.json");
+    await writeFile(file, JSON.stringify({ presets: {
+      "review-standard": { provider: "openrouter", model: "anthropic/claude-sonnet-4.5", thinking: "high" },
+    } }));
+    try {
+      const harness = await startHarness();
+      await harness.fire("tool_call", { toolName: TOOL_NAME, toolCallId: "configured", input: {} });
+      let checked = false;
+      await assert.rejects(harness.toolDefinition.execute("configured", {
+        task: "lookup", scope: ["."], capability: "local", preset: "review-standard",
+      }, undefined, undefined, { cwd: process.cwd(), modelRegistry: { find(provider: string, id: string) {
+        assert.equal(provider, "openrouter");
+        assert.equal(id, "anthropic/claude-sonnet-4.5");
+        checked = true;
+        return { reasoning: false }; // high is unsupported; no child or network request starts
+      } } }), /thinking level is unsupported/);
+      assert.equal(checked, true);
+    } finally { await rm(file); }
+  });
   test("describes web mode without promising credential-isolated public-only access", async () => {
     const harness = await startHarness();
     const capability = harness.toolDefinition.parameters.properties.capability;

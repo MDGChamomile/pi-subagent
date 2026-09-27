@@ -40,7 +40,7 @@ Requirements:
 
 - Linux, including Ubuntu on WSL; native Windows is not officially supported or tested;
 - Pi 0.84.2 or later;
-- authentication for Pi's `openai-codex` provider and access to the selected child model listed under [Presets](#presets);
+- authentication for the configured child provider and access to its model (`openai-codex` by default; see [Presets](#presets));
 - `rg` for local `grep`, and `fd` or `fdfind` for local `find`.
 
 > [!IMPORTANT]
@@ -97,9 +97,30 @@ Mixed local-and-web work uses separate child calls, with synthesis performed by 
 | --- | --- | --- | --- |
 | `lookup-standard` | `openai-codex/gpt-5.6-luna` | `medium` | Bounded fact-finding |
 | `analysis-standard` | `openai-codex/gpt-6-sol` | `medium` | Synthesis and causal comparison |
-| `review-standard` | `openai-codex/gpt-6-sol` | `medium` | Adversarial review |
+| `review-standard` | `openai-codex/gpt-6-sol` | `high` | Adversarial review |
 
-These mappings are fixed in the extension; they do not inherit the parent model or fall back to another provider. The preset does not alter the main model's thinking level. Installing this package does not grant model access: the selected model must be present in Pi's model registry and accessible to your authenticated account. If it is absent from the registry, the call fails during preflight with `Configured subagent model is unavailable`.
+These are **default settings**, not required providers or models. They do not inherit the parent model or change its thinking level. Override individual presets in `~/.pi/agent/pi-subagent.json` (or under `PI_CODING_AGENT_DIR`):
+
+```json
+{
+  "presets": {
+    "analysis-standard": {
+      "provider": "anthropic",
+      "model": "claude-sonnet-4-5",
+      "thinking": "high"
+    },
+    "review-standard": {
+      "provider": "openrouter",
+      "model": "anthropic/claude-sonnet-4.5",
+      "thinking": "high"
+    }
+  }
+}
+```
+
+Use exact model IDs available in your Pi registry; examples do not grant access. Settings are read before each call, and omitted presets/fields keep their defaults. Set `provider` and `model` together; a thinking-only override is allowed. Supported thinking names are `off`, `minimal`, `low`, `medium`, `high`, `xhigh`, and `max`, restricted to what Pi reports for that model. Invalid settings, missing models, or unsupported thinking fail before child startup; there is no automatic fallback. In particular, Pi 0.85.0's bundled catalog lacks the default `gpt-6-sol`: configure an available model or a Pi catalog that includes it.
+
+Authenticate each provider through Pi, not this file. Only user-level settings are read; project files and tool arguments cannot override the selection. Child extensions remain disabled, so providers registered only by a parent extension are not supported. The child checks its effective model and thinking before sending requests to prevent silent selection changes. See the [extension guide](https://github.com/MDGChamomile/pi-subagent/blob/v0.5.0/extensions/pi-subagent/README.md#presets) for configuration details.
 
 ## Security and data flow
 

@@ -34,7 +34,7 @@ Core requirements:
 
 - Linux, including Ubuntu on WSL; native Windows is not officially supported or tested;
 - Pi 0.84.2 or later;
-- authentication for Pi's `openai-codex` provider and access to the selected child model listed under [Presets](#presets). Installing this extension does not grant model access.
+- authentication for the configured child provider and access to its model (`openai-codex` by default; see [Presets](#presets)). Installing this extension does not grant model access.
 
 Capability-specific requirements:
 
@@ -114,15 +114,35 @@ One child call is the default. Up to three distinct, independent calls may run i
 
 ### Presets
 
-Each standard preset chooses a proportionate child model without changing the main model's thinking level:
+Each standard preset selects a child model without changing the main model's thinking level. The default settings are:
 
 | Preset | Provider/model ID | Thinking | Use for |
 | --- | --- | --- | --- |
 | `lookup-standard` | `openai-codex/gpt-5.6-luna` | `medium` | Bounded fact-finding |
 | `analysis-standard` | `openai-codex/gpt-6-sol` | `medium` | Synthesis and causal comparison |
-| `review-standard` | `openai-codex/gpt-6-sol` | `medium` | Adversarial review |
+| `review-standard` | `openai-codex/gpt-6-sol` | `high` | Adversarial review |
 
-These mappings are fixed in the extension; they do not inherit the parent model or fall back to another provider. The selected model must be present in Pi's model registry and accessible to your authenticated account. If it is absent from the registry, the call fails during preflight with `Configured subagent model is unavailable`.
+Override defaults in `~/.pi/agent/pi-subagent.json`, or `pi-subagent.json` under `PI_CODING_AGENT_DIR` when set. The file is optional, read before each call, and never written by the extension. Project settings and tool arguments cannot select providers/models.
+
+```json
+{
+  "presets": {
+    "lookup-standard": { "thinking": "low" },
+    "analysis-standard": {
+      "provider": "anthropic", "model": "claude-sonnet-4-5", "thinking": "high"
+    },
+    "review-standard": {
+      "provider": "openrouter", "model": "anthropic/claude-sonnet-4.5", "thinking": "high"
+    }
+  }
+}
+```
+
+Omitted presets and fields retain their defaults. To change a model, specify both `provider` and `model`; model IDs may include slashes (as on OpenRouter). A thinking-only override is allowed. Accepted thinking names are `off`, `minimal`, `low`, `medium`, `high`, `xhigh`, and `max`; the selected model must support the level according to Pi's metadata. Pi maps these names to each provider's own reasoning controls, so they are not identical token budgets across providers. Unknown fields, malformed settings, unavailable models, and unsupported levels fail during preflight with configuration guidance, not a fallback or silent clamp.
+
+Use exact model IDs present in your Pi registry and authenticate through Pi's usual login/environment configuration. Examples do not guarantee account access. Pi 0.85.0's bundled catalog lacks the default `gpt-6-sol`; supply an available model or use a Pi catalog that includes it. This package does not install models, store credentials, or change the parent model/thinking. Built-in providers such as Anthropic and OpenRouter and user `models.json` configurations are supported; providers requiring parent-only extensions are not, because child extension discovery stays disabled. The child verifies its effective provider/model and thinking before each provider request; disagreement with the selected settings fails closed before transmission.
+
+Selecting a provider changes where delegated inputs are sent and may incur its charges. Review those settings and your provider permissions before delegating. There is no automatic provider fallback or extra approval UI in this package.
 
 Older stored calls with separate `profile` and `thinking` arguments, or with the former balanced/deep/exhaustive preset names, are translated to the matching standard preset before schema validation.
 
@@ -228,6 +248,8 @@ python3 -B extensions/pi-subagent/scripts/context_isolation_eval.py \
   --mode smoke --capability local --preset all \
   --main-model openai-codex/gpt-6-astra --main-thinking medium
 ```
+
+The live observation harness is Codex-specific and evaluates default presets, not arbitrary provider overrides. Use a dedicated Pi agent directory without `pi-subagent.json` for these opt-in commands. Offline configuration tests cover Anthropic/OpenRouter selection; they do not establish live provider compatibility.
 
 The development dependencies are pinned to Pi 0.85.0. The default offline suite includes Python evaluation-contract tests as well as the TypeScript runtime tests; Python 3 and `rg` are required. The scoped-search regression uses Pi's native grep tool and an existing ripgrep binary without downloading tools or making model requests. Live checks require the Node.js Pi installation and consume model/provider usage. `--preset all` (the default) runs every current runtime preset in a fresh parent session; select one with, for example, `--preset review-standard`. If both `PI_PROVIDER` and `PI_MODEL` are set, `--main-model` may be omitted, but explicit parent model and thinking arguments are preferred for reproducibility.
 
