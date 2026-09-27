@@ -30,6 +30,8 @@ assert.equal(extensions.length, 1, "expected exactly one packaged extension");
 assert.equal(resolve(extensions[0].path), join(packageDirectory, "index.ts"));
 assert.deepEqual([...extensions[0].tools.keys()], ["pi_subagent"], "expected pi_subagent tool registration");
 
+assert.deepEqual([...extensions[0].commands.keys()], ["pi-subagent-settings"], "expected settings command registration");
+
 const { skills, diagnostics } = loader.getSkills();
 assert.deepEqual(diagnostics, [], "Pi skill discovery reported diagnostics");
 assert.equal(skills.length, 1, "expected exactly one companion skill");
