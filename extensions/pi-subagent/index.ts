@@ -23,6 +23,7 @@ import {
 } from "./shared.ts";
 import { ChildRunError, formatResultSummary, runChild } from "./subprocess.ts";
 import { loadPresetSettings, validatePresetSelection, type PresetSelection } from "./config.ts";
+import { registerSubagentSettingsCommand } from "./settings-command.ts";
 
 const PresetSchema = StringEnum(PRESET_NAMES, {
   description: "Child model preset: lookup-standard for fact-finding, analysis-standard for synthesis, or review-standard for adversarial review",
@@ -42,6 +43,7 @@ const Parameters = Type.Object({
 }, { additionalProperties: false });
 
 export default function piSubagentExtension(pi: ExtensionAPI): void {
+  registerSubagentSettingsCommand(pi);
   const gate = new ModelInvocationGate();
   // Pi turns thrown tool errors into fresh results; reattach the child's nested usage in tool_result.
   const failedUsage = new Map<string, ChildRunError["usage"]>();

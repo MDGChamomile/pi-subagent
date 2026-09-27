@@ -24,9 +24,11 @@ type Handler = (event: any, ctx: any) => any;
 function createExtensionHarness() {
   const handlers = new Map<string, Handler[]>();
   const tools: any[] = [];
+  const commands = new Map<string, any>();
   let toolDefinition: any;
 
   const pi = {
+    registerCommand(name: string, command: any) { commands.set(name, command); },
     on(name: string, handler: Handler) {
       const registered = handlers.get(name) ?? [];
       registered.push(handler);
@@ -63,6 +65,7 @@ function createExtensionHarness() {
   piSubagentExtension(pi as any);
   return {
     fire,
+    commands,
     get toolDefinition() {
       return toolDefinition;
     },
@@ -130,6 +133,12 @@ describe("pi-subagent result rendering", () => {
 });
 
 describe("pi-subagent extension wiring", () => {
+  test("registers settings as a user command, not a model tool", () => {
+    const harness = createExtensionHarness();
+    assert.deepEqual([...harness.commands.keys()], ["pi-subagent-settings"]);
+    assert.equal(harness.toolDefinition.name, TOOL_NAME);
+    assert.equal(typeof harness.commands.get("pi-subagent-settings").handler, "function");
+  });
   test("preflight uses configured provider and full model ID before starting a child", async () => {
     const file = join(agentDir, "pi-subagent.json");
     await writeFile(file, JSON.stringify({ presets: {

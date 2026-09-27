@@ -122,7 +122,11 @@ Each standard preset selects a child model without changing the main model's thi
 | `analysis-standard` | `openai-codex/gpt-6-sol` | `medium` | Synthesis and causal comparison |
 | `review-standard` | `openai-codex/gpt-6-sol` | `high` | Adversarial review |
 
-Override defaults in `~/.pi/agent/pi-subagent.json`, or `pi-subagent.json` under `PI_CODING_AGENT_DIR` when set. The file is optional, read before each call, and never written by the extension. Project settings and tool arguments cannot select providers/models.
+Run **`/pi-subagent-settings`** to configure persistent user defaults. Select a preset (the menu shows current values), a registered model, and one of its supported thinking levels. Review the before/after values and confirm to save. Cancel any dialog to leave the file unchanged. This is a user command, not a model-callable tool; it never changes the parent model or thinking level or makes a provider request.
+
+The command reads and writes `pi-subagent.json` in Pi's user agent directory, resolved with `getAgentDir()` (`~/.pi/agent` by default, or `PI_CODING_AGENT_DIR`). You can also edit this optional JSON file directly. Settings are read before each call, so saved defaults apply to future calls across sessions without a reload, not to already-running children. Project settings and tool arguments cannot select providers/models.
+
+Only the selected preset is updated; other overrides remain intact and omitted defaults are not materialized. Invalid JSON or settings are not overwritten. Saving uses a private temporary file and atomic replacement, rejects symlink/non-file targets, and serializes command writers with an exclusive `.lock` file. Changes detected since opening the dialog require reopening rather than overwriting. Non-cooperating external editors do not share that lock; avoid editing simultaneously. A crash can leave a `.lock` file: check that no writer is active before manually removing it. Non-UI modes must edit JSON directly.
 
 ```json
 {
@@ -138,11 +142,11 @@ Override defaults in `~/.pi/agent/pi-subagent.json`, or `pi-subagent.json` under
 }
 ```
 
-Omitted presets and fields retain their defaults. To change a model, specify both `provider` and `model`; model IDs may include slashes (as on OpenRouter). A thinking-only override is allowed. Accepted thinking names are `off`, `minimal`, `low`, `medium`, `high`, `xhigh`, and `max`; the selected model must support the level according to Pi's metadata. Pi maps these names to each provider's own reasoning controls, so they are not identical token budgets across providers. Unknown fields, malformed settings, unavailable models, and unsupported levels fail during preflight with configuration guidance, not a fallback or silent clamp.
+Omitted presets and fields retain their defaults. To change a model, specify both `provider` and `model`; model IDs may include `@`, slashes (as on OpenRouter), and colons (as on Ollama). IDs must be nonempty, at most 256 characters, free of control characters, and have no surrounding whitespace; their spelling is preserved. A thinking-only override is allowed. Accepted thinking names are `off`, `minimal`, `low`, `medium`, `high`, `xhigh`, and `max`; the selected model must support the level according to Pi's metadata. Pi maps these names to each provider's own reasoning controls, so they are not identical token budgets across providers. Unknown fields, malformed settings, unavailable models, and unsupported levels fail during preflight with configuration guidance, not a fallback or silent clamp.
 
 Use exact model IDs present in your Pi registry and authenticate through Pi's usual login/environment configuration. Examples do not guarantee account access. Pi 0.85.0's bundled catalog lacks the default `gpt-6-sol`; supply an available model or use a Pi catalog that includes it. This package does not install models, store credentials, or change the parent model/thinking. Built-in providers such as Anthropic and OpenRouter and user `models.json` configurations are supported; providers requiring parent-only extensions are not, because child extension discovery stays disabled. The child verifies its effective provider/model and thinking before each provider request; disagreement with the selected settings fails closed before transmission.
 
-Selecting a provider changes where delegated inputs are sent and may incur its charges. Review those settings and your provider permissions before delegating. There is no automatic provider fallback or extra approval UI in this package.
+Selecting a provider changes where delegated inputs are sent and may incur its charges. Review those settings and your provider permissions before delegating. There is no automatic provider fallback or per-call approval UI. The settings command confirms only the saved defaults, not future provider usage.
 
 Older stored calls with separate `profile` and `thinking` arguments, or with the former balanced/deep/exhaustive preset names, are translated to the matching standard preset before schema validation.
 

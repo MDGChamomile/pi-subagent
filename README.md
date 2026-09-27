@@ -99,7 +99,11 @@ Mixed local-and-web work uses separate child calls, with synthesis performed by 
 | `analysis-standard` | `openai-codex/gpt-6-sol` | `medium` | Synthesis and causal comparison |
 | `review-standard` | `openai-codex/gpt-6-sol` | `high` | Adversarial review |
 
-These are **default settings**, not required providers or models. They do not inherit the parent model or change its thinking level. Override individual presets in `~/.pi/agent/pi-subagent.json` (or under `PI_CODING_AGENT_DIR`):
+These are **default settings**, not required providers or models. They do not inherit the parent model or change its thinking level.
+
+Run **`/pi-subagent-settings`** in Pi to select a preset, a registered model, and a supported thinking level, then confirm the change. This saves your user defaults across sessions; the next subagent call uses them without a reload. Running children and the parent model are unchanged. Cancel any dialog to leave settings untouched. Saving does not contact a provider or guarantee child access.
+
+You can also edit individual presets in `~/.pi/agent/pi-subagent.json` (or under `PI_CODING_AGENT_DIR`, resolved by Pi's `getAgentDir()`):
 
 ```json
 {

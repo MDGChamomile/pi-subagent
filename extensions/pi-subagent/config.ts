@@ -1,6 +1,7 @@
 import { readFile } from "node:fs/promises";
 import { join } from "node:path";
 import { homedir } from "node:os";
+import { getAgentDir } from "@earendil-works/pi-coding-agent";
 import { getSupportedThinkingLevels, type Api, type Model } from "@earendil-works/pi-ai";
 import { PRESET_NAMES, SUBAGENT_PRESETS, type Preset, type Thinking } from "./shared.ts";
 
@@ -43,20 +44,35 @@ export function parsePresetSettings(value: unknown): PresetSelections {
   return selections;
 }
 
+export type PresetSettings = {
+  presets?: Partial<Record<Preset, { provider?: string; model?: string; thinking?: Thinking }>>;
+};
+export type SettingsSnapshot = { path: string; text: string | null; settings: PresetSettings };
+
 // Only the user's agent directory is consulted, never project files or tool arguments.
-export async function loadPresetSettings(agentDir = process.env.PI_CODING_AGENT_DIR || join(homedir(), ".pi", "agent")): Promise<PresetSelections> {
+export function presetSettingsPath(agentDir = getAgentDir()): string {
+  // Preserve explicit directory injection, including its historical tilde support.
   if (agentDir === "~") agentDir = homedir();
   else if (agentDir.startsWith("~/")) agentDir = join(homedir(), agentDir.slice(2));
+  return join(agentDir, "pi-subagent.json");
+}
+
+export async function readPresetSettingsSnapshot(path = presetSettingsPath()): Promise<SettingsSnapshot> {
   let text: string;
   try {
-    text = await readFile(join(agentDir, "pi-subagent.json"), "utf8");
+    text = await readFile(path, "utf8");
   } catch (error) {
-    if ((error as NodeJS.ErrnoException).code === "ENOENT") return parsePresetSettings({});
+    if ((error as NodeJS.ErrnoException).code === "ENOENT") return { path, text: null, settings: {} };
     throw new Error(`Could not read subagent settings. ${HELP}`);
   }
   let value: unknown;
   try { value = JSON.parse(text); } catch { throw new Error(`Invalid subagent settings JSON. ${HELP}`); }
-  return parsePresetSettings(value);
+  parsePresetSettings(value);
+  return { path, text, settings: value as PresetSettings };
+}
+
+export async function loadPresetSettings(agentDir = getAgentDir()): Promise<PresetSelections> {
+  return parsePresetSettings((await readPresetSettingsSnapshot(presetSettingsPath(agentDir))).settings);
 }
 
 export function validatePresetSelection(
