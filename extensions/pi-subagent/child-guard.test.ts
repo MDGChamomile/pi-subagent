@@ -11,7 +11,6 @@ import {
   buildChildPolicy,
   LIFETIME_TOOL_CALL_LIMITS,
   POLICY_ENV,
-  MODEL_SELECTION_ENV,
   READY_ENV,
   READY_MARKER,
   SOFT_DEADLINE_ENV,
@@ -124,28 +123,6 @@ async function createHarness(
 }
 
 describe("pi-subagent child guard", () => {
-  test("blocks changed model or clamped thinking before a provider request", async () => {
-    const previous = process.env[MODEL_SELECTION_ENV];
-    process.env[MODEL_SELECTION_ENV] = JSON.stringify({ model: "openrouter/anthropic/claude-sonnet-4.5", thinking: "high" });
-    const harness = await createHarness(["allowed"]);
-    try {
-      const ctx = { model: { provider: "openrouter", id: "anthropic/claude-sonnet-4.5" }, thinkingLevel: "high" };
-      await harness.emit("before_provider_request", {}, ctx);
-      await assert.rejects(harness.emit("before_provider_request", {}, { ...ctx, thinkingLevel: "medium" }), /selection mismatch/);
-      await assert.rejects(harness.emit("before_provider_request", {}, { ...ctx, model: { provider: "anthropic", id: ctx.model.id } }), /selection mismatch/);
-    } finally {
-      await harness.cleanup();
-      if (previous === undefined) delete process.env[MODEL_SELECTION_ENV];
-      else process.env[MODEL_SELECTION_ENV] = previous;
-    }
-  });
-
-  test("missing model selection refuses provider requests", async () => {
-    const harness = await createHarness(["allowed"]);
-    try {
-      await assert.rejects(harness.emit("before_provider_request"), /selection mismatch/);
-    } finally { await harness.cleanup(); }
-  });
   test("prepares normalized web inputs and costs without mutating caller arguments", () => {
     const cases = [
       { tool: "web_search", input: { query: '["one","two"]', workflow: "summary-review" }, cost: { queries: 2, fetchTargets: 0 } },

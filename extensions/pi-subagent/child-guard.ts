@@ -2,6 +2,7 @@ import { lstatSync, readFileSync, realpathSync, writeFileSync } from "node:fs";
 import { dirname, resolve } from "node:path";
 import type { ExtensionAPI } from "@earendil-works/pi-coding-agent";
 import { cleanupPrivateRuntimeFiles, installParentLivenessMonitor } from "./parent-liveness.ts";
+import { validatePresetSelection, type PresetSelection } from "./config.ts";
 import {
   ALLOWED_FILE_TOOLS,
   ALLOWED_WEB_TOOLS,
@@ -391,11 +392,19 @@ export default function childGuard(
   // a model ID or clamp thinking when the child's registry differs from the parent's.
   const expectedSelection = process.env[MODEL_SELECTION_ENV];
   pi.on("before_provider_request", (_event, ctx) => {
-    let expected: { model?: unknown; thinking?: unknown } | undefined;
-    try { expected = JSON.parse(expectedSelection ?? "null"); } catch { /* fail closed below */ }
-    if (!expected || typeof expected.model !== "string" || typeof expected.thinking !== "string" ||
-      `${ctx.model?.provider}/${ctx.model?.id}` !== expected.model || ctx.thinkingLevel !== expected.thinking) {
-      throw new Error("Subagent model/thinking selection mismatch; check pi-subagent.json and the child model registry");
+    try {
+      const expected = JSON.parse(expectedSelection ?? "null") as PresetSelection | null;
+      if (!expected || typeof expected.model !== "string" || typeof expected.thinking !== "string" ||
+        `${ctx.model?.provider}/${ctx.model?.id}` !== expected.model || ctx.thinkingLevel !== expected.thinking) {
+        throw new Error("Subagent model/thinking selection mismatch");
+      }
+      // The CLI can synthesize an unknown ID from a same-provider model. Require
+      // an exact child registry entry, not just a matching effective ID.
+      validatePresetSelection(expected, ctx.modelRegistry);
+    } catch {
+      // Pi 0.84.2/0.85.0 swallow hook exceptions and continue the request. Exit
+      // synchronously instead; the parent observes failure and cleans runtime files.
+      process.exit(1);
     }
   });
 
