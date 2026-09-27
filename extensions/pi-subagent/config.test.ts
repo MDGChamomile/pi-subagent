@@ -56,8 +56,9 @@ test("model IDs are preserved verbatim through exact registry lookup", () => {
   }
 });
 
-test("rejects empty, non-string, overlong and control-containing model IDs", () => {
-  const invalid = ["", "  ", null, 42, [], "a".repeat(257),
+test("rejects empty, padded, non-string, overlong and control-containing model IDs", () => {
+  // Pi trims CLI model references: padded IDs could resolve to a different registered sibling.
+  const invalid = ["", "  ", "foo ", " foo", "foo\u00a0", null, 42, [], "a".repeat(257),
     ...[0, 9, 10, 13, 31, 127, 128, 159].map((code) => `model${String.fromCharCode(code)}`)];
   for (const id of invalid) {
     assert.throws(() => parsePresetSettings({ presets: {
