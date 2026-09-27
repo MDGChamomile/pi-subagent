@@ -104,7 +104,7 @@ class PortableWebSmokeTests(unittest.TestCase):
                 extensions = [command[i + 1] for i, item in enumerate(command) if item == "--extension"]
                 self.assertEqual(extensions, [str(evaluator.EXTENSION_ENTRY), str(entry.resolve()),
                                               str(evaluator.WEB_SMOKE_PARENT)])
-                self.assertEqual(command[-2:], ["--tools", "pi_subagent"])
+                self.assertNotIn("--tools", command, "CLI allowlist must not strip web provenance entries")
                 self.assertNotIn("web-tool-loader.ts", " ".join(command))
                 return SimpleNamespace(stdout=wire(smoke_messages("web")), returncode=0), observations()
             with patch.object(evaluator, "observe_run", side_effect=run) as observed, redirect_stdout(io.StringIO()):

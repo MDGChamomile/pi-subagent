@@ -359,8 +359,9 @@ def run_smoke(args: argparse.Namespace) -> int:
                     "Do not read the file in the parent."
                 )
             else:
-                command += ["--extension", str(web_extension), "--extension", str(WEB_SMOKE_PARENT),
-                            "--tools", "pi_subagent"]
+                # A CLI --tools allowlist also removes registry entries needed for
+                # provenance checks. The helper narrows active tools instead.
+                command += ["--extension", str(web_extension), "--extension", str(WEB_SMOKE_PARENT)]
                 prompt = (
                     f"Call pi_subagent exactly once with capability=web, scope=[], preset={preset}. "
                     f"Have the child fetch {SMOKE_WEB_URL} with fetch_content, retrieve the stored content if needed, "
