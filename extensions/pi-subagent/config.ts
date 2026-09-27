@@ -27,7 +27,8 @@ export function parsePresetSettings(value: unknown): PresetSelections {
     }
     if (override.provider !== undefined || override.model !== undefined) {
       if (typeof override.provider !== "string" || !/^[a-zA-Z0-9][a-zA-Z0-9._-]{0,127}$/.test(override.provider) ||
-        typeof override.model !== "string" || !/^[a-zA-Z0-9][a-zA-Z0-9._:/+-]{0,255}$/.test(override.model)) {
+        typeof override.model !== "string" || override.model.trim().length === 0 || override.model.length > 256 ||
+        /[\u0000-\u001f\u007f-\u009f]/.test(override.model)) {
         throw new Error(`Invalid subagent provider/model settings. ${HELP}`);
       }
       selections[name].model = `${override.provider}/${override.model}`;

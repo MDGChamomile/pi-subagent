@@ -39,6 +39,33 @@ test("per-preset overrides preserve omitted defaults and OpenRouter model slashe
   }
 });
 
+test("model IDs are preserved verbatim through exact registry lookup", () => {
+  for (const id of ["@cf/zai-org/glm-4.7-flash", "anthropic/claude-sonnet-4.5", "llama3.1:8b", "a".repeat(256)]) {
+    const selection = parsePresetSettings({ presets: {
+      "lookup-standard": { provider: "custom", model: id, thinking: "off" },
+    } })["lookup-standard"];
+    let lookedUp = false;
+    validatePresetSelection(selection, { find(provider, modelId) {
+      lookedUp = true;
+      assert.equal(provider, "custom");
+      assert.equal(modelId, id);
+      return model(provider, modelId);
+    } });
+    assert.equal(lookedUp, true);
+    assert.throws(() => validatePresetSelection(selection, { find: () => undefined }), /unavailable/);
+  }
+});
+
+test("rejects empty, non-string, overlong and control-containing model IDs", () => {
+  const invalid = ["", "  ", null, 42, [], "a".repeat(257),
+    ...[0, 9, 10, 13, 31, 127, 128, 159].map((code) => `model${String.fromCharCode(code)}`)];
+  for (const id of invalid) {
+    assert.throws(() => parsePresetSettings({ presets: {
+      "lookup-standard": { provider: "custom", model: id },
+    } }), /Invalid subagent provider\/model settings/);
+  }
+});
+
 test("rejects malformed settings without echoing input", () => {
   for (const value of [null, [], { unknown: "private-value" }, { presets: [] },
     { presets: { typo: {} } }, ...[null, [], { model: "private-value" }, { provider: "anthropic" },
