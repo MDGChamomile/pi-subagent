@@ -22,6 +22,7 @@ import {
   MAX_WEB_QUERIES_PER_CALL,
   MAX_WEB_RESULTS_PER_QUERY,
   POLICY_ENV,
+  MODEL_SELECTION_ENV,
   READY_ENV,
   READY_MARKER,
   formatChildOutput,
@@ -481,6 +482,7 @@ export async function runChild(options: {
   const env: NodeJS.ProcessEnv = {
     ...process.env,
     PI_OFFLINE: "1",
+    [MODEL_SELECTION_ENV]: JSON.stringify({ model: options.model, thinking: options.thinking }),
     [PARENT_LIVENESS_ENV]: String(PARENT_LIVENESS_FD),
     [POLICY_ENV]: options.policyFile,
     [READY_ENV]: options.readyFile,

@@ -20,6 +20,7 @@ import {
   MAX_WEB_QUERIES_PER_CALL,
   MAX_WEB_RESULTS_PER_QUERY,
   POLICY_ENV,
+  MODEL_SELECTION_ENV,
   READY_ENV,
   READY_MARKER,
   SOFT_DEADLINE_ENV,
@@ -384,6 +385,18 @@ export default function childGuard(
     if (softDeadlineTimer) clearTimeout(softDeadlineTimer);
     persistBudget();
     stopParentLivenessMonitor?.();
+  });
+
+  // Pin the effective selection at the request boundary: Pi may otherwise fuzzy-match
+  // a model ID or clamp thinking when the child's registry differs from the parent's.
+  const expectedSelection = process.env[MODEL_SELECTION_ENV];
+  pi.on("before_provider_request", (_event, ctx) => {
+    let expected: { model?: unknown; thinking?: unknown } | undefined;
+    try { expected = JSON.parse(expectedSelection ?? "null"); } catch { /* fail closed below */ }
+    if (!expected || typeof expected.model !== "string" || typeof expected.thinking !== "string" ||
+      `${ctx.model?.provider}/${ctx.model?.id}` !== expected.model || ctx.thinkingLevel !== expected.thinking) {
+      throw new Error("Subagent model/thinking selection mismatch; check pi-subagent.json and the child model registry");
+    }
   });
 
   pi.on("session_start", () => {

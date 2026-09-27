@@ -51,12 +51,13 @@ export function invocationLimitBlock(): { block: true; reason: string } {
   };
 }
 
-export type Thinking = "low" | "medium";
+export const MODEL_SELECTION_ENV = "PI_SUBAGENT_MODEL_SELECTION";
+export type Thinking = "off" | "minimal" | "low" | "medium" | "high" | "xhigh" | "max";
 
 export const SUBAGENT_PRESETS = {
   "lookup-standard": { model: "openai-codex/gpt-5.6-luna", thinking: "medium" },
   "analysis-standard": { model: "openai-codex/gpt-6-sol", thinking: "medium" },
-  "review-standard": { model: "openai-codex/gpt-6-sol", thinking: "medium" },
+  "review-standard": { model: "openai-codex/gpt-6-sol", thinking: "high" },
 } as const satisfies Record<string, { model: string; thinking: Thinking }>;
 export type Preset = keyof typeof SUBAGENT_PRESETS;
 export const PRESET_NAMES = Object.keys(SUBAGENT_PRESETS) as Preset[];
