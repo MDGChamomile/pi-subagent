@@ -5,6 +5,8 @@ import copy
 import io
 import json
 import unittest
+import tempfile
+from pathlib import Path
 from contextlib import redirect_stdout, redirect_stderr
 from types import SimpleNamespace
 from unittest.mock import patch
@@ -81,6 +83,41 @@ class RuntimeObservationTests(unittest.TestCase):
         self.assertEqual(check(observed=rows)["status"], "fail")
 
 
+class PortableWebSmokeTests(unittest.TestCase):
+    def test_web_requires_explicit_existing_entry_before_any_session(self):
+        with tempfile.TemporaryDirectory() as directory:
+            for path in (None, Path(directory), Path(directory) / "missing.ts"):
+                args = argparse.Namespace(capability="web", web_extension=path)
+                with patch.object(evaluator, "observe_run") as run, self.assertRaises(SystemExit):
+                    evaluator.run_smoke(args)
+                run.assert_not_called()
+
+    @patch.object(evaluator, "load_presets", return_value={PRESET: SELECTION})
+    def test_web_uses_supplied_entry_and_source_helper_without_personal_loader(self, _presets):
+        with tempfile.TemporaryDirectory() as directory:
+            entry = Path(directory) / "custom-install" / "web.ts"
+            entry.parent.mkdir()
+            entry.write_text("// offline fixture; never executed\n", encoding="utf-8")
+            args = argparse.Namespace(capability="web", web_extension=entry, preset="all",
+                                      main_model="openai-codex/gpt-6-astra", main_thinking="medium", timeout_seconds=60)
+            def run(command, **kwargs):
+                extensions = [command[i + 1] for i, item in enumerate(command) if item == "--extension"]
+                self.assertEqual(extensions, [str(evaluator.EXTENSION_ENTRY), str(entry.resolve()),
+                                              str(evaluator.WEB_SMOKE_PARENT)])
+                self.assertNotIn("--tools", command, "CLI allowlist must not strip web provenance entries")
+                self.assertNotIn("web-tool-loader.ts", " ".join(command))
+                return SimpleNamespace(stdout=wire(smoke_messages("web")), returncode=0), observations()
+            with patch.object(evaluator, "observe_run", side_effect=run) as observed, redirect_stdout(io.StringIO()):
+                self.assertEqual(evaluator.run_smoke(args), 0)
+            observed.assert_called_once()
+
+    @patch.object(evaluator, "load_presets", return_value={PRESET: SELECTION})
+    def test_web_entry_cli_is_optional_for_local(self, _presets):
+        self.assertIsNone(evaluator.parse_args([]).web_extension)
+        self.assertEqual(evaluator.parse_args(["--web-extension", "somewhere/web.ts"]).web_extension,
+                         Path("somewhere/web.ts"))
+
+
 class SmokeContractTests(unittest.TestCase):
     def test_local_and_web_success(self):
         for capability in ("local", "web"):
@@ -148,7 +185,9 @@ class SmokeContractTests(unittest.TestCase):
             return SimpleNamespace(stdout=wire(smoke_messages(preset=preset, selection=selection)), returncode=0), observations(selection)
         args = argparse.Namespace(capability="local", preset="all", main_model="openai-codex/gpt-6-astra",
                                   main_thinking="medium", timeout_seconds=60)
-        with patch.object(evaluator, "observe_run", side_effect=run), redirect_stdout(io.StringIO()) as output:
+        with patch.object(evaluator, "observe_run", side_effect=run), \
+                patch.object(evaluator, "web_smoke_extension", side_effect=AssertionError("local must not resolve web")), \
+                redirect_stdout(io.StringIO()) as output:
             self.assertEqual(evaluator.run_smoke(args), 0)
         self.assertEqual([row[0] for row in seen], [PRESET, "future-preset"])
         self.assertEqual(len(set(row[1] for row in seen)), 2)

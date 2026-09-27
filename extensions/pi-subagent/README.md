@@ -255,22 +255,20 @@ The development dependencies are pinned to Pi 0.85.0. The default offline suite 
 
 Live checks verify the requested preset/capability/scope, returned model/thinking, complete untruncated output, usage, evidence, and absence of parent investigation. A test-only observer loads before the production guard and independently checks the effective child model/thinking, outgoing model/reasoning fields, and returned model identity. It records only configuration metadata in temporary files, never prompts, response text, headers, or credentials. Missing observations and silent thinking clamping fail the check. It does not change production presets or global model configuration.
 
-The web smoke is a maintainer-environment check, not a command reproducible from this repository or the npm installation alone. Before it starts, the script requires both of these regular files under the active Pi agent root (`PI_CODING_AGENT_DIR`, or the default agent root):
+The web smoke is a source-checkout test. It uses the checked-in `scripts/web-smoke-parent.ts` helper, not a personal loader. Install and review a compatible `pi-web-access` package separately, with authorization, then locate its declared extension entry file in that package's `package.json` (`pi.extensions`). Pass the actual existing entry file explicitly; npm, git, and custom installation locations work without a fixed agent-directory layout. No dependency is downloaded by the smoke script.
 
-```text
-npm/node_modules/pi-web-access/index.ts
-extensions/web-tool-loader.ts
-```
-
-The package supplies neither the second loader nor a setup procedure for it. Run the web smoke only in an environment that already provides and has reviewed a compatible loader; otherwise skip it and report the gap. In that maintainer environment, the command is:
+With authorization for the model/provider usage described above:
 
 ```bash
 python3 -B extensions/pi-subagent/scripts/context_isolation_eval.py \
   --mode smoke --capability web --preset all \
+  --web-extension /path/to/pi-web-access/index.ts \
   --main-model openai-codex/gpt-6-astra --main-thinking medium
 ```
 
-The web smoke keeps `pi-web-access` tools registered for provenance checks but inactive in the parent model. It fetches IANA's example-domain documentation without searching, requires verbatim body evidence for both the documentation purpose and registration/transfer restriction, and fails if the parent activates `load_web_tools` or calls a web tool directly.
+Replace `/path/to/pi-web-access/index.ts` with your package's declared entry file. A missing `--web-extension` or non-file path fails before any model session starts. Local smoke does not require or resolve this option. The source-only helper is not installed into the active Pi environment and is not included in the npm package.
+
+The helper loads last in the parent, keeps `pi-web-access` tools registered with their original provenance, activates only `pi_subagent`, and blocks other parent tool calls. The helper is not loaded in the child; the existing test observer and production guard remain in place, and package/version/entry-point checks are unchanged. No CLI tool allowlist is applied to the web-smoke parent, because Pi would remove the web tools from its registry rather than merely hiding them from the model. The smoke fetches IANA's example-domain documentation without searching, requires verbatim body evidence for both the documentation purpose and registration/transfer restriction, and fails on any parent investigation or loader call. Offline tests verify command assembly, early failures, and helper behavior; live provider/web compatibility requires a separately authorized smoke run.
 
 ### Verified environment summary
 
