@@ -42,7 +42,10 @@ const Parameters = Type.Object({
   preset: PresetSchema,
 }, { additionalProperties: false });
 
-export default function piSubagentExtension(pi: ExtensionAPI): void {
+export default function piSubagentExtension(
+  pi: ExtensionAPI,
+  runtime = { runChild, removeTempDirectory: rm },
+): void {
   registerSubagentSettingsCommand(pi);
   const gate = new ModelInvocationGate();
   // Pi turns thrown tool errors into fresh results; reattach the child's nested usage in tool_result.
@@ -109,6 +112,7 @@ export default function piSubagentExtension(pi: ExtensionAPI): void {
           throw new Error(boundedParentError(error, { phase: "setup" }));
         }
         let executionError: unknown;
+        let completedUsage: ChildRunError["usage"] | undefined;
         let childStarted = false;
         try {
           await chmod(tempDir, 0o700);
@@ -117,7 +121,7 @@ export default function piSubagentExtension(pi: ExtensionAPI): void {
           const budgetTelemetryFile = join(tempDir, "budget-telemetry.json");
           await writeFile(policyFile, JSON.stringify(policy), { encoding: "utf8", mode: 0o600, flag: "wx" });
           childStarted = true;
-          const result = await runChild({
+          const result = await runtime.runChild({
             policy,
             policyFile,
             readyFile,
@@ -129,6 +133,7 @@ export default function piSubagentExtension(pi: ExtensionAPI): void {
             signal,
             onUpdate,
           });
+          completedUsage = result.usage;
           return {
             content: [{ type: "text", text: result.output }],
             details: {
@@ -162,10 +167,11 @@ export default function piSubagentExtension(pi: ExtensionAPI): void {
           throw error;
         } finally {
           try {
-            await rm(tempDir, { recursive: true, force: true });
+            await runtime.removeTempDirectory(tempDir, { recursive: true, force: true });
           } catch (cleanupError) {
             if (executionError === undefined) {
-              throw new Error(boundedParentError(cleanupError, { phase: "cleanup" }));
+              const message = boundedParentError(cleanupError, { phase: "cleanup" });
+              throw completedUsage ? new ChildRunError(message, completedUsage) : new Error(message);
             }
           }
         }

@@ -4,7 +4,8 @@ import { mkdtemp, rm, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import piSubagentExtension from "./index.ts";
-import { formatChildOutput, MAX_FINAL_BYTES, MAX_SUBAGENT_CALLS, TOOL_NAME } from "./shared.ts";
+import { boundedParentError, formatChildOutput, MAX_FINAL_BYTES, MAX_SUBAGENT_CALLS, TOOL_NAME } from "./shared.ts";
+import { ChildRunError, emptyUsage, type ChildResult } from "./subprocess.ts";
 
 const SOURCE_PATH = "/test/pi-subagent/index.ts";
 let agentDir: string;
@@ -21,7 +22,7 @@ after(async () => {
 
 type Handler = (event: any, ctx: any) => any;
 
-function createExtensionHarness() {
+function createExtensionHarness(runtime?: Parameters<typeof piSubagentExtension>[1]) {
   const handlers = new Map<string, Handler[]>();
   const tools: any[] = [];
   const commands = new Map<string, any>();
@@ -62,7 +63,7 @@ function createExtensionHarness() {
     return result;
   };
 
-  piSubagentExtension(pi as any);
+  piSubagentExtension(pi as any, runtime);
   return {
     fire,
     commands,
@@ -72,8 +73,8 @@ function createExtensionHarness() {
   };
 }
 
-async function startHarness() {
-  const harness = createExtensionHarness();
+async function startHarness(runtime?: Parameters<typeof piSubagentExtension>[1]) {
+  const harness = createExtensionHarness(runtime);
   await harness.fire("session_start", { reason: "startup" });
   await harness.fire("agent_start");
   return harness;
@@ -130,6 +131,63 @@ describe("pi-subagent result rendering", () => {
       assert.equal(component.render(100).join("\n").trim(), "progress or diagnostic");
     }
   });
+});
+
+describe("pi-subagent cleanup usage", () => {
+  for (const childFails of [false, true]) {
+    for (const cleanupFails of [false, true]) {
+      test(`preserves usage with child failure=${childFails}, cleanup failure=${cleanupFails}`, async () => {
+        const usage = { ...emptyUsage(), input: 11, output: 7, totalTokens: 18 };
+        const childResult: ChildResult = {
+          output: formatChildOutput("answer").text, outputTruncated: false,
+          status: "complete", durationMs: 1, contextTokens: 20, exitCode: 0, usage,
+          budget: { version: 1, toolCallsAttempted: 0, toolCallsExecuted: 0, deniedCalls: 0,
+            queryCount: 0, fetchTargetCount: 0, softLimitReached: false, hardLimitReached: false },
+        };
+        const childError = new ChildRunError(boundedParentError("child failed", { phase: "process" }), usage);
+        let cleanupPath: Parameters<typeof rm>[0] | undefined;
+        const harness = await startHarness({
+          async runChild() {
+            if (childFails) throw childError;
+            return childResult;
+          },
+          async removeTempDirectory(path, options) {
+            cleanupPath = path;
+            assert.deepEqual(options, { recursive: true, force: true });
+            if (cleanupFails) throw new Error("cleanup failed");
+            await rm(path, options);
+          },
+        });
+        const id = "cleanup-usage";
+        await harness.fire("tool_call", { toolName: TOOL_NAME, toolCallId: id, input: {} });
+        try {
+          const execution = harness.toolDefinition.execute(id, {
+            task: "lookup", scope: ["."], capability: "local", preset: "lookup-standard",
+          }, undefined, undefined, { cwd: process.cwd(), modelRegistry: {
+            find: () => ({ provider: "test", id: "test", api: "openai-completions", reasoning: true }),
+          } });
+          if (childFails || cleanupFails) {
+            await assert.rejects(execution, (error: Error) => {
+              if (childFails) assert.equal(error.message, childError.message);
+              else assert.match(error.message, /"phase":"cleanup"/);
+              return true;
+            });
+            assert.deepEqual(await harness.fire("tool_result", toolEvent(id, true)), { usage });
+          } else {
+            const result = await execution;
+            assert.deepEqual(result.usage, usage);
+            assert.deepEqual(result.details.usage, usage);
+            assert.equal(result.content[0].text, childResult.output);
+          }
+          assert.ok(cleanupPath, "temporary directory cleanup was attempted");
+          assert.equal(await harness.fire("tool_result", toolEvent(id, true)), undefined,
+            "failure usage is attached only once, never leaked from a successful call");
+        } finally {
+          if (cleanupPath) await rm(cleanupPath, { recursive: true, force: true });
+        }
+      });
+    }
+  }
 });
 
 describe("pi-subagent extension wiring", () => {

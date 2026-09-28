@@ -178,7 +178,7 @@ Only the bounded result text (`content`) enters the parent model context. Every 
 | `outputTruncated` | Whether the runtime byte cap shortened the answer |
 | `answer` | Untrusted child answer text |
 
-JSON escaping keeps literal markers, quotes, and forged envelope text inside `answer`, not in the runtime fields. The whole serialized envelope, including escaping overhead, fits within the 12 KiB cap and determines the injected-context estimate. Byte truncation shortens `answer` at a UTF-8 boundary while preserving valid JSON and the runtime fields; it adds no in-body status marker. This separates status provenance but does not make the answer trustworthy or prevent all model-level prompt injection.
+JSON escaping keeps literal markers, quotes, and forged envelope text inside `answer`, not in the runtime fields. The whole serialized envelope, including escaping overhead, fits within the 12 KiB cap and determines the injected-context estimate. That estimate is its UTF-8 byte length divided by four, rounded up: a model-independent size heuristic, not measured tokens or a guaranteed error bound across languages and models. Byte truncation shortens `answer` at a UTF-8 boundary while preserving valid JSON and the runtime fields; it adds no in-body status marker. This separates status provenance but does not make the answer trustworthy or prevent all model-level prompt injection.
 
 Parent tool-result `details` retain content-free execution and budget metadata for the UI and host, such as the selected capability, preset, model, scope-root count, status, duration, usage, limits, and counters. They are not sent to the parent model and never include tasks, queries, URLs, paths, or tool content. Update the companion skill together with the runtime when adopting this result format.
 - A dedicated parent-liveness pipe makes the child remove private runtime files and terminate its POSIX process group if the parent exits abruptly. The implementation has a native-Windows fallback that terminates the child process itself, but native Windows is not officially supported or tested.
@@ -195,7 +195,7 @@ The child guard canonicalizes every requested path, replaces the tool input with
 The web extension loads before the guard, making the guard the final `tool_call` policy handler. Every web tool uses a pinned, default-deny argument allowlist:
 
 - searches are non-interactive, use the configured provider, disable curation and background content expansion, and allow at most four queries with ten results each;
-- fetches allow at most five readable HTTP(S) URLs under the web extension's SSRF policy;
+- fetches allow at most five readable HTTP(S) URLs under the web extension's SSRF policy; omitted modes are explicitly set to `readable`, regardless of the web extension's default mode (its allowed-mode restrictions still apply);
 - caller-selected providers or proxies, local files, browser-cookie authentication, answer/model/media modes, embedded URL credentials, and forced GitHub clones are rejected.
 
 A denied input blocks only that call, allowing the child to correct it. Every corrected call is validated independently.
