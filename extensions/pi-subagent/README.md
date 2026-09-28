@@ -36,6 +36,9 @@ Core requirements:
 - Pi 0.84.2 or later;
 - authentication for the configured child provider and access to its model (`openai-codex` by default; see [Presets](#presets)). Installing this extension does not grant model access.
 
+> [!NOTE]
+> Pi 0.85.0's bundled model catalog lacks `gpt-6-sol`, the default for `analysis-standard` and `review-standard`. Before using those presets, check that the model is available in your Pi registry or configure an available model with `/pi-subagent-settings` after installation. See [Presets](#presets).
+
 Capability-specific requirements:
 
 - `local`: `rg` for `grep`, and `fd` or `fdfind` for `find`;
