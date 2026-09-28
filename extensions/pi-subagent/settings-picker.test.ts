@@ -85,9 +85,13 @@ test("qualified provider/model IDs match even when absent from label and display
   assert.deepEqual(results, [id]);
 });
 
-test("escape goes back and Ctrl+C cancels even on tiny screens", () => {
-  const { picker, resize, results } = harness();
-  resize(4); picker.render(12);
-  picker.handleInput("\x1b"); picker.handleInput("\x03");
-  assert.deepEqual(results, [undefined, null]);
+test("escape goes back and all Ctrl+C encodings cancel on normal and tiny screens", () => {
+  for (const tiny of [false, true]) {
+    for (const data of ["\x03", "\x1b[99;5u", "\x1b[27;5;99~"]) {
+      const { picker, resize, results } = harness();
+      resize(tiny ? 4 : 24); picker.render(tiny ? 12 : 80);
+      picker.handleInput("\x1b"); picker.handleInput(data);
+      assert.deepEqual(results, [undefined, null], JSON.stringify({ tiny, data }));
+    }
+  }
 });

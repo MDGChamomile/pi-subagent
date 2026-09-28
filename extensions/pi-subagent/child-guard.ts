@@ -258,7 +258,11 @@ export function prepareWebCall(
 } {
   const violation = validateWebCall(toolName, input);
   if (violation) return { violation };
-  const normalizedInput = toolName === "web_search" ? { ...input, workflow: "none" } : { ...input };
+  const normalizedInput = toolName === "web_search"
+    ? { ...input, workflow: "none" }
+    : toolName === "fetch_content"
+      ? { ...input, mode: "readable" }
+      : { ...input };
   return { input: normalizedInput, cost: webResourceCost(toolName, normalizedInput) };
 }
 

@@ -78,7 +78,7 @@ function modelVisibleOutput(result: ChildResult): string {
   const toolOutput = serialized.find((item) => item.type === "function_call_output");
   assert.ok(toolOutput?.type === "function_call_output" && typeof toolOutput.output === "string");
   assert.equal("details" in toolOutput, false);
-  assert.equal(result.contextTokens, Math.ceil(toolOutput.output.length / 4));
+  assert.equal(result.contextTokens, Math.ceil(Buffer.byteLength(toolOutput.output, "utf8") / 4));
   return toolOutput.output;
 }
 
@@ -102,7 +102,7 @@ describe("pi-subagent spawned-child integration", () => {
       answer: "Only this final assistant answer may reach the parent.",
     });
     assert.doesNotMatch(result.output, /intermediate|noisy child/);
-    assert.equal(result.contextTokens, Math.ceil(result.output.length / 4));
+    assert.equal(result.contextTokens, Math.ceil(Buffer.byteLength(result.output, "utf8") / 4));
     assert.equal(result.usage.totalTokens, 48);
   });
 

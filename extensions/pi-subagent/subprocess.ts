@@ -95,7 +95,8 @@ export function formatProgress(model: string, thinking: Thinking, durationMs: nu
 }
 
 export function estimateContextTokens(text: string): number {
-  return Math.ceil(text.length / 4);
+  // Model-independent size heuristic, not tokenizer-measured usage.
+  return Math.ceil(Buffer.byteLength(text, "utf8") / 4);
 }
 
 export function formatResultSummary(status: ResultStatus, durationMs: number, contextTokens: number): string {

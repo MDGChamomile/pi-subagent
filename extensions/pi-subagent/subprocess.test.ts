@@ -295,7 +295,12 @@ describe("child completion boundary", () => {
   });
 
   test("formats final context injection estimates for complete and partial results", () => {
+    assert.equal(estimateContextTokens(""), 0);
     assert.equal(estimateContextTokens("x".repeat(7_280)), 1_820);
+    assert.equal(estimateContextTokens("abcde"), 2);
+    assert.equal(estimateContextTokens("한글"), 2); // 6 UTF-8 bytes
+    assert.equal(estimateContextTokens("😀😀"), 2); // 8 UTF-8 bytes
+    assert.equal(estimateContextTokens("A한😀"), 2); // mixed, 8 UTF-8 bytes
     assert.equal(
       formatResultSummary("complete", 14_200, 1_820),
       "✓ Complete · 14.2s · Context injected: ~1,820 tokens",
