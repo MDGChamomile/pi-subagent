@@ -85,7 +85,7 @@ export class SettingsPicker {
       this.list.handleInput(data);
     } else {
       this.input.handleInput(data);
-      this.filtered = fuzzyFilter(this.options.items, this.input.getValue(), (item) => `${item.label} ${item.description ?? ""}`);
+      this.filtered = fuzzyFilter(this.options.items, this.input.getValue(), (item) => `${item.value} ${item.label} ${item.description ?? ""}`);
       this.preferred = this.filtered[0]?.value;
       this.rebuild(this.height);
     }

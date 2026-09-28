@@ -72,6 +72,19 @@ test("metadata is single-line and control-free while selection preserves the exa
   assert.deepEqual(results, [value]);
 });
 
+test("qualified provider/model IDs match even when absent from label and display name", () => {
+  const results: unknown[] = [];
+  const id = "openai-codex/gpt-6-sol";
+  const picker = new SettingsPicker({ title: "Model", context: "openai-codex", items: [
+    { value: id, label: "gpt-6-sol", description: "Sol" },
+    { value: "openai-codex/gpt-5.6-luna", label: "gpt-5.6-luna", description: "Luna" },
+  ] }, theme, getKeybindings(), () => 24, () => {}, (result) => results.push(result));
+  for (const char of id) picker.handleInput(char);
+  assert.ok(picker.render(80).some((s) => s.includes("1 results")));
+  picker.handleInput("\r");
+  assert.deepEqual(results, [id]);
+});
+
 test("escape goes back and Ctrl+C cancels even on tiny screens", () => {
   const { picker, resize, results } = harness();
   resize(4); picker.render(12);
