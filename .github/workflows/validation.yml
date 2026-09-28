@@ -25,7 +25,7 @@ jobs:
     strategy:
       fail-fast: false
       matrix:
-        pi-version: ["0.84.2", "0.85.0"]
+        pi-version: ["0.87.1"]
     defaults:
       run:
         working-directory: extensions/pi-subagent

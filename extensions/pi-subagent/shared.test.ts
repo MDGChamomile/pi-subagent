@@ -298,34 +298,34 @@ describe("pi-subagent model invocation contract", () => {
         () => resolveWebExtensionPath(tools.slice(1)),
         /requires enabled tools/,
       );
-      for (const version of ["0.27.0", "0.27.1", "0.28.0", "0.100.0", "1.0.0", "2.0.0", "0.27.0+build.1"]) {
+      for (const version of ["0.33.0", "0.33.1", "0.34.0", "0.100.0", "1.0.0", "2.0.0", "0.33.0+build.1"]) {
         await writeFile(join(root, "package.json"), JSON.stringify({
           name: "pi-web-access", version, pi: { extensions: ["./index.ts"] },
         }));
         assert.equal(await resolveWebExtensionPath(tools), entry, version);
       }
-      for (const version of ["0.26.99", "0.9.0", "0.26.0+build", "0.27.0-rc.1", "0.28.0-beta.1", "1.0.0-rc.1", "0.027.0", "0.27", "v0.28.0", "0.28.0+", "0.28.0\n", "", null, 28]) {
+      for (const version of ["0.27.0", "0.32.99", "0.9.0", "0.32.0+build", "0.33.0-rc.1", "0.34.0-beta.1", "1.0.0-rc.1", "0.033.0", "0.33", "v0.34.0", "0.34.0+", "0.34.0\n", "", null, 33]) {
         await writeFile(join(root, "package.json"), JSON.stringify({
           name: "pi-web-access", version, pi: { extensions: ["./index.ts"] },
         }));
         await assert.rejects(
           () => resolveWebExtensionPath(tools),
-          /pi-web-access >=0\.27\.0 \(stable releases only\) package entry point/,
+          /pi-web-access >=0\.33\.0 \(stable releases only\) package entry point/,
           String(version),
         );
       }
       await writeFile(join(root, "package.json"), JSON.stringify({
-        name: "pi-web-access", version: "0.28.0", pi: { extensions: ["./other.ts"] },
+        name: "pi-web-access", version: "0.33.0", pi: { extensions: ["./other.ts"] },
       }));
       await assert.rejects(() => resolveWebExtensionPath(tools), /package entry point/);
       await writeFile(join(root, "package.json"), JSON.stringify({
         name: "lookalike-web-extension",
-        version: "0.28.0",
+        version: "0.33.0",
         pi: { extensions: ["./index.ts"] },
       }));
       await assert.rejects(
         () => resolveWebExtensionPath(tools),
-        /installed pi-web-access >=0\.27\.0 \(stable releases only\) package entry point/,
+        /installed pi-web-access >=0\.33\.0 \(stable releases only\) package entry point/,
       );
     } finally {
       await rm(root, { recursive: true, force: true });
@@ -344,13 +344,13 @@ describe("pi-subagent model invocation contract", () => {
       await writeFile(js, "export default () => {};\n");
       await writeFile(helper, "export default () => {};\n");
       const manifest = async (extensions: string[], name = "pi-web-access") => writeFile(
-        join(pkg, "package.json"), JSON.stringify({ name, version: "0.31.0", pi: { extensions } }),
+        join(pkg, "package.json"), JSON.stringify({ name, version: "0.33.0", pi: { extensions } }),
       );
       const tools = (path: string, baseDir = dist) => ALLOWED_WEB_TOOLS.map((name) => ({
         name, sourceInfo: { path, baseDir },
       }));
       await manifest(["./dist"]);
-      for (const version of ["0.30.0", "0.31.0"]) {
+      for (const version of ["0.33.0", "0.34.0"]) {
         await writeFile(join(pkg, "package.json"), JSON.stringify({
           name: "pi-web-access", version, pi: { extensions: ["./dist"] },
         }));
@@ -405,7 +405,7 @@ describe("pi-subagent public contract", () => {
     });
     assert.equal(LIFETIME_WEB_QUERY_LIMIT, 32);
     assert.equal(LIFETIME_WEB_FETCH_TARGET_LIMIT, 50);
-    assert.equal(MIN_WEB_EXTENSION_VERSION, "0.27.0");
+    assert.equal(MIN_WEB_EXTENSION_VERSION, "0.33.0");
     const expectedPresets = {
       "lookup-standard": { model: "openai-codex/gpt-5.6-luna", thinking: "medium" },
       "analysis-standard": { model: "openai-codex/gpt-6-sol", thinking: "medium" },

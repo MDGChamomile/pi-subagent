@@ -39,12 +39,9 @@ Investigations can fill the main conversation with file reads, searches, fetched
 Requirements:
 
 - Linux, including Ubuntu on WSL; native Windows is not officially supported or tested;
-- Pi 0.84.2 or later;
+- Pi 0.87.1 or later;
 - authentication for the configured child provider and access to its model (`openai-codex` by default; see [Presets](#presets));
 - `rg` for local `grep`, and `fd` or `fdfind` for local `find`.
-
-> [!NOTE]
-> Pi 0.85.0's bundled model catalog lacks `gpt-6-sol`, the default for `analysis-standard` and `review-standard`. Before using those presets, check that the model is available in your Pi registry or configure an available model with `/pi-subagent-settings` after installation. See [Presets](#presets).
 
 > [!IMPORTANT]
 > This package provides an application-level capability boundary, not an OS, network, or credential-isolated sandbox. Pi extensions execute with the current user's system permissions. Review the source and trust assumptions before installing it.
@@ -63,7 +60,7 @@ This command gives delegation guidance to the parent, which then calls the `pi_s
 
 ### Optional web capability
 
-Local investigations work with this package alone. Web investigations require `pi-web-access` v0.27.0 or later (stable releases) with its default tool names:
+Local investigations work with this package alone. Web investigations require `pi-web-access` v0.33.0 or later (stable releases) with its default tool names:
 
 ```bash
 pi install npm:pi-web-access
@@ -90,7 +87,7 @@ The child cannot write files, run Bash or tests, persist a session, or recursive
 | Capability | Available tools | Scope |
 | --- | --- | --- |
 | `local` | Pi-owned `read`, `grep`, `find`, and `ls` | 1–8 existing paths inside the parent working directory |
-| `web` | Guarded tools from `pi-web-access` v0.27.0 or later (stable releases) | Empty; no local-file access |
+| `web` | Guarded tools from `pi-web-access` v0.33.0 or later (stable releases) | Empty; no local-file access |
 
 Mixed local-and-web work uses separate child calls, with synthesis performed by the parent.
 
@@ -125,7 +122,7 @@ You can also edit individual presets in `~/.pi/agent/pi-subagent.json` (or under
 }
 ```
 
-Use exact model IDs available in your Pi registry; examples do not grant access. Settings are read before each call, and omitted presets/fields keep their defaults. Set `provider` and `model` together; a thinking-only override is allowed. Supported thinking names are `off`, `minimal`, `low`, `medium`, `high`, `xhigh`, and `max`, restricted to what Pi reports for that model. Invalid settings, missing models, or unsupported thinking fail before child startup; there is no automatic fallback. In particular, Pi 0.85.0's bundled catalog lacks the default `gpt-6-sol`: configure an available model or a Pi catalog that includes it.
+Use exact model IDs available in your Pi registry; examples do not grant access. Settings are read before each call, and omitted presets/fields keep their defaults. Set `provider` and `model` together; a thinking-only override is allowed. Supported thinking names are `off`, `minimal`, `low`, `medium`, `high`, `xhigh`, and `max`, restricted to what Pi reports for that model. Invalid settings, missing models, or unsupported thinking fail before child startup; there is no automatic fallback. Confirm access to the selected model, or configure an available model with `/pi-subagent-settings`.
 
 Authenticate each provider through Pi, not this file. Only user-level settings are read; project files and tool arguments cannot override the selection. Child extensions remain disabled, so providers registered only by a parent extension are not supported. The child checks its effective model and thinking before sending requests to prevent silent selection changes. See the [extension guide](https://github.com/MDGChamomile/pi-subagent/blob/v0.5.0/extensions/pi-subagent/README.md#presets) for configuration details.
 

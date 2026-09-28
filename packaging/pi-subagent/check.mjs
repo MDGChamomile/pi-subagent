@@ -52,15 +52,22 @@ assert.equal(
 );
 
 const sharedRequirementPatterns = [
-  ["minimum Pi version", /Pi 0\.84\.2 or later/],
+  ["minimum Pi version", /Pi 0\.87\.1 or later/],
   ["provider authentication requirement", /authentication for the configured child provider/],
-  ["minimum web extension version", /pi-web-access` v0\.27\.0 or later/],
+  ["minimum web extension version", /pi-web-access` v0\.33\.0 or later/],
   ["npm installation command", /pi install npm:@mdgchamomile\/pi-subagent/],
 ];
 for (const [description, pattern] of sharedRequirementPatterns) {
   assert.match(sourceReadme, pattern, `source README is missing ${description}`);
   assert.match(topLevelReadme, pattern, `package README is missing ${description}`);
 }
+for (const path of ["extensions/pi-subagent/README.md", "skills/pi-subagent/README.md", "skills/pi-subagent/SKILL.md"]) {
+  const guide = await readFile(join(sourceRoot, path), "utf8");
+  assert.match(guide, /Pi 0\.87\.1 or later/, `${path} has an outdated Pi minimum`);
+  assert.match(guide, /pi-web-access(?:`)? v0\.33\.0 or later/, `${path} has an outdated web minimum`);
+}
+const sharedSource = await readFile(join(sourceRoot, "extensions/pi-subagent/shared.ts"), "utf8");
+assert.match(sharedSource, /MIN_WEB_EXTENSION_VERSION = "0\.33\.0"/, "runtime web minimum is out of sync");
 
 const presetRows = (markdown) => [...markdown.matchAll(
   /^\| `(lookup-standard|analysis-standard|review-standard)` \| `([^`]+)` \| `([^`]+)` \|/gm,
