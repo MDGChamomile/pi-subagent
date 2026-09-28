@@ -22,10 +22,6 @@ jobs:
   subagent:
     runs-on: ubuntu-24.04
     timeout-minutes: 10
-    strategy:
-      fail-fast: false
-      matrix:
-        pi-version: ["0.87.1"]
     defaults:
       run:
         working-directory: extensions/pi-subagent
@@ -42,13 +38,6 @@ jobs:
       - name: Install native search test dependency
         run: sudo apt-get update && sudo apt-get install -y --no-install-recommends ripgrep
       - run: npm ci --include=dev --ignore-scripts
-      - name: Select tested Pi version
-        run: |
-          npm install --no-save --package-lock=false --ignore-scripts \
-            @earendil-works/pi-agent-core@${{ matrix.pi-version }} \
-            @earendil-works/pi-ai@${{ matrix.pi-version }} \
-            @earendil-works/pi-coding-agent@${{ matrix.pi-version }} \
-            @earendil-works/pi-tui@${{ matrix.pi-version }}
       - run: npm run typecheck
       - run: npm test
       - run: npm run package:check
