@@ -16,6 +16,7 @@ export const packageFiles = [
   ["extensions/pi-subagent/shared.ts", "extensions/pi-subagent/shared.ts"],
   ["extensions/pi-subagent/config.ts", "extensions/pi-subagent/config.ts"],
   ["extensions/pi-subagent/settings-command.ts", "extensions/pi-subagent/settings-command.ts"],
+  ["extensions/pi-subagent/settings-picker.ts", "extensions/pi-subagent/settings-picker.ts"],
   ["extensions/pi-subagent/subprocess.ts", "extensions/pi-subagent/subprocess.ts"],
   ["extensions/pi-subagent/child-guard.ts", "extensions/pi-subagent/child-guard.ts"],
   ["extensions/pi-subagent/parent-liveness.ts", "extensions/pi-subagent/parent-liveness.ts"],
