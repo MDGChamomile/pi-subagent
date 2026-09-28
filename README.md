@@ -13,17 +13,13 @@ Run focused, bounded investigations in an ephemeral child Pi process while keepi
 
 ### See it in action
 
-Illustrated CLI walkthroughs of Pi Subagent's delegation workflow. The examples use a synthetic retry bug; dialogue, timing, and usage figures are illustrative rather than recordings of live model sessions.
+An illustrated CLI walkthrough of Pi Subagent's delegation workflow. The example uses a synthetic retry bug; dialogue, timing, and usage figures are illustrative rather than a recording of a live model session.
 
-**Model invoked** — ask a normal question. When a focused investigation is appropriate, Pi can select the skill and delegate the investigation to a scoped, read-only child.
+**Model invoked** — ask a normal question. When a focused investigation is appropriate, Pi can select the skill and delegate the investigation to a scoped, read-only child. You can also invoke `/skill:pi-subagent` explicitly with a focused task and scope; the parent follows the skill guidance and calls the same `pi_subagent` tool.
 
 ![Model-invoked investigation: a normal question leads Pi to delegate a scoped investigation, receive a bounded result, verify the decisive source lines, and answer](extensions/pi-subagent/assets/pi-subagent-automatic.gif)
 
-**User invoked** — invoke `/skill:pi-subagent` explicitly with a focused task and scope. The parent follows the skill guidance and calls the same `pi_subagent` tool.
-
-![User-invoked investigation: an explicit skill invocation leads to a scoped read-only investigation, bounded result, targeted verification, and final answer](extensions/pi-subagent/assets/pi-subagent-manual.gif)
-
-In both flows, intermediate child reads stay out of the parent context. The child investigates only; implementation, tests, and final verification remain with the parent.
+In either case, intermediate child reads stay out of the parent context. The child investigates only; implementation, tests, and final verification remain with the parent.
 
 ## Why use it?
 

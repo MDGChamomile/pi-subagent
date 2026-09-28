@@ -16,7 +16,7 @@ npm --prefix extensions/pi-subagent run package:check
 
 `manifest.json` supplies the authoritative package version. During assembly, `build.mjs` rewrites this repository's version-pinned GitHub/raw GitHub URLs in the package README and `pi.image` to that version. This covers demo images, the architecture image, guides, and license links; unrelated URLs and maintained source files are unchanged. Existing versioned source URLs serve as readable templates, not a second release-version setting. Package validation also builds a disposable future-version fixture to verify that changing only the manifest version updates the generated links.
 
-The model-invoked walkthrough is packaged as `pi-subagent-automatic.gif` and used for `pi.image`; the user-invoked walkthrough is `pi-subagent-manual.gif`. These illustrated demos are not live model recordings.
+The model-invoked walkthrough is packaged as `pi-subagent-automatic.gif` and used for `pi.image`. This illustrated demo is not a live model recording; users can also invoke the same bounded investigation manually with `/skill:pi-subagent`.
 
 Before publishing, inspect the generated manifest and dry-run report:
 
@@ -34,7 +34,7 @@ The authorized rerun made 24 provider requests. Its temporary harness used isola
 
 ## Trusted Publishing setup
 
-The first independent release uses `0.4.0`. Before publishing, verify npm's actual publisher settings and confirm that the selected version is unused. For the transition from `pi-agent-kit`, stop its release workflow and replace its trusted-publisher connection with the configuration below. npm connections cannot be edited in place: create the new connection and remove the superseded one, retaining only the intended release connection. Historical kit tags were not imported, and the old npm `0.3.0` remains immutable. See [MIGRATION.md](../../MIGRATION.md).
+The independent release line began at `0.4.0`. Before future releases, verify npm's actual publisher settings and confirm that the selected version is unused. The transition from `pi-agent-kit` required retiring its release workflow and replacing its trusted-publisher connection; a manifest change alone could not transfer that authority. npm connections cannot be edited in place: if a connection needs to change, create the new one and remove the superseded one, retaining only the intended release connection. Historical kit tags were not imported, and the old npm `0.3.0` remains immutable. See [MIGRATION.md](../../MIGRATION.md).
 
 The package publishes through `.github/workflows/npm-publish.yml` without an npm token. Configure its single trusted publisher on the npm package settings page with:
 

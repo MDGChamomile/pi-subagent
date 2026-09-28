@@ -6,9 +6,9 @@ Original kit history, releases, and pinned evidence URLs remain authoritative fo
 
 ## npm installations
 
-The package remains `@mdgchamomile/pi-subagent`. Existing installations need no rename or second installation. Until an explicitly published release from this repository is available, npm continues to serve the previous kit-published version. Do not install both the npm package and a linked source copy of the same resources.
+The package remains `@mdgchamomile/pi-subagent`. Existing installations need no rename or second installation; independent releases from this repository are now available. Do not install both the npm package and a linked source copy of the same resources.
 
-The independent release line starts at `0.4.0`. Before each release, verify the unused version and update the version-pinned package documentation/assets consistently. The first release also requires replacing the kit's trusted-publisher connection; a manifest change alone does not transfer that authority. Git tags and npm registry metadata, rather than a checked-in version number, establish publication. See [package maintenance](packaging/pi-subagent/DEVELOPMENT.md).
+The independent release line began at `0.4.0`. Before each future release, verify the unused version and the generated version-pinned package documentation/assets. The initial transition required replacing the kit's trusted-publisher connection; a manifest change alone could not transfer that authority. Git tags and npm registry metadata, rather than a checked-in version number, establish publication. See [package maintenance](packaging/pi-subagent/DEVELOPMENT.md).
 
 ## Source installations
 

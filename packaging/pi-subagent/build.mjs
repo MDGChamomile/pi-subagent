@@ -25,10 +25,6 @@ export const packageFiles = [
     "extensions/pi-subagent/assets/pi-subagent-automatic.gif",
   ],
   [
-    "extensions/pi-subagent/assets/pi-subagent-manual.gif",
-    "extensions/pi-subagent/assets/pi-subagent-manual.gif",
-  ],
-  [
     "extensions/pi-subagent/assets/pi-subagent-architecture.png",
     "extensions/pi-subagent/assets/pi-subagent-architecture.png",
   ],

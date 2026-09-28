@@ -16,17 +16,13 @@ The companion [skill](../../skills/pi-subagent/README.md) guides the parent in d
 
 ## In action
 
-Two illustrated CLI walkthroughs show Pi Subagent investigating a retry bug in **Parcel Client**, a synthetic shipping client. Dialogue, timing, and usage figures are illustrative rather than recordings of live model sessions.
+An illustrated CLI walkthrough shows Pi Subagent investigating a retry bug in **Parcel Client**, a synthetic shipping client. Dialogue, timing, and usage figures are illustrative rather than a recording of a live model session.
 
-**Model invoked** — the user asks a normal debugging question. Pi decides that a focused investigation is appropriate and delegates it to a scoped, read-only child.
+**Model invoked** — the user asks a normal debugging question. Pi decides that a focused investigation is appropriate and delegates it to a scoped, read-only child. You can also invoke `/skill:pi-subagent` explicitly with a focused task and scope; the parent follows the skill guidance and calls the same `pi_subagent` tool.
 
 ![A normal retry question leading to model-selected delegation, a bounded investigation result, targeted parent verification, and the final explanation](assets/pi-subagent-automatic.gif)
 
-**User invoked** — the user explicitly requests a scoped investigation with `/skill:pi-subagent`. The parent follows the skill guidance and calls the same `pi_subagent` tool.
-
-![An explicit skill invocation followed by a scoped read-only investigation, bounded result, targeted verification, and final explanation](assets/pi-subagent-manual.gif)
-
-Both flows use the same bounded `pi_subagent` runtime. Intermediate child tool output stays out of the parent context; the result returns to the parent for targeted verification and synthesis.
+Both approaches use the same bounded `pi_subagent` runtime. Intermediate child tool output stays out of the parent context; the result returns to the parent for targeted verification and synthesis.
 
 ## Requirements and installation
 
