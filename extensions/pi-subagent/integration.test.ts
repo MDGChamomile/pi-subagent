@@ -5,7 +5,7 @@ import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { describe, test } from "node:test";
 import { fileURLToPath } from "node:url";
-import type { Message, Model } from "@earendil-works/pi-ai";
+import { normalizeContext, type Message, type Model } from "@earendil-works/pi-ai";
 import { convertResponsesMessages } from "@earendil-works/pi-ai/api/openai-responses-shared";
 import { ChildRunError, emptyUsage, runChild, type ChildResult } from "./subprocess.ts";
 import { buildChildPolicy, MAX_FINAL_BYTES, MAX_PARENT_ERROR_BYTES } from "./shared.ts";
@@ -70,11 +70,11 @@ function modelVisibleOutput(result: ChildResult): string {
     toolCallId: "child-call",
     toolName: "pi_subagent",
     content: [{ type: "text", text: result.output }],
-    details: { status: result.status, partialReason: result.partialReason },
+    details: { status: result.status, partialReason: result.partialReason ?? null },
     isError: false,
     timestamp: 0,
   }];
-  const serialized = convertResponsesMessages(model, { messages }, new Set([model.provider]));
+  const serialized = convertResponsesMessages(model, normalizeContext({ messages }), new Set([model.provider]));
   const toolOutput = serialized.find((item) => item.type === "function_call_output");
   assert.ok(toolOutput?.type === "function_call_output" && typeof toolOutput.output === "string");
   assert.equal("details" in toolOutput, false);

@@ -33,16 +33,13 @@ Both flows use the same bounded `pi_subagent` runtime. Intermediate child tool o
 Core requirements:
 
 - Linux, including Ubuntu on WSL; native Windows is not officially supported or tested;
-- Pi 0.84.2 or later;
+- Pi 0.87.1 or later;
 - authentication for the configured child provider and access to its model (`openai-codex` by default; see [Presets](#presets)). Installing this extension does not grant model access.
-
-> [!NOTE]
-> Pi 0.85.0's bundled model catalog lacks `gpt-6-sol`, the default for `analysis-standard` and `review-standard`. Before using those presets, check that the model is available in your Pi registry or configure an available model with `/pi-subagent-settings` after installation. See [Presets](#presets).
 
 Capability-specific requirements:
 
 - `local`: `rg` for `grep`, and `fd` or `fdfind` for `find`;
-- `web`: [`pi-web-access` v0.27.0 or later (stable releases)](https://github.com/nicobailon/pi-web-access) with its default tool names.
+- `web`: [`pi-web-access` v0.33.0 or later (stable releases)](https://github.com/nicobailon/pi-web-access) with its default tool names.
 
 Install the extension and companion skill together from npm:
 
@@ -50,7 +47,7 @@ Install the extension and companion skill together from npm:
 pi install npm:@mdgchamomile/pi-subagent
 ```
 
-For web investigations, also install the web extension (v0.27.0 or later):
+For web investigations, also install the web extension (v0.33.0 or later):
 
 ```bash
 pi install npm:pi-web-access
@@ -89,7 +86,7 @@ The model can select the skill automatically. For an explicit first investigatio
 The command loads delegation guidance for the parent, which then calls the `pi_subagent` tool. The child investigates only: it does not modify files or run tests, and final verification remains with the parent.
 
 > [!NOTE]
-> The web guard verifies the dependency's package name, minimum version (>=0.27.0, stable releases only), declared entry point, and tool provenance. Newer stable versions are allowed without an upper bound so updates are not blocked solely by version; this is not a guarantee of compatibility or package safety. Prereleases and malformed versions are rejected. Existing argument allowlists and execution limits remain enforced, but changes to upstream behavior may require maintenance. Another extension exposing the same tool names does not satisfy the provenance check. Without the web dependency, `local` runs remain available. Local child startup is forced offline and never downloads missing search binaries.
+> The web guard verifies the dependency's package name, minimum version (>=0.33.0, stable releases only), declared entry point, and tool provenance. Newer stable versions are allowed without an upper bound so updates are not blocked solely by version; this is not a guarantee of compatibility or package safety. Prereleases and malformed versions are rejected. Existing argument allowlists and execution limits remain enforced, but changes to upstream behavior may require maintenance. Another extension exposing the same tool names does not satisfy the provenance check. Without the web dependency, `local` runs remain available. Local child startup is forced offline and never downloads missing search binaries.
 
 ## How it works
 
@@ -147,7 +144,7 @@ Only the selected preset is updated; other overrides remain intact and omitted d
 
 Omitted presets and fields retain their defaults. To change a model, specify both `provider` and `model`; model IDs may include `@`, slashes (as on OpenRouter), and colons (as on Ollama). IDs must be nonempty, at most 256 characters, free of control characters, and have no surrounding whitespace; their spelling is preserved. A thinking-only override is allowed. Accepted thinking names are `off`, `minimal`, `low`, `medium`, `high`, `xhigh`, and `max`; the selected model must support the level according to Pi's metadata. Pi maps these names to each provider's own reasoning controls, so they are not identical token budgets across providers. Unknown fields, malformed settings, unavailable models, and unsupported levels fail during preflight with configuration guidance, not a fallback or silent clamp.
 
-Use exact model IDs present in your Pi registry and authenticate through Pi's usual login/environment configuration. Examples do not guarantee account access. Pi 0.85.0's bundled catalog lacks the default `gpt-6-sol`; supply an available model or use a Pi catalog that includes it. This package does not install models, store credentials, or change the parent model/thinking. Built-in providers such as Anthropic and OpenRouter and user `models.json` configurations are supported; providers requiring parent-only extensions are not, because child extension discovery stays disabled. The child verifies its effective provider/model and thinking before each provider request; disagreement with the selected settings fails closed before transmission.
+Use exact model IDs present in your Pi registry and authenticate through Pi's usual login/environment configuration. Examples do not guarantee account access. Pi 0.87.1's bundled catalog includes the default `gpt-6-sol`, but you still need access to the selected model; configure another available model if necessary. This package does not install models, store credentials, or change the parent model/thinking. Built-in providers such as Anthropic and OpenRouter and user `models.json` configurations are supported; providers requiring parent-only extensions are not, because child extension discovery stays disabled. The child verifies its effective provider/model and thinking before each provider request; disagreement with the selected settings fails closed before transmission.
 
 Selecting a provider changes where delegated inputs are sent and may incur its charges. Review those settings and your provider permissions before delegating. There is no automatic provider fallback or per-call approval UI. The settings command confirms only the saved defaults, not future provider usage.
 
@@ -258,7 +255,7 @@ python3 -B extensions/pi-subagent/scripts/context_isolation_eval.py \
 
 The live observation harness is Codex-specific and evaluates default presets, not arbitrary provider overrides. Use a dedicated Pi agent directory without `pi-subagent.json` for these opt-in commands. Offline configuration tests cover Anthropic/OpenRouter selection; they do not establish live provider compatibility.
 
-The development dependencies are pinned to Pi 0.85.0. The default offline suite includes Python evaluation-contract tests as well as the TypeScript runtime tests; Python 3 and `rg` are required. The scoped-search regression uses Pi's native grep tool and an existing ripgrep binary without downloading tools or making model requests. Live checks require the Node.js Pi installation and consume model/provider usage. `--preset all` (the default) runs every current runtime preset in a fresh parent session; select one with, for example, `--preset review-standard`. If both `PI_PROVIDER` and `PI_MODEL` are set, `--main-model` may be omitted, but explicit parent model and thinking arguments are preferred for reproducibility.
+The development dependencies are pinned to Pi 0.87.1. The default offline suite includes Python evaluation-contract tests as well as the TypeScript runtime tests; Python 3 and `rg` are required. The scoped-search regression uses Pi's native grep tool and an existing ripgrep binary without downloading tools or making model requests. Live checks require the Node.js Pi installation and consume model/provider usage. `--preset all` (the default) runs every current runtime preset in a fresh parent session; select one with, for example, `--preset review-standard`. If both `PI_PROVIDER` and `PI_MODEL` are set, `--main-model` may be omitted, but explicit parent model and thinking arguments are preferred for reproducibility.
 
 Live checks verify the requested preset/capability/scope, returned model/thinking, complete untruncated output, usage, evidence, and absence of parent investigation. A test-only observer loads before the production guard and independently checks the effective child model/thinking, outgoing model/reasoning fields, and returned model identity. It records only configuration metadata in temporary files, never prompts, response text, headers, or credentials. Missing observations and silent thinking clamping fail the check. It does not change production presets or global model configuration.
 

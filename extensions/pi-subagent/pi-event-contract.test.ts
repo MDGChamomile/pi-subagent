@@ -67,11 +67,11 @@ async function runOneToolTurn(options: {
   const toolCallId = "contract-call";
   const messages = await runAgentLoop(
     [{ role: "user", content: "run the contract tool", timestamp: Date.now() }],
-    { systemPrompt: "test", messages: [], tools: [options.tool] },
+    { messages: [], tools: [options.tool] },
     {
       model: MODEL,
       convertToLlm: (input) => input as any,
-      shouldStopAfterTurn: () => true,
+      finishTurn: () => ({ action: "end" }),
       beforeToolCall: options.beforeToolCall,
       afterToolCall: options.afterToolCall,
     },

@@ -23,7 +23,7 @@ for (const filtered of [false, true]) {
       await mkdir(pkg);
       const entry = join(pkg, "index.ts");
       await writeFile(join(pkg, "package.json"), JSON.stringify({
-        name: "pi-web-access", version: "0.27.0", pi: { extensions: ["./index.ts"] },
+        name: "pi-web-access", version: "0.33.0", pi: { extensions: ["./index.ts"] },
       }));
       await writeFile(entry, `export default function(pi) {
         for (const name of ${JSON.stringify(ALLOWED_WEB_TOOLS)}) pi.registerTool({
