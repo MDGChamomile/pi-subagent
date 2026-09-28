@@ -8,6 +8,8 @@ import type { ExtensionCommandContext } from "@earendil-works/pi-coding-agent";
 import { loadPresetSettings, presetSettingsPath, readPresetSettingsSnapshot } from "./config.ts";
 import { configureSubagentSettings, savePresetSettings } from "./settings-command.ts";
 import { SUBAGENT_PRESETS } from "./shared.ts";
+import { getKeybindings } from "@earendil-works/pi-tui";
+import type { SettingsPicker } from "./settings-picker.ts";
 
 let root: string;
 const previousAgentDir = process.env.PI_CODING_AGENT_DIR;
@@ -29,21 +31,30 @@ const model: Model<Api> = {
 };
 const override = { provider: model.provider, model: model.id, thinking: "off" as const };
 function context(options: { cancelAt?: number; confirm?: boolean; hasUI?: boolean; models?: Model<Api>[];
-  beforeConfirm?: () => Promise<void>; unavailable?: () => boolean } = {}) {
+  beforeConfirm?: () => Promise<void>; unavailable?: () => boolean;
+  mode?: string; inputs?: string[][] } = {}) {
   const choices: { title: string; options: string[] }[] = [];
   const notifications: { text: string; type: string }[] = [];
   const confirmations: string[] = [];
   const models = options.models ?? [model];
   const ctx = {
     hasUI: options.hasUI ?? true,
+    mode: options.mode ?? "tui",
     modelRegistry: {
-      getAll: () => models,
+      getAll: () => { throw new Error("Picker must use authenticated availability, not the full registry"); },
+      getAvailable: () => models,
       find: (provider: string, id: string) => options.unavailable?.() ? undefined : models.find((m) => m.provider === provider && m.id === id),
     },
     ui: {
-      async select(title: string, items: string[]) {
-        choices.push({ title, options: items });
-        return choices.length === options.cancelAt ? undefined : items[0];
+      async custom(factory: Function) {
+        return new Promise((resolve) => {
+          const picker: SettingsPicker = factory({ terminal: { rows: 24 }, requestRender() {} },
+            { fg: (_color: string, s: string) => s, bold: (s: string) => s }, getKeybindings(), resolve);
+          choices.push({ title: picker.options.title, options: picker.options.items.map((item) => item.value) });
+          picker.render(80);
+          const inputs = options.inputs?.[choices.length - 1] ?? [choices.length === options.cancelAt ? "\u0003" : "\r"];
+          for (const input of inputs) picker.handleInput(input);
+        });
       },
       async confirm(_title: string, message: string) {
         confirmations.push(message);
@@ -63,9 +74,10 @@ test("command saves only the selected user default and next-call loading sees it
   await writeFile(path, JSON.stringify(existing));
   const harness = context();
   await configureSubagentSettings(harness.ctx);
-  assert.equal(harness.choices.length, 3);
-  assert.deepEqual(harness.choices[1].options, ["custom/@cf/example/model"]);
-  assert.deepEqual(harness.choices[2].options, ["off"]);
+  assert.equal(harness.choices.length, 4);
+  assert.deepEqual(harness.choices[1].options, ["custom"]);
+  assert.deepEqual(harness.choices[2].options, ["custom/@cf/example/model"]);
+  assert.deepEqual(harness.choices[3].options, ["off"]);
   assert.match(harness.confirmations[0], /Before:.*\nAfter:/);
   assert.match(harness.confirmations[0], /future subagent calls/);
   assert.deepEqual(JSON.parse(await readFile(path, "utf8")), { presets: {
@@ -81,7 +93,7 @@ test("command saves only the selected user default and next-call loading sees it
 });
 
 test("cancellation at any dialog and non-UI use never writes settings", async () => {
-  for (const options of [{ cancelAt: 1 }, { cancelAt: 2 }, { cancelAt: 3 }, { confirm: false }, { hasUI: false }]) {
+  for (const options of [{ cancelAt: 1 }, { cancelAt: 2 }, { cancelAt: 3 }, { cancelAt: 4 }, { confirm: false }, { hasUI: false }]) {
     const dir = await directory();
     const harness = context(options);
     await configureSubagentSettings(harness.ctx);
@@ -128,7 +140,7 @@ test("thinking choices include extended levels only when model metadata supports
   const reasoningModel = { ...model, reasoning: true, thinkingLevelMap: { max: "max" } };
   const harness = context({ models: [reasoningModel] });
   await configureSubagentSettings(harness.ctx);
-  assert.ok(harness.choices[2].options.includes("max"));
+  assert.ok(harness.choices[3].options.includes("max"));
   assert.equal(harness.notifications.at(-1)?.type, "info");
   assert.deepEqual(await readdir(dir), ["pi-subagent.json"]);
 });
@@ -141,6 +153,31 @@ test("concurrent edits during dialogs are preserved and require reopening", asyn
   assert.match(harness.notifications.at(-1)!.text, /changed while the dialog/);
   assert.equal(await readFile(presetSettingsPath(), "utf8"), edited);
   assert.deepEqual(await readdir(dir), ["pi-subagent.json"]);
+});
+
+test("provider filtering and back navigation retain a pending model without saving early", async () => {
+  await directory();
+  const second = { ...model, id: "second" };
+  const other = { ...model, provider: "other" };
+  const harness = context({ models: [model, second, other], inputs: [
+    ["\r"], ["\r"], ["\x1b[B", "\r"], ["\x1b"], ["\x1b"], ["\r"], ["\r"], ["\r"],
+  ] });
+  await configureSubagentSettings(harness.ctx);
+  assert.deepEqual(harness.choices[1].options, ["custom", "other"]);
+  assert.deepEqual(harness.choices[2].options, ["custom/@cf/example/model", "custom/second"]);
+  assert.equal(harness.confirmations.length, 1);
+  assert.equal((await loadPresetSettings())["lookup-standard"].model, "custom/second");
+});
+
+test("RPC and non-terminal modes do not open custom UI or write", async () => {
+  for (const mode of ["rpc", "json", "print"]) {
+    const dir = await directory();
+    const harness = context({ mode });
+    await configureSubagentSettings(harness.ctx);
+    assert.equal(harness.choices.length, 0);
+    assert.deepEqual(await readdir(dir), []);
+    assert.match(harness.notifications[0].text, /TUI mode/);
+  }
 });
 
 test("stale snapshots and competing locks fail without overwriting", async () => {

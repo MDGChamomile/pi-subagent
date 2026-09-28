@@ -97,7 +97,7 @@ Mixed local-and-web work uses separate child calls, with synthesis performed by 
 
 These are **default settings**, not required providers or models. They do not inherit the parent model or change its thinking level.
 
-Run **`/pi-subagent-settings`** in Pi to select a preset, a registered model, and a supported thinking level, then confirm the change. This saves your user defaults across sessions; the next subagent call uses them without a reload. Running children and the parent model are unchanged. Cancel any dialog to leave settings untouched. Saving does not contact a provider or guarantee child access.
+Run **`/pi-subagent-settings`** in Pi's TUI to select a preset, provider, model, and supported thinking level, then confirm the change. Type to search by ID or display name; bounded lists scroll with the arrow keys and mark the current setting. Escape returns to the previous selection step (or exits the first); Ctrl+C cancels. Nothing is saved until confirmation. The picker lists models Pi considers available from local authentication metadata, not verified account access; you can still configure other registered models in the settings file. Saving makes no provider request and does not guarantee child access. Defaults persist across sessions and apply to the next subagent call without a reload; running children and the parent model are unchanged.
 
 You can also edit individual presets in `~/.pi/agent/pi-subagent.json` (or under `PI_CODING_AGENT_DIR`, resolved by Pi's `getAgentDir()`):
 
