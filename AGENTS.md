@@ -2,7 +2,7 @@
 
 Pi Subagent delegates bounded, read-only investigations to ephemeral child Pi processes. The extension enforces boundaries; the companion skill guides delegation. Implementation and final verification remain with the parent.
 
-Follow [PRINCIPLE.md](PRINCIPLE.md): keep procedures thin and boundaries firm. Start with the simplest solution that preserves the objective and core constraints. Load task-specific documentation as needed; do not replace runtime enforcement with prompt instructions or require delegation for routine work.
+[PRINCIPLE.md](PRINCIPLE.md) points to the [canonical harness principles](https://github.com/MDGChamomile/MDGChamomile/blob/main/PRINCIPLE.md); maintain them there, not in this repository. Even offline, keep procedures thin and boundaries firm: start with the simplest solution that preserves the objective and core constraints. Load task-specific documentation as needed; do not replace runtime enforcement with prompt instructions or require delegation for routine work.
 
 ## Core boundaries
 

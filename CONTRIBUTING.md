@@ -1,6 +1,6 @@
 # Contributing
 
-Keep changes focused and consistent with [PRINCIPLE.md](PRINCIPLE.md). Explain the problem, observable benefit, and affected runtime or packaging contract. Preserve scope, privacy, authorization, and lifecycle boundaries.
+Keep changes focused and consistent with the [canonical harness principles](https://github.com/MDGChamomile/MDGChamomile/blob/main/PRINCIPLE.md), linked from this repository's [PRINCIPLE.md](PRINCIPLE.md). Maintain the principles in the canonical repository, not here. For offline work, use the local boundaries in [AGENTS.md](AGENTS.md): keep procedures lean without weakening scope, privacy, authorization, or lifecycle safeguards. Explain the problem, observable benefit, and affected runtime or packaging contract.
 
 ## Pull requests
 
