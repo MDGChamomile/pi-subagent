@@ -8,6 +8,7 @@ import {
   type PresetSettings, type SettingsSnapshot,
 } from "./config.ts";
 import { PRESET_NAMES, type Preset, type Thinking } from "./shared.ts";
+import { pickSetting } from "./settings-picker.ts";
 
 // A short synchronous transaction serializes commands across Pi processes. Never
 // hold a lock while waiting for UI, and never reclaim another process's lock.
@@ -54,40 +55,80 @@ export function savePresetSettings(snapshot: SettingsSnapshot, preset: Preset, o
 }
 
 export async function configureSubagentSettings(ctx: ExtensionCommandContext): Promise<void> {
-  if (!ctx.hasUI) {
-    ctx.ui.notify("/pi-subagent-settings requires an interactive UI; edit pi-subagent.json instead.", "warning");
+  if (!ctx.hasUI || ctx.mode !== "tui") {
+    ctx.ui.notify("/pi-subagent-settings requires TUI mode; edit pi-subagent.json instead.", "warning");
     return;
   }
   try {
     const snapshot = await readPresetSettingsSnapshot();
     const current = parsePresetSettings(snapshot.settings);
-    const presetLabels = PRESET_NAMES.map((name) => `${name}: ${current[name].model} (${current[name].thinking})`);
-    const presetLabel = await ctx.ui.select("Subagent defaults — select a preset", presetLabels);
-    const preset = PRESET_NAMES[presetLabels.indexOf(presetLabel ?? "")];
-    if (!preset) return;
-
-    // List registered models, not only authenticated ones; saving never contacts
-    // a provider. Parent-only extension providers may still fail in the child.
-    const models = ctx.modelRegistry.getAll().filter((model) => {
+    // Availability is Pi's local authentication view, not a live access probe.
+    const models = ctx.modelRegistry.getAvailable().filter((model) => {
       try {
-        parsePresetSettings({ presets: { [preset]: { provider: model.provider, model: model.id } } });
+        parsePresetSettings({ presets: { "lookup-standard": { provider: model.provider, model: model.id } } });
         return true;
       } catch { return false; }
     }).sort((a, b) => `${a.provider}/${a.id}`.localeCompare(`${b.provider}/${b.id}`));
-    const labels = models.map((model) => `${model.provider}/${model.id}`);
-    if (!labels.length) {
-      ctx.ui.notify("No registered models can be configured for subagents.", "warning");
+    if (!models.length) {
+      ctx.ui.notify("No available models. Authenticate a provider in Pi or edit pi-subagent.json for a registered model.", "warning");
       return;
     }
-    const label = await ctx.ui.select(`Model — current: ${current[preset].model}`, labels);
-    const model = models[labels.indexOf(label ?? "")];
-    if (!model) return;
-    const levels = getSupportedThinkingLevels(model).filter((level) => THINKING_LEVELS.includes(level));
-    const thinking = await ctx.ui.select(`Thinking — current: ${current[preset].thinking}`, levels);
-    if (!thinking || !levels.includes(thinking as Thinking)) return;
+    let stage = 0;
+    let preset: Preset = PRESET_NAMES[0];
+    let provider: string | undefined;
+    let model = models[0];
+    let thinking: Thinking = "off";
+    while (true) {
+      if (stage === 0) {
+        const value = await pickSetting(ctx, {
+          title: "Subagent defaults · Preset · 1/5", context: "Choose the default to configure",
+          selected: preset,
+          items: PRESET_NAMES.map((name) => ({ value: name, label: name, description: `${current[name].model} (${current[name].thinking})` })),
+        });
+        if (value == null) return;
+        if (preset !== value) provider = undefined;
+        preset = value as Preset;
+      } else if (stage === 1) {
+        const value = await pickSetting(ctx, {
+          title: "Subagent defaults · Provider · 2/5", context: `${preset} · Current: ${current[preset].model}`,
+          current: current[preset].model.split("/")[0], selected: provider,
+          items: [...new Set(models.map((m) => m.provider))].map((name) => ({ value: name, label: name,
+            description: "Authentication detected; model access and child availability are not guaranteed." })),
+        });
+        if (value === null) return;
+        if (value === undefined) { stage--; continue; }
+        if (provider !== value) {
+          provider = value;
+          model = models.find((m) => m.provider === provider && `${m.provider}/${m.id}` === current[preset].model)
+            ?? models.find((m) => m.provider === provider)!;
+        }
+      } else if (stage === 2) {
+        const value = await pickSetting(ctx, {
+          title: "Subagent defaults · Model · 3/5", context: `${preset} · ${provider} · Current: ${current[preset].model}`,
+          current: current[preset].model, selected: `${model.provider}/${model.id}`,
+          items: models.filter((m) => m.provider === provider).map((m) => ({ value: `${m.provider}/${m.id}`, label: m.id, description: m.name })),
+        });
+        if (value === null) return;
+        if (value === undefined) { stage--; continue; }
+        model = models.find((m) => `${m.provider}/${m.id}` === value)!;
+      } else {
+        const levels = getSupportedThinkingLevels(model).filter((level) => THINKING_LEVELS.includes(level));
+        const value = await pickSetting(ctx, {
+          title: "Subagent defaults · Thinking · 4/5", context: `${preset} · ${model.provider}/${model.id}`,
+          current: current[preset].thinking,
+          items: levels.map((level) => ({ value: level, label: level })),
+        });
+        if (value === null) return;
+        if (value === undefined) { stage--; continue; }
+        if (!levels.includes(value as Thinking)) return;
+        thinking = value as Thinking;
+        break;
+      }
+      stage++;
+    }
     const selection = { model: `${model.provider}/${model.id}`, thinking: thinking as Thinking };
     validatePresetSelection(selection, ctx.modelRegistry);
-    if (!await ctx.ui.confirm("Save subagent defaults?", [
+    if (!await ctx.ui.confirm("Save subagent defaults? · 5/5", [
       preset,
       `Before: ${current[preset].model} (${current[preset].thinking})`,
       `After: ${selection.model} (${selection.thinking})`,
