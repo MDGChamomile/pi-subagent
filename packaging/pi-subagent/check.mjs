@@ -4,31 +4,70 @@ import { cp, mkdir, mkdtemp, readFile, rm, stat, writeFile } from "node:fs/promi
 import { tmpdir } from "node:os";
 import { dirname, join, resolve } from "node:path";
 import { fileURLToPath } from "node:url";
-import { buildPackage, packageFiles, stagingDirectory } from "./build.mjs";
+import { buildPackage, packageFiles, releaseUrls, stagingDirectory } from "./build.mjs";
+
+// A future version must update every maintained release URL without source edits.
+const packageRoot = dirname(fileURLToPath(import.meta.url));
+const maintainedManifestText = await readFile(join(packageRoot, "manifest.json"), "utf8");
+const maintainedReadme = await readFile(join(packageRoot, "README.md"), "utf8");
+const maintainedManifest = JSON.parse(maintainedManifestText);
+const futureVersion = "99.12.34";
+const rawRoot = "https://raw.githubusercontent.com/MDGChamomile/pi-subagent";
+assert.equal(
+  releaseUrls(maintainedManifest.pi.image, futureVersion),
+  `${rawRoot}/v${futureVersion}/extensions/pi-subagent/assets/pi-subagent-automatic.gif`,
+  "gallery must use the model-invoked demo at the selected version",
+);
+const futureReadme = releaseUrls(maintainedReadme, futureVersion);
+const maintainedUrls = maintainedReadme.match(/https:\/\/[^\s)]+\/v\d+\.\d+\.\d+\/[^\s)]+/g) ?? [];
+assert.ok(maintainedUrls.length >= 8, "exercise images, architecture, guides, and license URLs");
+for (const url of maintainedUrls) {
+  assert.ok(futureReadme.includes(url.replace(/\/v\d+\.\d+\.\d+\//, `/v${futureVersion}/`)));
+}
+const unrelated = "https://github.com/other/project/blob/v0.5.0/README.md extensions/pi-subagent/assets/pi-subagent-automatic.gif";
+assert.equal(releaseUrls(unrelated, futureVersion), unrelated);
+assert.equal(releaseUrls(futureReadme, futureVersion), futureReadme, "URL rendering is idempotent");
+assert.throws(() => releaseUrls(maintainedReadme, "1.0.0-beta.1"), /stable release version/);
 
 await buildPackage();
+assert.equal(await readFile(join(packageRoot, "manifest.json"), "utf8"), maintainedManifestText);
+assert.equal(await readFile(join(packageRoot, "README.md"), "utf8"), maintainedReadme);
 
 const manifest = JSON.parse(await readFile(join(stagingDirectory, "package.json"), "utf8"));
 assert.equal(manifest.name, "@mdgchamomile/pi-subagent");
 assert.equal(manifest.private, undefined);
 assert.deepEqual(manifest.pi.extensions, ["./index.ts"], "load only the root entrypoint");
 assert.deepEqual(manifest.keywords.includes("pi-package"), true);
-assert.match(manifest.pi.image, new RegExp(`/v${manifest.version.replaceAll(".", "\\.")}/`));
+assert.equal(manifest.pi.image, `${rawRoot}/v${manifest.version}/extensions/pi-subagent/assets/pi-subagent-automatic.gif`);
 
 const topLevelReadme = await readFile(join(stagingDirectory, "README.md"), "utf8");
 const sourceRoot = resolve(dirname(fileURLToPath(import.meta.url)), "../..");
 const sourceReadme = await readFile(join(sourceRoot, "README.md"), "utf8");
+assert.equal(topLevelReadme, releaseUrls(maintainedReadme, manifest.version));
+const demoSection = (text) => text.split("### See it in action\n")[1].split("\n## Why use it?")[0];
+assert.equal(
+  demoSection(topLevelReadme).replaceAll(`${rawRoot}/v${manifest.version}/`, ""),
+  demoSection(sourceReadme),
+  "source and package demo descriptions must agree",
+);
 
 const sharedRequirementPatterns = [
-  ["minimum Pi version", /Pi 0\.84\.2 or later/],
-  ["provider authentication requirement", /authentication for Pi's `openai-codex` provider/],
-  ["minimum web extension version", /pi-web-access` v0\.27\.0 or later/],
+  ["minimum Pi version", /Pi 0\.87\.1 or later/],
+  ["provider authentication requirement", /authentication for the configured child provider/],
+  ["minimum web extension version", /pi-web-access` v0\.33\.0 or later/],
   ["npm installation command", /pi install npm:@mdgchamomile\/pi-subagent/],
 ];
 for (const [description, pattern] of sharedRequirementPatterns) {
   assert.match(sourceReadme, pattern, `source README is missing ${description}`);
   assert.match(topLevelReadme, pattern, `package README is missing ${description}`);
 }
+for (const path of ["extensions/pi-subagent/README.md", "skills/pi-subagent/README.md", "skills/pi-subagent/SKILL.md"]) {
+  const guide = await readFile(join(sourceRoot, path), "utf8");
+  assert.match(guide, /Pi 0\.87\.1 or later/, `${path} has an outdated Pi minimum`);
+  assert.match(guide, /pi-web-access(?:`)? v0\.33\.0 or later/, `${path} has an outdated web minimum`);
+}
+const sharedSource = await readFile(join(sourceRoot, "extensions/pi-subagent/shared.ts"), "utf8");
+assert.match(sharedSource, /MIN_WEB_EXTENSION_VERSION = "0\.33\.0"/, "runtime web minimum is out of sync");
 
 const presetRows = (markdown) => [...markdown.matchAll(
   /^\| `(lookup-standard|analysis-standard|review-standard)` \| `([^`]+)` \| `([^`]+)` \|/gm,
@@ -36,7 +75,7 @@ const presetRows = (markdown) => [...markdown.matchAll(
 const expectedPresets = [
   { preset: "lookup-standard", model: "openai-codex/gpt-5.6-luna", thinking: "medium" },
   { preset: "analysis-standard", model: "openai-codex/gpt-6-sol", thinking: "medium" },
-  { preset: "review-standard", model: "openai-codex/gpt-6-sol", thinking: "medium" },
+  { preset: "review-standard", model: "openai-codex/gpt-6-sol", thinking: "high" },
 ];
 assert.deepEqual(presetRows(sourceReadme), expectedPresets, "source README preset contract is inaccurate");
 assert.deepEqual(presetRows(topLevelReadme), expectedPresets, "package README preset contract is inaccurate");
@@ -99,6 +138,24 @@ for (const markdownPath of actualFiles.filter((path) => path.endsWith(".md"))) {
 
 const temporaryConfig = await mkdtemp(join(tmpdir(), "pi-subagent-package-check-"));
 try {
+  // Exercise a version-only change through the real builder in a disposable tree.
+  const fixtureRoot = join(temporaryConfig, "version-only");
+  for (const source of [...packageFiles.map(([source]) => source), "packaging/pi-subagent/build.mjs"]) {
+    const target = join(fixtureRoot, source);
+    await mkdir(dirname(target), { recursive: true });
+    await cp(join(sourceRoot, source), target);
+  }
+  const fixturePackage = join(fixtureRoot, "packaging/pi-subagent");
+  await writeFile(join(fixturePackage, "manifest.json"), JSON.stringify({ ...maintainedManifest, version: futureVersion }));
+  const built = spawnSync(process.execPath, [join(fixturePackage, "build.mjs")], { encoding: "utf8", timeout: 30_000 });
+  assert.ifError(built.error);
+  assert.equal(built.status, 0, built.stderr);
+  const futureManifest = JSON.parse(await readFile(join(fixturePackage, "dist/package.json"), "utf8"));
+  assert.equal(futureManifest.version, futureVersion);
+  assert.equal(futureManifest.pi.image, `${rawRoot}/v${futureVersion}/extensions/pi-subagent/assets/pi-subagent-automatic.gif`);
+  assert.equal(await readFile(join(fixturePackage, "dist/README.md"), "utf8"), futureReadme);
+  assert.equal(await readFile(join(fixturePackage, "README.md"), "utf8"), maintainedReadme);
+
   const home = join(temporaryConfig, "home");
   await mkdir(home);
   const discoveryScript = fileURLToPath(new URL("../../extensions/pi-subagent/scripts/package-discovery.mjs", import.meta.url));

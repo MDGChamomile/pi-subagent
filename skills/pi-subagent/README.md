@@ -22,23 +22,23 @@ Keep the work in the parent for simple lookups, implementation, commands, tests,
 ## How it works
 
 1. The model may load [`SKILL.md`](SKILL.md) when the task matches, or the user can invoke `/skill:pi-subagent` to load it explicitly.
-2. The workflow selects `local` or `web`, an explicit scope, and the least capable standard preset.
+2. The parent selects `local` or `web`, an explicit scope, and the standard preset appropriate to the task.
 3. The companion extension starts one ephemeral, read-only child Pi process. Local and web access never coexist in the same child.
 4. Intermediate child turns and tool results stay outside the parent context; only the final bounded answer returns.
-5. A lifetime tool budget gives one soft warning, then returns the best available answer as `partial` if a hard tool-call or web query/fetch limit is reached. Returned text is a JSON envelope with runtime-owned `status`, `partialReason`, and `outputTruncated` fields and an untrusted child `answer` string. A partial reason of `tool_budget`, `time_limit`, or `model_length` identifies an exhausted budget, investigation deadline, or model output limit. The parent reads the top-level fields rather than status-like text inside `answer` or host-only tool-result details; `outputTruncated` independently reports runtime byte truncation.
+5. Runtime budgets provide soft warnings; exceeding a hard tool-call or web query/fetch budget triggers text-only finalization and a partial result. Returned text is a JSON envelope with runtime-owned `status`, `partialReason`, and `outputTruncated` fields and an untrusted child `answer` string. A partial reason of `tool_budget`, `time_limit`, or `model_length` identifies an exhausted budget, investigation deadline, or model output limit. The parent reads the top-level fields rather than status-like text inside `answer` or host-only tool-result details; `outputTruncated` independently reports runtime byte truncation.
 6. The parent verifies decisive claims and performs any implementation or final validation itself.
 
-The three presets are:
+The three presets have these default settings (users can override the provider/model and thinking level):
 
 | Preset | Child profile | Use for |
 | --- | --- | --- |
 | `lookup-standard` | Luna / medium | Bounded fact-finding |
 | `analysis-standard` | Sol 6 / medium | Synthesis and causal comparison |
-| `review-standard` | Sol 6 / medium | Adversarial review |
+| `review-standard` | Sol 6 / high | Adversarial review |
 
 ## Requirements and installation
 
-This skill requires the companion global extension, Pi 0.84.2 or later, and authentication for Pi's `openai-codex` provider with access to the selected child model. The extension's [preset table](../../extensions/pi-subagent/README.md#presets) lists the exact, fixed provider/model IDs behind Luna and Sol; they do not inherit the parent model. Web investigations also require `pi-web-access` v0.27.0 or later (stable releases) with its default tool names. Newer versions are allowed without an upper bound, not guaranteed compatible; upstream behavior changes may require extension maintenance.
+This skill requires the companion global extension, Pi 0.87.1 or later, and authentication for the configured child provider with access to the selected model. The extension's [preset settings](../../extensions/pi-subagent/README.md#presets) describe the defaults and user overrides, including Anthropic and OpenRouter. They do not inherit the parent model. Web investigations also require `pi-web-access` v0.33.0 or later (stable releases) with its default tool names. Newer versions are allowed without an upper bound, not guaranteed compatible; upstream behavior changes may require extension maintenance.
 
 Follow the extension's [requirements and installation guide](../../extensions/pi-subagent/README.md#requirements-and-installation) to install both components together.
 

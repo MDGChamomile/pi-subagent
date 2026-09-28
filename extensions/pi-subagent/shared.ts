@@ -27,7 +27,7 @@ export const LIFETIME_WEB_QUERY_SOFT_LIMIT = 24;
 export const LIFETIME_WEB_QUERY_LIMIT = 32;
 export const LIFETIME_WEB_FETCH_TARGET_SOFT_LIMIT = 38;
 export const LIFETIME_WEB_FETCH_TARGET_LIMIT = 50;
-export const MIN_WEB_EXTENSION_VERSION = "0.27.0";
+export const MIN_WEB_EXTENSION_VERSION = "0.33.0";
 export const MAX_SCOPE_ROOTS = 8;
 export const MAX_SUBAGENT_CALLS = 3;
 export const MAX_FINAL_BYTES = 12 * 1024;
@@ -51,12 +51,13 @@ export function invocationLimitBlock(): { block: true; reason: string } {
   };
 }
 
-export type Thinking = "low" | "medium";
+export const MODEL_SELECTION_ENV = "PI_SUBAGENT_MODEL_SELECTION";
+export type Thinking = "off" | "minimal" | "low" | "medium" | "high" | "xhigh" | "max";
 
 export const SUBAGENT_PRESETS = {
   "lookup-standard": { model: "openai-codex/gpt-5.6-luna", thinking: "medium" },
   "analysis-standard": { model: "openai-codex/gpt-6-sol", thinking: "medium" },
-  "review-standard": { model: "openai-codex/gpt-6-sol", thinking: "medium" },
+  "review-standard": { model: "openai-codex/gpt-6-sol", thinking: "high" },
 } as const satisfies Record<string, { model: string; thinking: Thinking }>;
 export type Preset = keyof typeof SUBAGENT_PRESETS;
 export const PRESET_NAMES = Object.keys(SUBAGENT_PRESETS) as Preset[];

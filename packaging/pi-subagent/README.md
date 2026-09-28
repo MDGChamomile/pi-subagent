@@ -9,19 +9,17 @@ Run focused, bounded investigations in an ephemeral child Pi process while keepi
 `@mdgchamomile/pi-subagent` bundles two parts that work together:
 
 - **`pi_subagent` extension** — enforces scope, tool ownership, resource budgets, lifecycle, telemetry, and output boundaries.
-- **Companion skill** — helps the parent decide when to delegate and selects the appropriate capability and model preset.
+- **Companion skill** — guides the parent in deciding when to delegate and selecting the appropriate capability and model preset.
 
 ### See it in action
 
-Trimmed excerpts from real English-language Pi sessions investigating a retry bug in a synthetic shipping SDK. Typing and waiting are accelerated; model responses and tool execution are not scripted.
+An illustrated CLI walkthrough of Pi Subagent's delegation workflow. The example uses a synthetic retry bug; dialogue, timing, and usage figures are illustrative rather than a recording of a live model session.
 
-**Automatic delegation** — an onboarding conversation turns into a focused investigation; the model chooses to call `pi_subagent`.
+**Model invoked** — ask a normal question. When a focused investigation is appropriate, Pi can select the skill and delegate the investigation to a scoped, read-only child. You can also invoke `/skill:pi-subagent` explicitly with a focused task and scope; the parent follows the skill guidance and calls the same `pi_subagent` tool.
 
-![A natural conversation leading to automatic delegation, live progress, and a retry diagnosis](https://raw.githubusercontent.com/MDGChamomile/pi-subagent/v0.5.0/extensions/pi-subagent/assets/pi-subagent-automatic.gif)
+![Model-invoked investigation: a normal question leads Pi to delegate a scoped investigation, receive a bounded result, verify the decisive source lines, and answer](https://raw.githubusercontent.com/MDGChamomile/pi-subagent/v0.5.0/extensions/pi-subagent/assets/pi-subagent-automatic.gif)
 
-**Explicit invocation** — the user requests a scoped investigation with `/skill:pi-subagent`; the parent calls the extension and checks the result.
-
-![An explicit /skill:pi-subagent request followed by investigation progress and a cited diagnosis](https://raw.githubusercontent.com/MDGChamomile/pi-subagent/v0.5.0/extensions/pi-subagent/assets/pi-subagent-manual.gif)
+In either case, intermediate child reads stay out of the parent context. The child investigates only; implementation, tests, and final verification remain with the parent.
 
 ## Why use it?
 
@@ -37,8 +35,8 @@ Investigations can fill the main conversation with file reads, searches, fetched
 Requirements:
 
 - Linux, including Ubuntu on WSL; native Windows is not officially supported or tested;
-- Pi 0.84.2 or later;
-- authentication for Pi's `openai-codex` provider and access to the selected child model listed under [Presets](#presets);
+- Pi 0.87.1 or later;
+- authentication for the configured child provider and access to its model (`openai-codex` by default; see [Presets](#presets));
 - `rg` for local `grep`, and `fd` or `fdfind` for local `find`.
 
 > [!IMPORTANT]
@@ -58,7 +56,7 @@ This command gives delegation guidance to the parent, which then calls the `pi_s
 
 ### Optional web capability
 
-Local investigations work with this package alone. Web investigations require `pi-web-access` v0.27.0 or later (stable releases) with its default tool names:
+Local investigations work with this package alone. Web investigations require `pi-web-access` v0.33.0 or later (stable releases) with its default tool names:
 
 ```bash
 pi install npm:pi-web-access
@@ -85,7 +83,7 @@ The child cannot write files, run Bash or tests, persist a session, or recursive
 | Capability | Available tools | Scope |
 | --- | --- | --- |
 | `local` | Pi-owned `read`, `grep`, `find`, and `ls` | 1–8 existing paths inside the parent working directory |
-| `web` | Guarded tools from `pi-web-access` v0.27.0 or later (stable releases) | Empty; no local-file access |
+| `web` | Guarded tools from `pi-web-access` v0.33.0 or later (stable releases) | Empty; no local-file access |
 
 Mixed local-and-web work uses separate child calls, with synthesis performed by the parent.
 
@@ -95,9 +93,34 @@ Mixed local-and-web work uses separate child calls, with synthesis performed by 
 | --- | --- | --- | --- |
 | `lookup-standard` | `openai-codex/gpt-5.6-luna` | `medium` | Bounded fact-finding |
 | `analysis-standard` | `openai-codex/gpt-6-sol` | `medium` | Synthesis and causal comparison |
-| `review-standard` | `openai-codex/gpt-6-sol` | `medium` | Adversarial review |
+| `review-standard` | `openai-codex/gpt-6-sol` | `high` | Adversarial review |
 
-These mappings are fixed in the extension; they do not inherit the parent model or fall back to another provider. The preset does not alter the main model's thinking level. Installing this package does not grant model access: the selected model must be present in Pi's model registry and accessible to your authenticated account. If it is absent from the registry, the call fails during preflight with `Configured subagent model is unavailable`.
+These are **default settings**, not required providers or models. They do not inherit the parent model or change its thinking level.
+
+Run **`/pi-subagent-settings`** in Pi to select a preset, a registered model, and a supported thinking level, then confirm the change. This saves your user defaults across sessions; the next subagent call uses them without a reload. Running children and the parent model are unchanged. Cancel any dialog to leave settings untouched. Saving does not contact a provider or guarantee child access.
+
+You can also edit individual presets in `~/.pi/agent/pi-subagent.json` (or under `PI_CODING_AGENT_DIR`, resolved by Pi's `getAgentDir()`):
+
+```json
+{
+  "presets": {
+    "analysis-standard": {
+      "provider": "anthropic",
+      "model": "claude-sonnet-4-5",
+      "thinking": "high"
+    },
+    "review-standard": {
+      "provider": "openrouter",
+      "model": "anthropic/claude-sonnet-4.5",
+      "thinking": "high"
+    }
+  }
+}
+```
+
+Use exact model IDs available in your Pi registry; examples do not grant access. Settings are read before each call, and omitted presets/fields keep their defaults. Set `provider` and `model` together; a thinking-only override is allowed. Supported thinking names are `off`, `minimal`, `low`, `medium`, `high`, `xhigh`, and `max`, restricted to what Pi reports for that model. Invalid settings, missing models, or unsupported thinking fail before child startup; there is no automatic fallback. Confirm access to the selected model, or configure an available model with `/pi-subagent-settings`.
+
+Authenticate each provider through Pi, not this file. Only user-level settings are read; project files and tool arguments cannot override the selection. Child extensions remain disabled, so providers registered only by a parent extension are not supported. The child checks its effective model and thinking before sending requests to prevent silent selection changes. See the [extension guide](https://github.com/MDGChamomile/pi-subagent/blob/v0.5.0/extensions/pi-subagent/README.md#presets) for configuration details.
 
 ## Security and data flow
 

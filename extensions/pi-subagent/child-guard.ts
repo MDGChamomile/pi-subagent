@@ -2,6 +2,7 @@ import { lstatSync, readFileSync, realpathSync, writeFileSync } from "node:fs";
 import { dirname, resolve } from "node:path";
 import type { ExtensionAPI } from "@earendil-works/pi-coding-agent";
 import { cleanupPrivateRuntimeFiles, installParentLivenessMonitor } from "./parent-liveness.ts";
+import { validatePresetSelection, type PresetSelection } from "./config.ts";
 import {
   ALLOWED_FILE_TOOLS,
   ALLOWED_WEB_TOOLS,
@@ -20,6 +21,7 @@ import {
   MAX_WEB_QUERIES_PER_CALL,
   MAX_WEB_RESULTS_PER_QUERY,
   POLICY_ENV,
+  MODEL_SELECTION_ENV,
   READY_ENV,
   READY_MARKER,
   SOFT_DEADLINE_ENV,
@@ -384,6 +386,26 @@ export default function childGuard(
     if (softDeadlineTimer) clearTimeout(softDeadlineTimer);
     persistBudget();
     stopParentLivenessMonitor?.();
+  });
+
+  // Pin the effective selection at the request boundary: Pi may otherwise fuzzy-match
+  // a model ID or clamp thinking when the child's registry differs from the parent's.
+  const expectedSelection = process.env[MODEL_SELECTION_ENV];
+  pi.on("before_provider_request", (_event, ctx) => {
+    try {
+      const expected = JSON.parse(expectedSelection ?? "null") as PresetSelection | null;
+      if (!expected || typeof expected.model !== "string" || typeof expected.thinking !== "string" ||
+        `${ctx.model?.provider}/${ctx.model?.id}` !== expected.model || ctx.thinkingLevel !== expected.thinking) {
+        throw new Error("Subagent model/thinking selection mismatch");
+      }
+      // The CLI can synthesize an unknown ID from a same-provider model. Require
+      // an exact child registry entry, not just a matching effective ID.
+      validatePresetSelection(expected, ctx.modelRegistry);
+    } catch {
+      // Pi 0.84.2/0.85.0 swallow hook exceptions and continue the request. Exit
+      // synchronously instead; the parent observes failure and cleans runtime files.
+      process.exit(1);
+    }
   });
 
   pi.on("session_start", () => {

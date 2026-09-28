@@ -16,13 +16,14 @@ import {
   normalizePreset,
   PRESET_NAMES,
   resolveWebExtensionPath,
-  SUBAGENT_PRESETS,
   TOOL_NAME,
   type Capability,
   type ChildPolicy,
   type Preset,
 } from "./shared.ts";
 import { ChildRunError, formatResultSummary, runChild } from "./subprocess.ts";
+import { loadPresetSettings, validatePresetSelection, type PresetSelection } from "./config.ts";
+import { registerSubagentSettingsCommand } from "./settings-command.ts";
 
 const PresetSchema = StringEnum(PRESET_NAMES, {
   description: "Child model preset: lookup-standard for fact-finding, analysis-standard for synthesis, or review-standard for adversarial review",
@@ -42,6 +43,7 @@ const Parameters = Type.Object({
 }, { additionalProperties: false });
 
 export default function piSubagentExtension(pi: ExtensionAPI): void {
+  registerSubagentSettingsCommand(pi);
   const gate = new ModelInvocationGate();
   // Pi turns thrown tool errors into fresh results; reattach the child's nested usage in tool_result.
   const failedUsage = new Map<string, ChildRunError["usage"]>();
@@ -82,19 +84,20 @@ export default function piSubagentExtension(pi: ExtensionAPI): void {
         }
         const capability = params.capability as Capability;
         const preset = params.preset as Preset;
-        const { model, thinking } = SUBAGENT_PRESETS[preset];
+        let selection: PresetSelection;
         let webExtensionPath: string | undefined;
         let policy: ChildPolicy;
         try {
           if (params.task.includes("\0")) throw new Error("task must not contain NUL bytes");
-          const [provider, modelId] = model.split("/", 2);
-          if (!ctx.modelRegistry.find(provider!, modelId!)) throw new Error(`Configured subagent model is unavailable: ${model}`);
+          selection = (await loadPresetSettings())[preset];
+          validatePresetSelection(selection, ctx.modelRegistry);
           if (capability === "web") webExtensionPath = await resolveWebExtensionPath(pi.getAllTools());
           policy = await buildChildPolicy(ctx.cwd, params.scope, capability);
         } catch (error) {
           gate.rejectPreflight(toolCallId);
           throw new Error(boundedParentError(error, { phase: "preflight" }));
         }
+        const { model, thinking } = selection;
         if (!gate.commit(toolCallId)) {
           throw new Error(boundedParentError("pi_subagent invocation permit is invalid or already consumed", { phase: "preflight" }));
         }

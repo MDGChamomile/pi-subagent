@@ -2,7 +2,7 @@
 
 A foreground, model-invocable Pi extension that runs focused local-file or web investigations outside the parent context.
 
-The companion [skill](../../skills/pi-subagent/README.md) decides when and how to delegate. This extension enforces the runtime boundary, launches the child, reports progress, and returns a bounded result envelope containing the final answer.
+The companion [skill](../../skills/pi-subagent/README.md) guides the parent in deciding when and how to delegate. This extension enforces the runtime boundary, launches the child, reports progress, and returns a bounded result envelope containing the final answer.
 
 [Install](#requirements-and-installation) · [Runtime contract](#runtime-contract) · [Security](#security-boundary) · [Evaluation](#evaluation) · [Verification](#verification)
 
@@ -16,30 +16,26 @@ The companion [skill](../../skills/pi-subagent/README.md) decides when and how t
 
 ## In action
 
-Trimmed excerpts from two real English-language Pi sessions investigating a retry bug in **Parcel Client**, a synthetic shipping SDK. Typing and waiting are accelerated; model responses and tool execution are not scripted.
+An illustrated CLI walkthrough shows Pi Subagent investigating a retry bug in **Parcel Client**, a synthetic shipping client. Dialogue, timing, and usage figures are illustrative rather than a recording of a live model session.
 
-**Automatic delegation** — after a short onboarding exchange, the user asks why increasing the retry limit did not help. The model chooses to delegate the investigation without being asked to use a subagent.
+**Model invoked** — the user asks a normal debugging question. Pi decides that a focused investigation is appropriate and delegates it to a scoped, read-only child. You can also invoke `/skill:pi-subagent` explicitly with a focused task and scope; the parent follows the skill guidance and calls the same `pi_subagent` tool.
 
-![An English onboarding conversation followed by automatic pi_subagent investigation, live progress, and a retry diagnosis](assets/pi-subagent-automatic.gif)
+![A normal retry question leading to model-selected delegation, a bounded investigation result, targeted parent verification, and the final explanation](assets/pi-subagent-automatic.gif)
 
-**Explicit skill invocation** — the user sets up a read-only incident review, then invokes `/skill:pi-subagent` with the investigation scope.
-
-![A user invoking /skill:pi-subagent to investigate skipped retries, followed by live progress and a cited diagnosis](assets/pi-subagent-manual.gif)
-
-Both runs show the bounded result returning to the parent for the final answer. The explicit-invocation session also shows a targeted parent check of the decisive source file. The skill command supplies guidance to the parent; the parent then calls the extension.
+Both approaches use the same bounded `pi_subagent` runtime. Intermediate child tool output stays out of the parent context; the result returns to the parent for targeted verification and synthesis.
 
 ## Requirements and installation
 
 Core requirements:
 
 - Linux, including Ubuntu on WSL; native Windows is not officially supported or tested;
-- Pi 0.84.2 or later;
-- authentication for Pi's `openai-codex` provider and access to the selected child model listed under [Presets](#presets). Installing this extension does not grant model access.
+- Pi 0.87.1 or later;
+- authentication for the configured child provider and access to its model (`openai-codex` by default; see [Presets](#presets)). Installing this extension does not grant model access.
 
 Capability-specific requirements:
 
 - `local`: `rg` for `grep`, and `fd` or `fdfind` for `find`;
-- `web`: [`pi-web-access` v0.27.0 or later (stable releases)](https://github.com/nicobailon/pi-web-access) with its default tool names.
+- `web`: [`pi-web-access` v0.33.0 or later (stable releases)](https://github.com/nicobailon/pi-web-access) with its default tool names.
 
 Install the extension and companion skill together from npm:
 
@@ -47,7 +43,7 @@ Install the extension and companion skill together from npm:
 pi install npm:@mdgchamomile/pi-subagent
 ```
 
-For web investigations, also install the web extension (v0.27.0 or later):
+For web investigations, also install the web extension (v0.33.0 or later):
 
 ```bash
 pi install npm:pi-web-access
@@ -86,7 +82,7 @@ The model can select the skill automatically. For an explicit first investigatio
 The command loads delegation guidance for the parent, which then calls the `pi_subagent` tool. The child investigates only: it does not modify files or run tests, and final verification remains with the parent.
 
 > [!NOTE]
-> The web guard verifies the dependency's package name, minimum version (>=0.27.0, stable releases only), declared entry point, and tool provenance. Newer stable versions are allowed without an upper bound so updates are not blocked solely by version; this is not a guarantee of compatibility or package safety. Prereleases and malformed versions are rejected. Existing argument allowlists and execution limits remain enforced, but changes to upstream behavior may require maintenance. Another extension exposing the same tool names does not satisfy the provenance check. Without the web dependency, `local` runs remain available. Local child startup is forced offline and never downloads missing search binaries.
+> The web guard verifies the dependency's package name, minimum version (>=0.33.0, stable releases only), declared entry point, and tool provenance. Newer stable versions are allowed without an upper bound so updates are not blocked solely by version; this is not a guarantee of compatibility or package safety. Prereleases and malformed versions are rejected. Existing argument allowlists and execution limits remain enforced, but changes to upstream behavior may require maintenance. Another extension exposing the same tool names does not satisfy the provenance check. Without the web dependency, `local` runs remain available. Local child startup is forced offline and never downloads missing search binaries.
 
 ## How it works
 
@@ -114,15 +110,39 @@ One child call is the default. Up to three distinct, independent calls may run i
 
 ### Presets
 
-Each standard preset chooses a proportionate child model without changing the main model's thinking level:
+Each standard preset selects a child model without changing the main model's thinking level. The default settings are:
 
 | Preset | Provider/model ID | Thinking | Use for |
 | --- | --- | --- | --- |
 | `lookup-standard` | `openai-codex/gpt-5.6-luna` | `medium` | Bounded fact-finding |
 | `analysis-standard` | `openai-codex/gpt-6-sol` | `medium` | Synthesis and causal comparison |
-| `review-standard` | `openai-codex/gpt-6-sol` | `medium` | Adversarial review |
+| `review-standard` | `openai-codex/gpt-6-sol` | `high` | Adversarial review |
 
-These mappings are fixed in the extension; they do not inherit the parent model or fall back to another provider. The selected model must be present in Pi's model registry and accessible to your authenticated account. If it is absent from the registry, the call fails during preflight with `Configured subagent model is unavailable`.
+Run **`/pi-subagent-settings`** to configure persistent user defaults. Select a preset (the menu shows current values), a registered model, and one of its supported thinking levels. Review the before/after values and confirm to save. Cancel any dialog to leave the file unchanged. This is a user command, not a model-callable tool; it never changes the parent model or thinking level or makes a provider request.
+
+The command reads and writes `pi-subagent.json` in Pi's user agent directory, resolved with `getAgentDir()` (`~/.pi/agent` by default, or `PI_CODING_AGENT_DIR`). You can also edit this optional JSON file directly. Settings are read before each call, so saved defaults apply to future calls across sessions without a reload, not to already-running children. Project settings and tool arguments cannot select providers/models.
+
+Only the selected preset is updated; other overrides remain intact and omitted defaults are not materialized. Invalid JSON or settings are not overwritten. Saving uses a private temporary file and atomic replacement, rejects symlink/non-file targets, and serializes command writers with an exclusive `.lock` file. Changes detected since opening the dialog require reopening rather than overwriting. Non-cooperating external editors do not share that lock; avoid editing simultaneously. A crash can leave a `.lock` file: check that no writer is active before manually removing it. Non-UI modes must edit JSON directly.
+
+```json
+{
+  "presets": {
+    "lookup-standard": { "thinking": "low" },
+    "analysis-standard": {
+      "provider": "anthropic", "model": "claude-sonnet-4-5", "thinking": "high"
+    },
+    "review-standard": {
+      "provider": "openrouter", "model": "anthropic/claude-sonnet-4.5", "thinking": "high"
+    }
+  }
+}
+```
+
+Omitted presets and fields retain their defaults. To change a model, specify both `provider` and `model`; model IDs may include `@`, slashes (as on OpenRouter), and colons (as on Ollama). IDs must be nonempty, at most 256 characters, free of control characters, and have no surrounding whitespace; their spelling is preserved. A thinking-only override is allowed. Accepted thinking names are `off`, `minimal`, `low`, `medium`, `high`, `xhigh`, and `max`; the selected model must support the level according to Pi's metadata. Pi maps these names to each provider's own reasoning controls, so they are not identical token budgets across providers. Unknown fields, malformed settings, unavailable models, and unsupported levels fail during preflight with configuration guidance, not a fallback or silent clamp.
+
+Use exact model IDs present in your Pi registry and authenticate through Pi's usual login/environment configuration. Examples do not guarantee account access. Pi 0.87.1's bundled catalog includes the default `gpt-6-sol`, but you still need access to the selected model; configure another available model if necessary. This package does not install models, store credentials, or change the parent model/thinking. Built-in providers such as Anthropic and OpenRouter and user `models.json` configurations are supported; providers requiring parent-only extensions are not, because child extension discovery stays disabled. The child verifies its effective provider/model and thinking before each provider request; disagreement with the selected settings fails closed before transmission.
+
+Selecting a provider changes where delegated inputs are sent and may incur its charges. Review those settings and your provider permissions before delegating. There is no automatic provider fallback or per-call approval UI. The settings command confirms only the saved defaults, not future provider usage.
 
 Older stored calls with separate `profile` and `thinking` arguments, or with the former balanced/deep/exhaustive preset names, are translated to the matching standard preset before schema validation.
 
@@ -229,26 +249,26 @@ python3 -B extensions/pi-subagent/scripts/context_isolation_eval.py \
   --main-model openai-codex/gpt-6-astra --main-thinking medium
 ```
 
-The development dependencies are pinned to Pi 0.85.0. The default offline suite includes Python evaluation-contract tests as well as the TypeScript runtime tests; Python 3 and `rg` are required. The scoped-search regression uses Pi's native grep tool and an existing ripgrep binary without downloading tools or making model requests. Live checks require the Node.js Pi installation and consume model/provider usage. `--preset all` (the default) runs every current runtime preset in a fresh parent session; select one with, for example, `--preset review-standard`. If both `PI_PROVIDER` and `PI_MODEL` are set, `--main-model` may be omitted, but explicit parent model and thinking arguments are preferred for reproducibility.
+The live observation harness is Codex-specific and evaluates default presets, not arbitrary provider overrides. Use a dedicated Pi agent directory without `pi-subagent.json` for these opt-in commands. Offline configuration tests cover Anthropic/OpenRouter selection; they do not establish live provider compatibility.
+
+The development dependencies are pinned to Pi 0.87.1. The default offline suite includes Python evaluation-contract tests as well as the TypeScript runtime tests; Python 3 and `rg` are required. The scoped-search regression uses Pi's native grep tool and an existing ripgrep binary without downloading tools or making model requests. Live checks require the Node.js Pi installation and consume model/provider usage. `--preset all` (the default) runs every current runtime preset in a fresh parent session; select one with, for example, `--preset review-standard`. If both `PI_PROVIDER` and `PI_MODEL` are set, `--main-model` may be omitted, but explicit parent model and thinking arguments are preferred for reproducibility.
 
 Live checks verify the requested preset/capability/scope, returned model/thinking, complete untruncated output, usage, evidence, and absence of parent investigation. A test-only observer loads before the production guard and independently checks the effective child model/thinking, outgoing model/reasoning fields, and returned model identity. It records only configuration metadata in temporary files, never prompts, response text, headers, or credentials. Missing observations and silent thinking clamping fail the check. It does not change production presets or global model configuration.
 
-The web smoke is a maintainer-environment check, not a command reproducible from this repository or the npm installation alone. Before it starts, the script requires both of these regular files under the active Pi agent root (`PI_CODING_AGENT_DIR`, or the default agent root):
+The web smoke is a source-checkout test. It uses the checked-in `scripts/web-smoke-parent.ts` helper, not a personal loader. Install and review a compatible `pi-web-access` package separately, with authorization, then locate its declared extension entry file in that package's `package.json` (`pi.extensions`). Pass the actual existing entry file explicitly; npm, git, and custom installation locations work without a fixed agent-directory layout. No dependency is downloaded by the smoke script.
 
-```text
-npm/node_modules/pi-web-access/index.ts
-extensions/web-tool-loader.ts
-```
-
-The package supplies neither the second loader nor a setup procedure for it. Run the web smoke only in an environment that already provides and has reviewed a compatible loader; otherwise skip it and report the gap. In that maintainer environment, the command is:
+With authorization for the model/provider usage described above:
 
 ```bash
 python3 -B extensions/pi-subagent/scripts/context_isolation_eval.py \
   --mode smoke --capability web --preset all \
+  --web-extension /path/to/pi-web-access/index.ts \
   --main-model openai-codex/gpt-6-astra --main-thinking medium
 ```
 
-The web smoke keeps `pi-web-access` tools registered for provenance checks but inactive in the parent model. It fetches IANA's example-domain documentation without searching, requires verbatim body evidence for both the documentation purpose and registration/transfer restriction, and fails if the parent activates `load_web_tools` or calls a web tool directly.
+Replace `/path/to/pi-web-access/index.ts` with your package's declared entry file. A missing `--web-extension` or non-file path fails before any model session starts. Local smoke does not require or resolve this option. The source-only helper is not installed into the active Pi environment and is not included in the npm package.
+
+The helper loads last in the parent, keeps `pi-web-access` tools registered with their original provenance, activates only `pi_subagent`, and blocks other parent tool calls. The helper is not loaded in the child; the existing test observer and production guard remain in place, and package/version/entry-point checks are unchanged. No CLI tool allowlist is applied to the web-smoke parent, because Pi would remove the web tools from its registry rather than merely hiding them from the model. The smoke fetches IANA's example-domain documentation without searching, requires verbatim body evidence for both the documentation purpose and registration/transfer restriction, and fails on any parent investigation or loader call. Offline tests verify command assembly, early failures, and helper behavior; live provider/web compatibility requires a separately authorized smoke run.
 
 ### Verified environment summary
 

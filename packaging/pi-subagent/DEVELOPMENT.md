@@ -12,7 +12,11 @@ npm --prefix extensions/pi-subagent test
 npm --prefix extensions/pi-subagent run package:check
 ```
 
-`package:check` rebuilds the ignored `packaging/pi-subagent/dist/` directory, runs `npm pack --dry-run`, verifies the exact tarball file set and Pi resource paths, checks that the source and npm READMEs agree on shared installation requirements and fixed preset mappings, checks bundled relative Markdown links and version-matched absolute top-level guide links, and loads the staged package manifest through Pi's SDK resource loader with an isolated offline configuration. It uses the development package's selected Pi version, asserts error-free extension loading, exactly one `pi_subagent` tool and the companion skill, and runs negative controls for broken imports, missing tool registration, and missing skill discovery. No model session or provider request is created.
+`package:check` rebuilds the ignored `packaging/pi-subagent/dist/` directory, runs `npm pack --dry-run`, verifies the exact tarball file set and Pi resource paths, checks that the source and npm READMEs agree on shared installation requirements and default preset mappings, checks bundled relative Markdown links and version-matched absolute top-level guide links, and loads the staged package manifest through Pi's SDK resource loader with an isolated offline configuration. It uses the development package's selected Pi version, asserts error-free extension loading, exactly one `pi_subagent` tool and the companion skill, and runs negative controls for broken imports, missing tool registration, and missing skill discovery. No model session or provider request is created.
+
+`manifest.json` supplies the authoritative package version. During assembly, `build.mjs` rewrites this repository's version-pinned GitHub/raw GitHub URLs in the package README and `pi.image` to that version. This covers demo images, the architecture image, guides, and license links; unrelated URLs and maintained source files are unchanged. Existing versioned source URLs serve as readable templates, not a second release-version setting. Package validation also builds a disposable future-version fixture to verify that changing only the manifest version updates the generated links.
+
+The model-invoked walkthrough is packaged as `pi-subagent-automatic.gif` and used for `pi.image`. This illustrated demo is not a live model recording; users can also invoke the same bounded investigation manually with `/skill:pi-subagent`.
 
 Before publishing, inspect the generated manifest and dry-run report:
 
@@ -30,7 +34,7 @@ The authorized rerun made 24 provider requests. Its temporary harness used isola
 
 ## Trusted Publishing setup
 
-The first independent release uses `0.4.0`. Before publishing, verify npm's actual publisher settings and confirm that the selected version is unused. For the transition from `pi-agent-kit`, stop its release workflow and replace its trusted-publisher connection with the configuration below. npm connections cannot be edited in place: create the new connection and remove the superseded one, retaining only the intended release connection. Historical kit tags were not imported, and the old npm `0.3.0` remains immutable. See [MIGRATION.md](../../MIGRATION.md).
+The independent release line began at `0.4.0`. Before future releases, verify npm's actual publisher settings and confirm that the selected version is unused. The transition from `pi-agent-kit` required retiring its release workflow and replacing its trusted-publisher connection; a manifest change alone could not transfer that authority. npm connections cannot be edited in place: if a connection needs to change, create the new one and remove the superseded one, retaining only the intended release connection. Historical kit tags were not imported, and the old npm `0.3.0` remains immutable. See [MIGRATION.md](../../MIGRATION.md).
 
 The package publishes through `.github/workflows/npm-publish.yml` without an npm token. Configure its single trusted publisher on the npm package settings page with:
 
@@ -45,7 +49,7 @@ The workflow must exist on the default branch before this relationship is config
 
 ## Release
 
-1. Set the new immutable version in `manifest.json`; its pinned gallery image URL must use the same version tag.
+1. Set the new immutable version in `manifest.json`. Assembly automatically pins the generated gallery image and README release URLs to the matching version tag; no manual URL version edits are needed. The matching tag must contain the referenced assets and guides before the package is published.
 2. Run all verification commands above.
 3. Merge the release commit into `main` and wait for `validation` to pass.
 4. Push the matching `v<version>` tag. The tag triggers `npm-publish.yml`. All `v*` tags are reserved for package releases; a tag that does not exactly match the stable manifest version fails before installation or publishing. Use a non-`v*` tag name for non-package milestones; those tags do not trigger npm publishing.

@@ -3,8 +3,8 @@ import { existsSync } from "node:fs";
 import { join, resolve } from "node:path";
 
 // Resolve the development package's selected Pi version. Prefer its bundled SDK
-// when shipped (0.85.x): the unbundled 0.85.0 SDK imports an undeclared pi-server
-// dependency. Pi 0.84.2 ships only the regular SDK. Never mask a loading failure.
+// when shipped; Pi 0.85.0's unbundled SDK historically imported an undeclared
+// pi-server dependency. Never mask a loading failure.
 const sdkEntry = import.meta.resolve("@earendil-works/pi-coding-agent");
 const bundledEntry = new URL("./bundle/index.js", sdkEntry);
 const { DefaultResourceLoader, SettingsManager } = await import(
@@ -29,6 +29,8 @@ assert.deepEqual(errors, [], "Pi extension loading failed");
 assert.equal(extensions.length, 1, "expected exactly one packaged extension");
 assert.equal(resolve(extensions[0].path), join(packageDirectory, "index.ts"));
 assert.deepEqual([...extensions[0].tools.keys()], ["pi_subagent"], "expected pi_subagent tool registration");
+
+assert.deepEqual([...extensions[0].commands.keys()], ["pi-subagent-settings"], "expected settings command registration");
 
 const { skills, diagnostics } = loader.getSkills();
 assert.deepEqual(diagnostics, [], "Pi skill discovery reported diagnostics");

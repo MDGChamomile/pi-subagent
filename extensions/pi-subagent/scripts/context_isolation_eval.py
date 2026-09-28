@@ -18,9 +18,7 @@ from eval_runtime import json_events, load_presets, observe_run, runtime_checks
 
 EXTENSION_DIR = Path(__file__).resolve().parents[1]
 EXTENSION_ENTRY = EXTENSION_DIR / "index.ts"
-AGENT_ROOT = Path(os.getenv("PI_CODING_AGENT_DIR", Path.home() / ".pi" / "agent")).expanduser()
-WEB_EXTENSION = AGENT_ROOT / "npm" / "node_modules" / "pi-web-access" / "index.ts"
-WEB_TOOL_LOADER = AGENT_ROOT / "extensions" / "web-tool-loader.ts"
+WEB_SMOKE_PARENT = Path(__file__).with_name("web-smoke-parent.ts")
 SMOKE_WEB_URL = "https://www.iana.org/help/example-domains"
 SMOKE_WEB_QUOTE = "not available for registration or transfer"
 SMOKE_WEB_PURPOSE = "maintained for documentation purposes"
@@ -331,11 +329,19 @@ def evaluate_smoke(output: str, observations: list[dict[str, Any]], *, capabilit
     }
 
 
+def web_smoke_extension(raw_path: Path | None) -> Path:
+    if raw_path is None:
+        raise SystemExit("web smoke requires --web-extension pointing to the installed pi-web-access package entry file")
+    path = raw_path.expanduser().resolve()
+    if not path.is_file():
+        raise SystemExit("--web-extension must name an existing pi-web-access package entry file")
+    if not WEB_SMOKE_PARENT.is_file():
+        raise SystemExit("source checkout is missing scripts/web-smoke-parent.ts")
+    return path
+
+
 def run_smoke(args: argparse.Namespace) -> int:
-    if args.capability == "web":
-        for path in (WEB_EXTENSION, WEB_TOOL_LOADER):
-            if not path.is_file():
-                raise SystemExit(f"web smoke dependency is unavailable: {path}")
+    web_extension = web_smoke_extension(args.web_extension) if args.capability == "web" else None
     presets = load_presets()
     selected = list(presets) if args.preset == "all" else [args.preset]
     results = []
@@ -353,7 +359,9 @@ def run_smoke(args: argparse.Namespace) -> int:
                     "Do not read the file in the parent."
                 )
             else:
-                command += ["--extension", str(WEB_EXTENSION), "--extension", str(WEB_TOOL_LOADER)]
+                # A CLI --tools allowlist also removes registry entries needed for
+                # provenance checks. The helper narrows active tools instead.
+                command += ["--extension", str(web_extension), "--extension", str(WEB_SMOKE_PARENT)]
                 prompt = (
                     f"Call pi_subagent exactly once with capability=web, scope=[], preset={preset}. "
                     f"Have the child fetch {SMOKE_WEB_URL} with fetch_content, retrieve the stored content if needed, "
@@ -424,6 +432,8 @@ def parse_args(argv: list[str] | None = None) -> argparse.Namespace:
     parser.add_argument("--main-thinking", default=os.getenv("PI_REASONING_LEVEL", "high"))
     parser.add_argument("--case", choices=("all", *(case.name for case in CASES)), default="all")
     parser.add_argument("--capability", choices=("local", "web"), default="local")
+    parser.add_argument("--web-extension", type=Path,
+                        help="installed pi-web-access package entry file (required only for web smoke)")
     parser.add_argument("--preset", choices=("all", *load_presets()), default="all", help="smoke presets; all runs one fresh parent per preset")
     parser.add_argument("--repetitions", type=int, default=1)
     parser.add_argument("--timeout-seconds", type=positive_timeout, default=1200)

@@ -4,13 +4,13 @@ import { mkdtemp, readFile, rm, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { test } from "node:test";
-import { createAssistantMessageEventStream, type AssistantMessage, type Model } from "@earendil-works/pi-ai";
+import { createAssistantMessageEventStream, getCurrentTools, type AssistantMessage, type Model } from "@earendil-works/pi-ai";
 import type { AgentSession } from "@earendil-works/pi-coding-agent";
 import childGuard from "./child-guard.ts";
 import { emptyUsage } from "./subprocess.ts";
 import { ALLOWED_FILE_TOOLS, BUDGET_TELEMETRY_ENV, buildChildPolicy, POLICY_ENV, READY_ENV, SOFT_DEADLINE_ENV } from "./shared.ts";
 
-// Match package-discovery.mjs: 0.85.0's unbundled SDK imports undeclared pi-server.
+// Match package-discovery.mjs: prefer the bundled SDK when available.
 const sdkEntry = import.meta.resolve("@earendil-works/pi-coding-agent");
 const bundledEntry = new URL("./bundle/index.js", sdkEntry);
 const { createAgentSession, DefaultResourceLoader, ModelRuntime, SessionManager, SettingsManager } =
@@ -75,7 +75,7 @@ for (const scenario of ["retry", "length"] as const) {
       session.agent.streamFunction = (_model, context) => {
         requests++;
         assert.ok(requests <= 3, "unexpected extra continuation");
-        const activeTools = (context.tools ?? []).map((tool) => tool.name);
+        const activeTools = getCurrentTools(context.messages).map((tool) => tool.name);
         if (scenario === "retry" || requests === 1) assert.deepEqual(activeTools.sort(), [...ALLOWED_FILE_TOOLS].sort());
         else assert.deepEqual(activeTools, []);
         const message: AssistantMessage = {
