@@ -410,10 +410,6 @@ function truncateUtf8WithMarker(
   return { text: Buffer.concat([source.subarray(0, end), marker]).toString("utf8"), truncated: true };
 }
 
-export function truncateUtf8(text: string, maxBytes = MAX_FINAL_BYTES): { text: string; truncated: boolean } {
-  return truncateUtf8WithMarker(text, maxBytes, "\n\n[Subagent output truncated]");
-}
-
 /** Runtime-owned fields stay outside the JSON-escaped, untrusted child answer. */
 export function formatChildOutput(answer: string, partialReason?: PartialReason): { text: string; truncated: boolean } {
   const clean = sanitizeDisplayText(answer);

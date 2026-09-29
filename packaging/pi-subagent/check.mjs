@@ -5,6 +5,7 @@ import { tmpdir } from "node:os";
 import { dirname, join, resolve } from "node:path";
 import { fileURLToPath } from "node:url";
 import { buildPackage, packageFiles, releaseUrls, stagingDirectory } from "./build.mjs";
+import { SUBAGENT_PRESETS } from "../../extensions/pi-subagent/shared.ts";
 
 // A future version must update every maintained release URL without source edits.
 const packageRoot = dirname(fileURLToPath(import.meta.url));
@@ -69,16 +70,40 @@ for (const path of ["extensions/pi-subagent/README.md", "skills/pi-subagent/READ
 const sharedSource = await readFile(join(sourceRoot, "extensions/pi-subagent/shared.ts"), "utf8");
 assert.match(sharedSource, /MIN_WEB_EXTENSION_VERSION = "0\.33\.0"/, "runtime web minimum is out of sync");
 
-const presetRows = (markdown) => [...markdown.matchAll(
-  /^\| `(lookup-standard|analysis-standard|review-standard)` \| `([^`]+)` \| `([^`]+)` \|/gm,
-)].map(([, preset, model, thinking]) => ({ preset, model, thinking }));
-const expectedPresets = [
-  { preset: "lookup-standard", model: "openai-codex/gpt-5.6-luna", thinking: "medium" },
-  { preset: "analysis-standard", model: "openai-codex/gpt-6-sol", thinking: "medium" },
-  { preset: "review-standard", model: "openai-codex/gpt-6-sol", thinking: "high" },
-];
-assert.deepEqual(presetRows(sourceReadme), expectedPresets, "source README preset contract is inaccurate");
-assert.deepEqual(presetRows(topLevelReadme), expectedPresets, "package README preset contract is inaccurate");
+const presetRows = (markdown) => {
+  const section = markdown.split("\n## Presets\n")[1]?.split(/\n## /)[0] ?? "";
+  // Count every table row, including cells without inline-code formatting.
+  const rows = section.split("\n").filter((line) => line.trimStart().startsWith("|")).slice(2);
+  return rows.map((line) => {
+    const [preset, model, thinking] = line.trim().split("|").slice(1)
+      .map((cell) => cell.trim().replace(/^`(.*)`$/, "$1"));
+    return { preset, model, thinking };
+  });
+};
+const expectedPresets = Object.entries(SUBAGENT_PRESETS).map(([preset, settings]) => ({ preset, ...settings }));
+for (const [name, markdown] of [["source", sourceReadme], ["package", topLevelReadme]]) {
+  const checkPresets = (text) => assert.deepEqual(
+    presetRows(text), expectedPresets, `${name} README preset contract is inaccurate`,
+  );
+  checkPresets(markdown);
+
+  // Negative controls must reject stale values and missing or unexpected rows.
+  const { preset, model, thinking } = expectedPresets[0];
+  const row = `| \`${preset}\` | \`${model}\` | \`${thinking}\` |`;
+  for (const replacement of [
+    `| \`${preset}\` | \`fixture/stale-model\` | \`${thinking}\` |`,
+    `| \`${preset}\` | \`${model}\` | \`fixture-stale-thinking\` |`,
+    "",
+    `${row}\n| \`fixture-unexpected-preset\` | \`${model}\` | \`${thinking}\` |`,
+    `${row}\n| \`fixture-unexpected-preset\` | \`${model}\` | ${thinking} |`,
+    `${row}\n| fixture-unexpected-preset | ${model} | ${thinking} |`,
+  ]) {
+    assert.throws(() => checkPresets(markdown.replace(row, replacement)), {
+      code: "ERR_ASSERTION",
+      message: new RegExp(`${name} README preset contract is inaccurate`),
+    });
+  }
+}
 
 const topLevelLinks = new Map(
   [...topLevelReadme.matchAll(/\[([^\]]+)\]\(([^)]+)\)/g)].map(([, label, target]) => [label, target]),
