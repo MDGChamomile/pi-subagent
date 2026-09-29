@@ -17,7 +17,7 @@ An illustrated CLI walkthrough of Pi Subagent's delegation workflow. The example
 
 **Model invoked** — ask a normal question. When a focused investigation is appropriate, Pi can select the skill and delegate the investigation to a scoped, read-only child. You can also invoke `/skill:pi-subagent` explicitly with a focused task and scope; the parent follows the skill guidance and calls the same `pi_subagent` tool.
 
-![Model-invoked investigation: a normal question leads Pi to delegate a scoped investigation, receive a bounded result, verify the decisive source lines, and answer](https://raw.githubusercontent.com/MDGChamomile/pi-subagent/v0.5.0/extensions/pi-subagent/assets/pi-subagent-automatic.gif)
+![Model-invoked investigation: a normal question leads Pi to delegate a scoped investigation, receive a bounded result, verify the decisive source lines, and answer](https://raw.githubusercontent.com/MDGChamomile/pi-subagent/v0.6.1/extensions/pi-subagent/assets/pi-subagent-automatic.gif)
 
 In either case, intermediate child reads stay out of the parent context. The child investigates only; implementation, tests, and final verification remain with the parent.
 

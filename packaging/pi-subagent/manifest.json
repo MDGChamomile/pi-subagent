@@ -35,6 +35,6 @@
     "skills": [
       "./skills/pi-subagent"
     ],
-    "image": "https://raw.githubusercontent.com/MDGChamomile/pi-subagent/v0.5.0/extensions/pi-subagent/assets/pi-subagent-automatic.gif"
+    "image": "https://raw.githubusercontent.com/MDGChamomile/pi-subagent/v0.6.1/extensions/pi-subagent/assets/pi-subagent-automatic.gif"
   }
 }

@@ -2,7 +2,7 @@
 
 Pi Subagent originates in [Pi Agent Kit](https://github.com/MDGChamomile/pi-agent-kit). This repository retains filtered history for the extension, companion skill, packaging, subagent-specific workflows, shared skill validator, license, and design principles. The old `live/extensions/` and `live/skills/` prefixes become `extensions/` and `skills/`; authorship and chronological history are retained, while commit IDs change with the filtered trees. Kit release tags are not product release tags here and are not imported.
 
-Original kit history, releases, and pinned evidence URLs remain authoritative for historical records. Frozen benchmark records, source hashes, old commands, and the archived `packaging/pi-subagent/RELEASE_NOTES.md` are not rewritten as new validation evidence. Historical protocols may require the corresponding old checkout; relocated source is not a substitute for a frozen fixture.
+Original kit history, releases, and pinned evidence URLs remain authoritative for historical records. Frozen benchmark records, source hashes, and old commands are not rewritten as new validation evidence. The former Pi Agent Kit 0.3.0 release notes remain available in Git history and the original kit repository; they are not current package release notes. Historical protocols may require the corresponding old checkout; relocated source is not a substitute for a frozen fixture.
 
 ## npm installations
 
