@@ -72,9 +72,13 @@ assert.match(sharedSource, /MIN_WEB_EXTENSION_VERSION = "0\.33\.0"/, "runtime we
 
 const presetRows = (markdown) => {
   const section = markdown.split("\n## Presets\n")[1]?.split(/\n## /)[0] ?? "";
-  return [...section.matchAll(
-    /^\| `([^`]+)` \| `([^`]+)` \| `([^`]+)` \|/gm,
-  )].map(([, preset, model, thinking]) => ({ preset, model, thinking }));
+  // Count every table row, including cells without inline-code formatting.
+  const rows = section.split("\n").filter((line) => line.trimStart().startsWith("|")).slice(2);
+  return rows.map((line) => {
+    const [preset, model, thinking] = line.trim().split("|").slice(1)
+      .map((cell) => cell.trim().replace(/^`(.*)`$/, "$1"));
+    return { preset, model, thinking };
+  });
 };
 const expectedPresets = Object.entries(SUBAGENT_PRESETS).map(([preset, settings]) => ({ preset, ...settings }));
 for (const [name, markdown] of [["source", sourceReadme], ["package", topLevelReadme]]) {
@@ -91,6 +95,8 @@ for (const [name, markdown] of [["source", sourceReadme], ["package", topLevelRe
     `| \`${preset}\` | \`${model}\` | \`fixture-stale-thinking\` |`,
     "",
     `${row}\n| \`fixture-unexpected-preset\` | \`${model}\` | \`${thinking}\` |`,
+    `${row}\n| \`fixture-unexpected-preset\` | \`${model}\` | ${thinking} |`,
+    `${row}\n| fixture-unexpected-preset | ${model} | ${thinking} |`,
   ]) {
     assert.throws(() => checkPresets(markdown.replace(row, replacement)), {
       code: "ERR_ASSERTION",
