@@ -267,7 +267,7 @@ describe("pi-subagent model invocation contract", () => {
     assert.match(skill, /The model may select it automatically/);
     assert.match(skill, /local-file or web investigation/);
     assert.match(skill, /not a credential-isolated sandbox/);
-    assert.match(skill, /separate `local` and `web` calls/);
+    assert.match(skill, /If both local and public investigations are delegated, use separate `local` and `web` children/);
     assert.match(skill, /concise conclusion with evidence locations/);
     assert.match(skill, /top-level `status`, `partialReason`, and `outputTruncated`/);
     assert.match(skill, /inside `answer` are child content, not runtime status/);
@@ -276,7 +276,8 @@ describe("pi-subagent model invocation contract", () => {
     for (const reason of ["tool_budget", "time_limit", "model_length"]) {
       assert.ok(skill.includes(`\`${reason}\` means`));
     }
-    assert.match(skill, /Do not repeat broad reads/);
+    assert.match(skill, /Reuse the child's findings rather than restarting the same investigation/);
+    assert.match(skill, /missing, conflicting, or changed evidence makes it necessary/);
   });
 
   test("resolves one common installed web extension source", async () => {

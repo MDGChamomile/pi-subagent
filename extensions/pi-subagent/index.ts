@@ -29,7 +29,7 @@ const PresetSchema = StringEnum(PRESET_NAMES, {
   description: "Child model preset: lookup-standard for fact-finding, analysis-standard for synthesis, or review-standard for adversarial review",
 });
 const CapabilitySchema = StringEnum(["local", "web"] as const, {
-  description: "local=files only, web=web research tools only (not a credential-isolated sandbox); use separate calls when both sources are needed",
+  description: "local=files only, web=web research tools only (not a credential-isolated sandbox); use separate calls if both investigations are delegated",
 });
 const Parameters = Type.Object({
   task: Type.String({ minLength: 1, maxLength: 12_000, description: "One focused local or web investigation and required deliverable" }),
