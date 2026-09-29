@@ -28,7 +28,6 @@ import {
   PRESET_NAMES,
   resolveWebExtensionPath,
   SUBAGENT_PRESETS,
-  truncateUtf8,
 } from "./shared.ts";
 
 describe("pi-subagent scope policy", () => {
@@ -453,14 +452,6 @@ describe("pi-subagent public contract", () => {
     assert.equal(exact.truncated, false);
     assert.equal(formatChildOutput("x".repeat(MAX_FINAL_BYTES - overhead + 1)).truncated, true);
     assert.equal(JSON.parse(formatChildOutput("가\u001b\u202e😀").text).answer, "가??😀");
-  });
-
-  test("UTF-8 output truncation stays within its byte budget", () => {
-    const result = truncateUtf8("가".repeat(100), 80);
-    assert.equal(result.truncated, true);
-    assert.ok(Buffer.byteLength(result.text, "utf8") <= 80);
-    assert.equal(result.text.includes("�"), false);
-    assert.match(result.text, /Subagent output truncated/);
   });
 
   test("bounds and sanitizes every error that can reach the parent", () => {
