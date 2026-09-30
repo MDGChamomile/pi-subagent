@@ -116,6 +116,17 @@ describe("pi-subagent call rendering", () => {
     assert.ok(render({ task }, true, 2000).includes(`task: ${JSON.stringify(task)}`));
   });
 
+  test("keeps collapsed calls on one row across terminal resizes", () => {
+    const component = createExtensionHarness().toolDefinition.renderCall(
+      { task: "Investigate retry handling ".repeat(30) }, theme, { expanded: false });
+    for (const width of [1, 8, 32, 80, 200, 32]) {
+      const lines = component.render(width);
+      assert.equal(lines.length, 1);
+      assert.ok(visibleWidth(lines[0]) <= width);
+      if (width >= 32) assert.match(stripVTControlCharacters(lines[0]), /^pi_subagent Investigate/);
+    }
+  });
+
   test("tolerates missing or incomplete streaming arguments, including web scope", () => {
     for (const args of [undefined, {}, { scope: ["src"] }, { task: null }]) assert.equal(render(args), "pi_subagent");
     const args = { task: "Inspect a public reference", scope: [], capability: "web", preset: "analysis-standard" };
@@ -127,6 +138,7 @@ describe("pi-subagent call rendering", () => {
     const args = { task: "조사\u001b[31m\u202e " + "경계😀 ".repeat(50), scope: ["src\u001b/file.ts"] };
     for (const expanded of [false, true]) {
       const rendered = render(args, expanded, 32);
+      if (!expanded) assert.equal(rendered.split("\n").length, 1);
       assert.doesNotMatch(rendered, /\u001b\[31m|\u202e/);
       assert.doesNotMatch(stripVTControlCharacters(rendered), /\u001b/);
       for (const line of rendered.split("\n")) assert.ok(visibleWidth(line) <= 32);

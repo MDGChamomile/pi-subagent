@@ -3,7 +3,7 @@ import { tmpdir } from "node:os";
 import { join } from "node:path";
 import type { ExtensionAPI } from "@earendil-works/pi-coding-agent";
 import { StringEnum } from "@earendil-works/pi-ai";
-import { Text, truncateToWidth } from "@earendil-works/pi-tui";
+import { Text, TruncatedText, truncateToWidth } from "@earendil-works/pi-tui";
 import { Type, type Static } from "typebox";
 import {
   boundedParentError,
@@ -192,7 +192,7 @@ export default function piSubagentExtension(
         ? sanitizeDisplayText(args.task).replace(/\s+/g, " ").trim()
         : "";
       const preview = truncateToWidth(task, 100);
-      return new Text(title + (preview ? ` ${theme.fg("accent", preview)}` : ""), 0, 0);
+      return new TruncatedText(title + (preview ? ` ${theme.fg("accent", preview)}` : ""), 0, 0);
     },
     renderResult(result, { expanded, isPartial }, theme) {
       const text = result.content.find((part) => part.type === "text");
