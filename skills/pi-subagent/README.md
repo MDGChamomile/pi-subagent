@@ -32,13 +32,13 @@ The three presets have these default settings (users can override the provider/m
 
 | Preset | Child profile | Use for |
 | --- | --- | --- |
-| `lookup-standard` | Luna / medium | Bounded fact-finding |
-| `analysis-standard` | Sol 6 / medium | Synthesis and causal comparison |
-| `review-standard` | Sol 6 / high | Adversarial review |
+| `lookup-standard` | Luna 6 / medium | Bounded fact-finding |
+| `analysis-standard` | Sol 6.1 / medium | Synthesis and causal comparison |
+| `review-standard` | Sol 6.1 / high | Adversarial review |
 
 ## Requirements and installation
 
-This skill requires the companion global extension, Pi 0.87.1 or later, and authentication for the configured child provider with access to the selected model. The extension's [preset settings](../../extensions/pi-subagent/README.md#presets) describe the defaults and user overrides, including Anthropic and OpenRouter. They do not inherit the parent model. Web investigations also require `pi-web-access` v0.33.0 or later (stable releases) with its default tool names. Newer versions are allowed without an upper bound, not guaranteed compatible; upstream behavior changes may require extension maintenance.
+This skill requires the companion global extension, Pi 0.99.1 or later, and authentication for the configured child provider with access to the selected model. The extension's [preset settings](../../extensions/pi-subagent/README.md#presets) describe the defaults and user overrides, including Anthropic and OpenRouter. They do not inherit the parent model. Web investigations also require `pi-web-access` v0.33.0 or later (stable releases) with its default tool names. Newer versions are allowed without an upper bound, not guaranteed compatible; upstream behavior changes may require extension maintenance.
 
 Follow the extension's [requirements and installation guide](../../extensions/pi-subagent/README.md#requirements-and-installation) to install both components together.
 

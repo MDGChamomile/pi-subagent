@@ -53,7 +53,7 @@ assert.equal(
 );
 
 const sharedRequirementPatterns = [
-  ["minimum Pi version", /Pi 0\.87\.1 or later/],
+  ["minimum Pi version", /Pi 0\.99\.1 or later/],
   ["provider authentication requirement", /authentication for the configured child provider/],
   ["minimum web extension version", /pi-web-access` v0\.33\.0 or later/],
   ["npm installation command", /pi install npm:@mdgchamomile\/pi-subagent/],
@@ -64,7 +64,7 @@ for (const [description, pattern] of sharedRequirementPatterns) {
 }
 for (const path of ["extensions/pi-subagent/README.md", "skills/pi-subagent/README.md", "skills/pi-subagent/SKILL.md"]) {
   const guide = await readFile(join(sourceRoot, path), "utf8");
-  assert.match(guide, /Pi 0\.87\.1 or later/, `${path} has an outdated Pi minimum`);
+  assert.match(guide, /Pi 0\.99\.1 or later/, `${path} has an outdated Pi minimum`);
   assert.match(guide, /pi-web-access(?:`)? v0\.33\.0 or later/, `${path} has an outdated web minimum`);
 }
 const sharedSource = await readFile(join(sourceRoot, "extensions/pi-subagent/shared.ts"), "utf8");

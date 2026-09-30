@@ -2,7 +2,7 @@
 name: pi-subagent
 description: Use for a focused local-file or web investigation whose intermediate reads or searches should stay out of the parent context.
 license: MIT
-compatibility: Requires the companion global pi-subagent extension and Pi 0.87.1 or later; web capability also requires pi-web-access v0.33.0 or later (stable releases) with its default tool names.
+compatibility: Requires the companion global pi-subagent extension and Pi 0.99.1 or later; web capability also requires pi-web-access v0.33.0 or later (stable releases) with its default tool names.
 ---
 
 # Pi Subagent

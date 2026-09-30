@@ -15,7 +15,7 @@ import context_isolation_eval as evaluator
 from eval_runtime import json_events, load_presets, runtime_checks
 
 
-SELECTION = {"model": "openai-codex/gpt-5.6-luna", "thinking": "medium"}
+SELECTION = {"model": "openai-codex/gpt-6-luna", "thinking": "medium"}
 PRESET = "lookup-standard"
 
 

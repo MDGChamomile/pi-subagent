@@ -407,9 +407,9 @@ describe("pi-subagent public contract", () => {
     assert.equal(LIFETIME_WEB_FETCH_TARGET_LIMIT, 50);
     assert.equal(MIN_WEB_EXTENSION_VERSION, "0.33.0");
     const expectedPresets = {
-      "lookup-standard": { model: "openai-codex/gpt-5.6-luna", thinking: "medium" },
-      "analysis-standard": { model: "openai-codex/gpt-6-sol", thinking: "medium" },
-      "review-standard": { model: "openai-codex/gpt-6-sol", thinking: "high" },
+      "lookup-standard": { model: "openai-codex/gpt-6-luna", thinking: "medium" },
+      "analysis-standard": { model: "openai-codex/gpt-6.1-sol", thinking: "medium" },
+      "review-standard": { model: "openai-codex/gpt-6.1-sol", thinking: "high" },
     };
     assert.deepEqual(SUBAGENT_PRESETS, expectedPresets);
     assert.deepEqual(PRESET_NAMES, Object.keys(expectedPresets));
