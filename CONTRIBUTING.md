@@ -29,7 +29,7 @@ python3 -B -m unittest discover -s .github/scripts -p 'test_*.py' -v
 python3 -B .github/scripts/validate_skills.py
 ```
 
-The development lockfile and CI pin Pi 0.87.1; the weekly canary tests current upstream packages separately. Dependency installation can access registries. The checks do not call models. Package validation rebuilds ignored `dist/`, verifies the exact npm file set and documentation links, and runs isolated offline resource discovery plus negative controls.
+The development lockfile and CI pin Pi 0.99.1; the weekly canary tests current upstream packages separately. Dependency installation can access registries. The checks do not call models. Package validation rebuilds ignored `dist/`, verifies the exact npm file set and documentation links, and runs isolated offline resource discovery plus negative controls.
 
 For documentation changes, review relative links and commands; for runtime changes, add regression coverage and run all three runtime/package checks. The skill validator covers metadata and relative links in `SKILL.md`, not every README or semantic compatibility.
 
