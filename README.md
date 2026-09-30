@@ -46,7 +46,11 @@ Requirements:
 pi install npm:@mdgchamomile/pi-subagent
 ```
 
-Restart Pi or run `/reload`. The model can select the skill automatically. To invoke it explicitly, include a focused task and scope. For example, from a project with a `src/` directory:
+Restart Pi or run `/reload`.
+
+Before your first call, run `/pi-subagent-settings` in Pi's TUI to check the model for each preset you plan to use. If you cannot access a default model, select one you can access. Subagents do not inherit the parent model, and there is no automatic fallback. See [Presets](#presets) for details.
+
+The model can select the skill automatically. To invoke it explicitly, include a focused task and scope. For example, from a project with a `src/` directory:
 
 ```text
 /skill:pi-subagent Investigate how cancellation terminates child processes within src/. Return conclusions with file and line evidence.
