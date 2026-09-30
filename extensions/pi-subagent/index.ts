@@ -3,7 +3,7 @@ import { tmpdir } from "node:os";
 import { join } from "node:path";
 import type { ExtensionAPI } from "@earendil-works/pi-coding-agent";
 import { StringEnum } from "@earendil-works/pi-ai";
-import { Text } from "@earendil-works/pi-tui";
+import { Text, TruncatedText, truncateToWidth } from "@earendil-works/pi-tui";
 import { Type, type Static } from "typebox";
 import {
   boundedParentError,
@@ -16,6 +16,7 @@ import {
   normalizePreset,
   PRESET_NAMES,
   resolveWebExtensionPath,
+  sanitizeDisplayText,
   TOOL_NAME,
   type Capability,
   type ChildPolicy,
@@ -179,6 +180,19 @@ export default function piSubagentExtension(
         if (error instanceof ChildRunError) failedUsage.set(toolCallId, error.usage);
         throw new Error(boundedParentError(error));
       }
+    },
+    renderCall(args, theme, { expanded }) {
+      const title = theme.fg("toolTitle", theme.bold(TOOL_NAME));
+      if (expanded) {
+        const inputs = Object.entries(args ?? {}).map(([key, value]) =>
+          theme.fg("muted", sanitizeDisplayText(`${key}: ${JSON.stringify(value)}`)));
+        return new Text([title, ...inputs].join("\n"), 0, 0);
+      }
+      const task = typeof args?.task === "string"
+        ? sanitizeDisplayText(args.task).replace(/\s+/g, " ").trim()
+        : "";
+      const preview = truncateToWidth(task, 100);
+      return new TruncatedText(title + (preview ? ` ${theme.fg("accent", preview)}` : ""), 0, 0);
     },
     renderResult(result, { expanded, isPartial }, theme) {
       const text = result.content.find((part) => part.type === "text");

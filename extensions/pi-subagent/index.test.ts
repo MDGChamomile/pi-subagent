@@ -3,7 +3,9 @@ import { after, before, describe, test } from "node:test";
 import { mkdtemp, rm, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
+import { stripVTControlCharacters } from "node:util";
 import piSubagentExtension from "./index.ts";
+import { visibleWidth } from "@earendil-works/pi-tui";
 import { boundedParentError, formatChildOutput, MAX_FINAL_BYTES, MAX_SUBAGENT_CALLS, TOOL_NAME } from "./shared.ts";
 import { ChildRunError, emptyUsage, type ChildResult } from "./subprocess.ts";
 
@@ -89,6 +91,61 @@ function toolEvent(toolCallId: string, isError: boolean) {
     isError,
   };
 }
+
+describe("pi-subagent call rendering", () => {
+  const theme = { fg(_color: string, text: string) { return text; }, bold(text: string) { return text; } };
+  const render = (args: any, expanded = false, width = 200) =>
+    createExtensionHarness().toolDefinition.renderCall(args, theme, { expanded }).render(width).join("\n").trim();
+
+  test("shows a compact task without scope or other arguments until expanded", () => {
+    const args = { task: "Investigate retry handling", scope: ["src/client.ts"], capability: "local", preset: "lookup-standard" };
+    const before = structuredClone(args);
+    assert.equal(render(args), "pi_subagent Investigate retry handling");
+    const expanded = render(args, true);
+    for (const [key, value] of Object.entries(args)) assert.ok(expanded.includes(`${key}: ${JSON.stringify(value)}`));
+    assert.deepEqual(args, before, "display changes must not mutate execution inputs");
+  });
+
+  test("bounds and flattens a long task while preserving full inputs on expansion", () => {
+    const task = "Inspect\n\t" + "retry handling ".repeat(30);
+    const collapsed = render({ task });
+    assert.equal(collapsed.split("\n").length, 1);
+    assert.ok(visibleWidth(collapsed) <= visibleWidth("pi_subagent ") + 100);
+    assert.match(collapsed, /Inspect retry handling/);
+    assert.ok(!collapsed.includes("\\n"));
+    assert.ok(render({ task }, true, 2000).includes(`task: ${JSON.stringify(task)}`));
+  });
+
+  test("keeps collapsed calls on one row across terminal resizes", () => {
+    const component = createExtensionHarness().toolDefinition.renderCall(
+      { task: "Investigate retry handling ".repeat(30) }, theme, { expanded: false });
+    for (const width of [1, 8, 32, 80, 200, 32]) {
+      const lines = component.render(width);
+      assert.equal(lines.length, 1);
+      assert.ok(visibleWidth(lines[0]) <= width);
+      if (width >= 32) assert.match(stripVTControlCharacters(lines[0]), /^pi_subagent Investigate/);
+    }
+  });
+
+  test("tolerates missing or incomplete streaming arguments, including web scope", () => {
+    for (const args of [undefined, {}, { scope: ["src"] }, { task: null }]) assert.equal(render(args), "pi_subagent");
+    const args = { task: "Inspect a public reference", scope: [], capability: "web", preset: "analysis-standard" };
+    assert.equal(render(args), "pi_subagent Inspect a public reference");
+    assert.match(render(args, true), /scope: \[\]/);
+  });
+
+  test("sanitizes terminal controls and fits Unicode previews in narrow terminals", () => {
+    const args = { task: "조사\u001b[31m\u202e " + "경계😀 ".repeat(50), scope: ["src\u001b/file.ts"] };
+    for (const expanded of [false, true]) {
+      const rendered = render(args, expanded, 32);
+      if (!expanded) assert.equal(rendered.split("\n").length, 1);
+      assert.doesNotMatch(rendered, /\u001b\[31m|\u202e/);
+      assert.doesNotMatch(stripVTControlCharacters(rendered), /\u001b/);
+      for (const line of rendered.split("\n")) assert.ok(visibleWidth(line) <= 32);
+      assert.doesNotMatch(rendered, /\ufffd/);
+    }
+  });
+});
 
 describe("pi-subagent result rendering", () => {
   for (const partialReason of [undefined, "tool_budget"] as const) {
