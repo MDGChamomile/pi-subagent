@@ -5,13 +5,26 @@ import { join } from "node:path";
 import { test } from "node:test";
 import type { Api, Model } from "@earendil-works/pi-ai";
 import { ModelRegistry, ModelRuntime } from "@earendil-works/pi-coding-agent";
-import { loadPresetSettings, parsePresetSettings, validatePresetSelection } from "./config.ts";
-import { SUBAGENT_PRESETS } from "./shared.ts";
+import { loadPresetSettings, parsePresetSettings, THINKING_LEVELS as CONFIG_THINKING_LEVELS, validatePresetSelection } from "./config.ts";
+import { PRESET_NAMES, SUBAGENT_PRESETS, THINKING_LEVELS, type Thinking } from "./shared.ts";
 
 const model = (provider: string, id: string, reasoning = true): Model<Api> => ({
   provider, id, name: id, api: "openai-completions", baseUrl: "https://example.invalid",
   reasoning, input: ["text"], cost: { input: 0, output: 0, cacheRead: 0, cacheWrite: 0 },
   contextWindow: 10000, maxTokens: 1000,
+});
+
+test("thinking levels retain their values, order, and config import compatibility", () => {
+  const levels: readonly Thinking[] = THINKING_LEVELS;
+  assert.deepEqual(levels, ["off", "minimal", "low", "medium", "high", "xhigh", "max"]);
+  assert.equal(CONFIG_THINKING_LEVELS, THINKING_LEVELS);
+  for (const preset of PRESET_NAMES) {
+    for (const thinking of levels) {
+      const parsed = parsePresetSettings({ presets: { [preset]: { thinking } } });
+      assert.equal(parsed[preset].thinking, thinking);
+      assert.equal(parsed[preset].model, SUBAGENT_PRESETS[preset].model);
+    }
+  }
 });
 
 test("defaults remain independent and review defaults to high", () => {
