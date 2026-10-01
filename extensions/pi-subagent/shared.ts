@@ -52,7 +52,8 @@ export function invocationLimitBlock(): { block: true; reason: string } {
 }
 
 export const MODEL_SELECTION_ENV = "PI_SUBAGENT_MODEL_SELECTION";
-export type Thinking = "off" | "minimal" | "low" | "medium" | "high" | "xhigh" | "max";
+export const THINKING_LEVELS = ["off", "minimal", "low", "medium", "high", "xhigh", "max"] as const;
+export type Thinking = (typeof THINKING_LEVELS)[number];
 
 export const SUBAGENT_PRESETS = {
   "lookup-standard": { model: "openai-codex/gpt-6-luna", thinking: "medium" },
