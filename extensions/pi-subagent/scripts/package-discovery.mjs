@@ -37,4 +37,24 @@ assert.deepEqual(diagnostics, [], "Pi skill discovery reported diagnostics");
 assert.equal(skills.length, 1, "expected exactly one companion skill");
 assert.equal(skills[0].name, "pi-subagent");
 assert.equal(resolve(skills[0].filePath), join(packageDirectory, "skills/pi-subagent/SKILL.md"));
-console.log("Pi package extension and companion skill discovery verified");
+// The parent refers to this file by path rather than importing it. Discover it
+// independently so a child-only import failure cannot pass the package gate.
+// No session starts: missing runtime policy/liveness inputs keep the guard inert.
+const childPath = join(packageDirectory, "extensions/pi-subagent/child-guard.ts");
+const childLoader = new DefaultResourceLoader({
+  cwd: process.cwd(),
+  agentDir: process.env.PI_CODING_AGENT_DIR,
+  settingsManager: SettingsManager.inMemory(),
+  additionalExtensionPaths: [childPath],
+  noExtensions: true,
+  noSkills: true,
+  noPromptTemplates: true,
+  noThemes: true,
+  noContextFiles: true,
+});
+await childLoader.reload();
+const child = childLoader.getExtensions();
+assert.deepEqual(child.errors, [], "Pi child extension loading failed");
+assert.equal(child.extensions.length, 1, "expected exactly one packaged child extension");
+assert.equal(resolve(child.extensions[0].path), childPath);
+console.log("Pi parent/child extension and companion skill discovery verified");

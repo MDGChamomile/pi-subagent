@@ -137,7 +137,9 @@ describe("pi-subagent child guard", () => {
       assert.deepEqual(input, original);
       assert.notEqual(prepared.input, input);
       assert.deepEqual(prepared.cost, cost);
-      assert.deepEqual(prepared.input, tool === "web_search" ? { ...original, workflow: "none" } : original);
+      assert.deepEqual(prepared.input, tool === "web_search"
+        ? { ...original, workflow: "none" }
+        : tool === "fetch_content" ? { ...original, mode: "readable" } : original);
     }
     const denied = Object.freeze({ query: "one", workflow: "summary-review", numResults: 11 });
     const prepared = prepareWebCall("web_search", denied);
@@ -145,6 +147,23 @@ describe("pi-subagent child guard", () => {
     assert.match(prepared.violation, /at most 10 results/);
     assert.equal("cost" in prepared, false);
     assert.equal(denied.workflow, "summary-review");
+  });
+
+  test("pins omitted fetch mode to readable and rejects explicit unsupported modes", () => {
+    for (const mode of [undefined, "readable", "raw", "answer"]) {
+      const input = Object.freeze({ url: "https://example.com", ...(mode === undefined ? {} : { mode }) });
+      const prepared = prepareWebCall("fetch_content", input);
+      if (mode === "raw" || mode === "answer") {
+        assert.ok("violation" in prepared);
+        assert.match(prepared.violation, /only readable mode/);
+        assert.equal("input" in prepared, false);
+      } else {
+        assert.ok("input" in prepared);
+        assert.deepEqual(prepared.input, { url: input.url, mode: "readable" });
+        assert.deepEqual(prepared.cost, { queries: 0, fetchTargets: 1 });
+      }
+      assert.equal(input.mode, mode);
+    }
   });
 
   test("activates only the owned web tool allowlist", async () => {
@@ -720,11 +739,13 @@ describe("pi-subagent child guard", () => {
         toolCallId: "source-check",
         input: { claim: "Pi has a public manual", fetchContent: true },
       }), undefined);
+      const fetchInput: Record<string, unknown> = { urls: ["https://example.com/page", "https://example.org/page"] };
       assert.equal(await harness.emit("tool_call", {
         toolName: "fetch_content",
         toolCallId: "https",
-        input: { urls: ["https://example.com/page", "https://example.org/page"], mode: "readable" },
+        input: fetchInput,
       }), undefined);
+      assert.equal(fetchInput.mode, "readable", "admitted arguments override external mode defaults");
       assert.equal(await harness.emit("tool_call", {
         toolName: "get_search_content",
         toolCallId: "stored-content",

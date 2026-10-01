@@ -3,9 +3,9 @@ import { join } from "node:path";
 import { homedir } from "node:os";
 import { getAgentDir } from "@earendil-works/pi-coding-agent";
 import { getSupportedThinkingLevels, type Api, type Model } from "@earendil-works/pi-ai";
-import { PRESET_NAMES, SUBAGENT_PRESETS, type Preset, type Thinking } from "./shared.ts";
+import { PRESET_NAMES, SUBAGENT_PRESETS, THINKING_LEVELS, type Preset, type Thinking } from "./shared.ts";
 
-export const THINKING_LEVELS = ["off", "minimal", "low", "medium", "high", "xhigh", "max"] as const;
+export { THINKING_LEVELS } from "./shared.ts";
 export type PresetSelection = { model: string; thinking: Thinking };
 export type PresetSelections = Record<Preset, PresetSelection>;
 const HELP = "Check presets in pi-subagent.json in the Pi agent directory; configure provider and model together, and a supported thinking level";

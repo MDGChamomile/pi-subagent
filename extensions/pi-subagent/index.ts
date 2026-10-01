@@ -3,7 +3,7 @@ import { tmpdir } from "node:os";
 import { join } from "node:path";
 import type { ExtensionAPI } from "@earendil-works/pi-coding-agent";
 import { StringEnum } from "@earendil-works/pi-ai";
-import { Text } from "@earendil-works/pi-tui";
+import { Text, TruncatedText, truncateToWidth } from "@earendil-works/pi-tui";
 import { Type, type Static } from "typebox";
 import {
   boundedParentError,
@@ -16,6 +16,7 @@ import {
   normalizePreset,
   PRESET_NAMES,
   resolveWebExtensionPath,
+  sanitizeDisplayText,
   TOOL_NAME,
   type Capability,
   type ChildPolicy,
@@ -29,7 +30,7 @@ const PresetSchema = StringEnum(PRESET_NAMES, {
   description: "Child model preset: lookup-standard for fact-finding, analysis-standard for synthesis, or review-standard for adversarial review",
 });
 const CapabilitySchema = StringEnum(["local", "web"] as const, {
-  description: "local=files only, web=web research tools only (not a credential-isolated sandbox); use separate calls when both sources are needed",
+  description: "local=files only, web=web research tools only (not a credential-isolated sandbox); use separate calls if both investigations are delegated",
 });
 const Parameters = Type.Object({
   task: Type.String({ minLength: 1, maxLength: 12_000, description: "One focused local or web investigation and required deliverable" }),
@@ -42,7 +43,10 @@ const Parameters = Type.Object({
   preset: PresetSchema,
 }, { additionalProperties: false });
 
-export default function piSubagentExtension(pi: ExtensionAPI): void {
+export default function piSubagentExtension(
+  pi: ExtensionAPI,
+  runtime = { runChild, removeTempDirectory: rm },
+): void {
   registerSubagentSettingsCommand(pi);
   const gate = new ModelInvocationGate();
   // Pi turns thrown tool errors into fresh results; reattach the child's nested usage in tool_result.
@@ -109,6 +113,7 @@ export default function piSubagentExtension(pi: ExtensionAPI): void {
           throw new Error(boundedParentError(error, { phase: "setup" }));
         }
         let executionError: unknown;
+        let completedUsage: ChildRunError["usage"] | undefined;
         let childStarted = false;
         try {
           await chmod(tempDir, 0o700);
@@ -117,7 +122,7 @@ export default function piSubagentExtension(pi: ExtensionAPI): void {
           const budgetTelemetryFile = join(tempDir, "budget-telemetry.json");
           await writeFile(policyFile, JSON.stringify(policy), { encoding: "utf8", mode: 0o600, flag: "wx" });
           childStarted = true;
-          const result = await runChild({
+          const result = await runtime.runChild({
             policy,
             policyFile,
             readyFile,
@@ -129,6 +134,7 @@ export default function piSubagentExtension(pi: ExtensionAPI): void {
             signal,
             onUpdate,
           });
+          completedUsage = result.usage;
           return {
             content: [{ type: "text", text: result.output }],
             details: {
@@ -162,10 +168,11 @@ export default function piSubagentExtension(pi: ExtensionAPI): void {
           throw error;
         } finally {
           try {
-            await rm(tempDir, { recursive: true, force: true });
+            await runtime.removeTempDirectory(tempDir, { recursive: true, force: true });
           } catch (cleanupError) {
             if (executionError === undefined) {
-              throw new Error(boundedParentError(cleanupError, { phase: "cleanup" }));
+              const message = boundedParentError(cleanupError, { phase: "cleanup" });
+              throw completedUsage ? new ChildRunError(message, completedUsage) : new Error(message);
             }
           }
         }
@@ -173,6 +180,19 @@ export default function piSubagentExtension(pi: ExtensionAPI): void {
         if (error instanceof ChildRunError) failedUsage.set(toolCallId, error.usage);
         throw new Error(boundedParentError(error));
       }
+    },
+    renderCall(args, theme, { expanded }) {
+      const title = theme.fg("toolTitle", theme.bold(TOOL_NAME));
+      if (expanded) {
+        const inputs = Object.entries(args ?? {}).map(([key, value]) =>
+          theme.fg("muted", sanitizeDisplayText(`${key}: ${JSON.stringify(value)}`)));
+        return new Text([title, ...inputs].join("\n"), 0, 0);
+      }
+      const task = typeof args?.task === "string"
+        ? sanitizeDisplayText(args.task).replace(/\s+/g, " ").trim()
+        : "";
+      const preview = truncateToWidth(task, 100);
+      return new TruncatedText(title + (preview ? ` ${theme.fg("accent", preview)}` : ""), 0, 0);
     },
     renderResult(result, { expanded, isPartial }, theme) {
       const text = result.content.find((part) => part.type === "text");

@@ -35,7 +35,7 @@ Investigations can fill the main conversation with file reads, searches, fetched
 Requirements:
 
 - Linux, including Ubuntu on WSL; native Windows is not officially supported or tested;
-- Pi 0.87.1 or later;
+- Pi 0.99.1 or later;
 - authentication for the configured child provider and access to its model (`openai-codex` by default; see [Presets](#presets));
 - `rg` for local `grep`, and `fd` or `fdfind` for local `find`.
 
@@ -46,7 +46,11 @@ Requirements:
 pi install npm:@mdgchamomile/pi-subagent
 ```
 
-Restart Pi or run `/reload`. The model can select the skill automatically. To invoke it explicitly, include a focused task and scope. For example, from a project with a `src/` directory:
+Restart Pi or run `/reload`.
+
+Before your first call, run `/pi-subagent-settings` in Pi's TUI to check the model for each preset you plan to use. If you cannot access a default model, select one you can access. Subagents do not inherit the parent model, and there is no automatic fallback. See [Presets](#presets) for details.
+
+The model can select the skill automatically. To invoke it explicitly, include a focused task and scope. For example, from a project with a `src/` directory:
 
 ```text
 /skill:pi-subagent Investigate how cancellation terminates child processes within src/. Return conclusions with file and line evidence.
@@ -91,9 +95,9 @@ Mixed local-and-web work uses separate child calls, with synthesis performed by 
 
 | Preset | Provider/model ID | Thinking | Best for |
 | --- | --- | --- | --- |
-| `lookup-standard` | `openai-codex/gpt-5.6-luna` | `medium` | Bounded fact-finding |
-| `analysis-standard` | `openai-codex/gpt-6-sol` | `medium` | Synthesis and causal comparison |
-| `review-standard` | `openai-codex/gpt-6-sol` | `high` | Adversarial review |
+| `lookup-standard` | `openai-codex/gpt-6-luna` | `medium` | Bounded fact-finding |
+| `analysis-standard` | `openai-codex/gpt-6.1-sol` | `medium` | Synthesis and causal comparison |
+| `review-standard` | `openai-codex/gpt-6.1-sol` | `high` | Adversarial review |
 
 These are **default settings**, not required providers or models. They do not inherit the parent model or change its thinking level.
 

@@ -1,5 +1,5 @@
 import type { ExtensionCommandContext, Theme } from "@earendil-works/pi-coding-agent";
-import { Input, SelectList, fuzzyFilter, truncateToWidth, type KeybindingsManager, type SelectItem } from "@earendil-works/pi-tui";
+import { Input, Key, SelectList, fuzzyFilter, matchesKey, truncateToWidth, type KeybindingsManager, type SelectItem } from "@earendil-works/pi-tui";
 
 import { sanitizeDisplayText } from "./shared.ts";
 
@@ -77,7 +77,7 @@ export class SettingsPicker {
     return lines.map((s) => truncateToWidth(s, width));
   }
   handleInput(data: string) {
-    if (data === "\u0003") { this.done(null); return; }
+    if (matchesKey(data, Key.ctrl("c"))) { this.done(null); return; }
     if (this.keys.matches(data, "tui.select.cancel")) { this.done(undefined); return; }
     if (this.tooSmall) return;
     if (this.keys.matches(data, "tui.select.up") || this.keys.matches(data, "tui.select.down") ||

@@ -3,8 +3,11 @@ import { after, before, describe, test } from "node:test";
 import { mkdtemp, rm, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
+import { stripVTControlCharacters } from "node:util";
 import piSubagentExtension from "./index.ts";
-import { formatChildOutput, MAX_FINAL_BYTES, MAX_SUBAGENT_CALLS, TOOL_NAME } from "./shared.ts";
+import { visibleWidth } from "@earendil-works/pi-tui";
+import { boundedParentError, formatChildOutput, MAX_FINAL_BYTES, MAX_SUBAGENT_CALLS, TOOL_NAME } from "./shared.ts";
+import { ChildRunError, emptyUsage, type ChildResult } from "./subprocess.ts";
 
 const SOURCE_PATH = "/test/pi-subagent/index.ts";
 let agentDir: string;
@@ -21,7 +24,7 @@ after(async () => {
 
 type Handler = (event: any, ctx: any) => any;
 
-function createExtensionHarness() {
+function createExtensionHarness(runtime?: Parameters<typeof piSubagentExtension>[1]) {
   const handlers = new Map<string, Handler[]>();
   const tools: any[] = [];
   const commands = new Map<string, any>();
@@ -62,7 +65,7 @@ function createExtensionHarness() {
     return result;
   };
 
-  piSubagentExtension(pi as any);
+  piSubagentExtension(pi as any, runtime);
   return {
     fire,
     commands,
@@ -72,8 +75,8 @@ function createExtensionHarness() {
   };
 }
 
-async function startHarness() {
-  const harness = createExtensionHarness();
+async function startHarness(runtime?: Parameters<typeof piSubagentExtension>[1]) {
+  const harness = createExtensionHarness(runtime);
   await harness.fire("session_start", { reason: "startup" });
   await harness.fire("agent_start");
   return harness;
@@ -88,6 +91,61 @@ function toolEvent(toolCallId: string, isError: boolean) {
     isError,
   };
 }
+
+describe("pi-subagent call rendering", () => {
+  const theme = { fg(_color: string, text: string) { return text; }, bold(text: string) { return text; } };
+  const render = (args: any, expanded = false, width = 200) =>
+    createExtensionHarness().toolDefinition.renderCall(args, theme, { expanded }).render(width).join("\n").trim();
+
+  test("shows a compact task without scope or other arguments until expanded", () => {
+    const args = { task: "Investigate retry handling", scope: ["src/client.ts"], capability: "local", preset: "lookup-standard" };
+    const before = structuredClone(args);
+    assert.equal(render(args), "pi_subagent Investigate retry handling");
+    const expanded = render(args, true);
+    for (const [key, value] of Object.entries(args)) assert.ok(expanded.includes(`${key}: ${JSON.stringify(value)}`));
+    assert.deepEqual(args, before, "display changes must not mutate execution inputs");
+  });
+
+  test("bounds and flattens a long task while preserving full inputs on expansion", () => {
+    const task = "Inspect\n\t" + "retry handling ".repeat(30);
+    const collapsed = render({ task });
+    assert.equal(collapsed.split("\n").length, 1);
+    assert.ok(visibleWidth(collapsed) <= visibleWidth("pi_subagent ") + 100);
+    assert.match(collapsed, /Inspect retry handling/);
+    assert.ok(!collapsed.includes("\\n"));
+    assert.ok(render({ task }, true, 2000).includes(`task: ${JSON.stringify(task)}`));
+  });
+
+  test("keeps collapsed calls on one row across terminal resizes", () => {
+    const component = createExtensionHarness().toolDefinition.renderCall(
+      { task: "Investigate retry handling ".repeat(30) }, theme, { expanded: false });
+    for (const width of [1, 8, 32, 80, 200, 32]) {
+      const lines = component.render(width);
+      assert.equal(lines.length, 1);
+      assert.ok(visibleWidth(lines[0]) <= width);
+      if (width >= 32) assert.match(stripVTControlCharacters(lines[0]), /^pi_subagent Investigate/);
+    }
+  });
+
+  test("tolerates missing or incomplete streaming arguments, including web scope", () => {
+    for (const args of [undefined, {}, { scope: ["src"] }, { task: null }]) assert.equal(render(args), "pi_subagent");
+    const args = { task: "Inspect a public reference", scope: [], capability: "web", preset: "analysis-standard" };
+    assert.equal(render(args), "pi_subagent Inspect a public reference");
+    assert.match(render(args, true), /scope: \[\]/);
+  });
+
+  test("sanitizes terminal controls and fits Unicode previews in narrow terminals", () => {
+    const args = { task: "조사\u001b[31m\u202e " + "경계😀 ".repeat(50), scope: ["src\u001b/file.ts"] };
+    for (const expanded of [false, true]) {
+      const rendered = render(args, expanded, 32);
+      if (!expanded) assert.equal(rendered.split("\n").length, 1);
+      assert.doesNotMatch(rendered, /\u001b\[31m|\u202e/);
+      assert.doesNotMatch(stripVTControlCharacters(rendered), /\u001b/);
+      for (const line of rendered.split("\n")) assert.ok(visibleWidth(line) <= 32);
+      assert.doesNotMatch(rendered, /\ufffd/);
+    }
+  });
+});
 
 describe("pi-subagent result rendering", () => {
   for (const partialReason of [undefined, "tool_budget"] as const) {
@@ -130,6 +188,63 @@ describe("pi-subagent result rendering", () => {
       assert.equal(component.render(100).join("\n").trim(), "progress or diagnostic");
     }
   });
+});
+
+describe("pi-subagent cleanup usage", () => {
+  for (const childFails of [false, true]) {
+    for (const cleanupFails of [false, true]) {
+      test(`preserves usage with child failure=${childFails}, cleanup failure=${cleanupFails}`, async () => {
+        const usage = { ...emptyUsage(), input: 11, output: 7, totalTokens: 18 };
+        const childResult: ChildResult = {
+          output: formatChildOutput("answer").text, outputTruncated: false,
+          status: "complete", durationMs: 1, contextTokens: 20, exitCode: 0, usage,
+          budget: { version: 1, toolCallsAttempted: 0, toolCallsExecuted: 0, deniedCalls: 0,
+            queryCount: 0, fetchTargetCount: 0, softLimitReached: false, hardLimitReached: false },
+        };
+        const childError = new ChildRunError(boundedParentError("child failed", { phase: "process" }), usage);
+        let cleanupPath: Parameters<typeof rm>[0] | undefined;
+        const harness = await startHarness({
+          async runChild() {
+            if (childFails) throw childError;
+            return childResult;
+          },
+          async removeTempDirectory(path, options) {
+            cleanupPath = path;
+            assert.deepEqual(options, { recursive: true, force: true });
+            if (cleanupFails) throw new Error("cleanup failed");
+            await rm(path, options);
+          },
+        });
+        const id = "cleanup-usage";
+        await harness.fire("tool_call", { toolName: TOOL_NAME, toolCallId: id, input: {} });
+        try {
+          const execution = harness.toolDefinition.execute(id, {
+            task: "lookup", scope: ["."], capability: "local", preset: "lookup-standard",
+          }, undefined, undefined, { cwd: process.cwd(), modelRegistry: {
+            find: () => ({ provider: "test", id: "test", api: "openai-completions", reasoning: true }),
+          } });
+          if (childFails || cleanupFails) {
+            await assert.rejects(execution, (error: Error) => {
+              if (childFails) assert.equal(error.message, childError.message);
+              else assert.match(error.message, /"phase":"cleanup"/);
+              return true;
+            });
+            assert.deepEqual(await harness.fire("tool_result", toolEvent(id, true)), { usage });
+          } else {
+            const result = await execution;
+            assert.deepEqual(result.usage, usage);
+            assert.deepEqual(result.details.usage, usage);
+            assert.equal(result.content[0].text, childResult.output);
+          }
+          assert.ok(cleanupPath, "temporary directory cleanup was attempted");
+          assert.equal(await harness.fire("tool_result", toolEvent(id, true)), undefined,
+            "failure usage is attached only once, never leaked from a successful call");
+        } finally {
+          if (cleanupPath) await rm(cleanupPath, { recursive: true, force: true });
+        }
+      });
+    }
+  }
 });
 
 describe("pi-subagent extension wiring", () => {

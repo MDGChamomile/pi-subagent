@@ -52,12 +52,13 @@ export function invocationLimitBlock(): { block: true; reason: string } {
 }
 
 export const MODEL_SELECTION_ENV = "PI_SUBAGENT_MODEL_SELECTION";
-export type Thinking = "off" | "minimal" | "low" | "medium" | "high" | "xhigh" | "max";
+export const THINKING_LEVELS = ["off", "minimal", "low", "medium", "high", "xhigh", "max"] as const;
+export type Thinking = (typeof THINKING_LEVELS)[number];
 
 export const SUBAGENT_PRESETS = {
-  "lookup-standard": { model: "openai-codex/gpt-5.6-luna", thinking: "medium" },
-  "analysis-standard": { model: "openai-codex/gpt-6-sol", thinking: "medium" },
-  "review-standard": { model: "openai-codex/gpt-6-sol", thinking: "high" },
+  "lookup-standard": { model: "openai-codex/gpt-6-luna", thinking: "medium" },
+  "analysis-standard": { model: "openai-codex/gpt-6.1-sol", thinking: "medium" },
+  "review-standard": { model: "openai-codex/gpt-6.1-sol", thinking: "high" },
 } as const satisfies Record<string, { model: string; thinking: Thinking }>;
 export type Preset = keyof typeof SUBAGENT_PRESETS;
 export const PRESET_NAMES = Object.keys(SUBAGENT_PRESETS) as Preset[];
@@ -408,10 +409,6 @@ function truncateUtf8WithMarker(
   let end = budget;
   while (end > 0 && (source[end]! & 0xc0) === 0x80) end--;
   return { text: Buffer.concat([source.subarray(0, end), marker]).toString("utf8"), truncated: true };
-}
-
-export function truncateUtf8(text: string, maxBytes = MAX_FINAL_BYTES): { text: string; truncated: boolean } {
-  return truncateUtf8WithMarker(text, maxBytes, "\n\n[Subagent output truncated]");
 }
 
 /** Runtime-owned fields stay outside the JSON-escaped, untrusted child answer. */

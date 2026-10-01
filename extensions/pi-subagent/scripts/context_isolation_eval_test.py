@@ -12,20 +12,23 @@ from types import SimpleNamespace
 from unittest.mock import patch
 
 import context_isolation_eval as evaluator
-from eval_runtime import json_events, load_presets, runtime_checks
+from eval_runtime import json_events, load_presets, observation_env, runtime_checks
 
 
-SELECTION = {"model": "openai-codex/gpt-5.6-luna", "thinking": "medium"}
+SELECTION = {"model": "openai-codex/gpt-6-luna", "thinking": "medium"}
 PRESET = "lookup-standard"
 
 
-def observations(selection=None):
+def observations(selection=None, web=False):
     selection = selection or SELECTION
-    return [
+    rows = [
         {"actor": "child", "kind": "request", **selection,
          "wireModel": selection["model"].split("/", 1)[1], "wireThinking": selection["thinking"]},
         {"actor": "child", "kind": "assistant", "model": selection["model"], "stopReason": "stop"},
     ]
+    if web:
+        rows.append({"actor": "child", "kind": "web_fetch", "targetMatch": True, "success": True})
+    return rows
 
 
 def smoke_messages(capability="local", preset=PRESET, selection=None):
@@ -48,7 +51,7 @@ def wire(messages):
 
 def check(messages=None, observed=None, capability="local"):
     return evaluator.evaluate_smoke(wire(messages if messages is not None else smoke_messages(capability)),
-                                    observations() if observed is None else observed,
+                                    observations(web=capability == "web") if observed is None else observed,
                                     capability=capability, preset=PRESET, selection=SELECTION)
 
 
@@ -106,7 +109,8 @@ class PortableWebSmokeTests(unittest.TestCase):
                                               str(evaluator.WEB_SMOKE_PARENT)])
                 self.assertNotIn("--tools", command, "CLI allowlist must not strip web provenance entries")
                 self.assertNotIn("web-tool-loader.ts", " ".join(command))
-                return SimpleNamespace(stdout=wire(smoke_messages("web")), returncode=0), observations()
+                self.assertEqual(kwargs["fetch_url"], evaluator.SMOKE_WEB_URL)
+                return SimpleNamespace(stdout=wire(smoke_messages("web")), returncode=0), observations(web=True)
             with patch.object(evaluator, "observe_run", side_effect=run) as observed, redirect_stdout(io.StringIO()):
                 self.assertEqual(evaluator.run_smoke(args), 0)
             observed.assert_called_once()
@@ -123,6 +127,24 @@ class SmokeContractTests(unittest.TestCase):
         for capability in ("local", "web"):
             with self.subTest(capability=capability):
                 self.assertEqual(check(capability=capability)["status"], "pass")
+
+    def test_web_answer_cannot_replace_a_successful_child_target_fetch(self):
+        self.assertEqual(check(observed=observations(), capability="web")["status"], "fail")
+        for key, wrong in [("actor", "parent"), ("kind", "request"), ("targetMatch", False),
+                           ("success", False), ("success", "true"), ("targetMatch", 1)]:
+            with self.subTest(key=key, wrong=wrong):
+                rows = observations(web=True)
+                rows[-1][key] = wrong
+                self.assertEqual(check(observed=rows, capability="web")["status"], "fail")
+        rows = observations(web=True)
+        rows.insert(-1, {"actor": "child", "kind": "web_fetch", "targetMatch": True, "success": False})
+        self.assertEqual(check(observed=rows, capability="web")["status"], "pass", "a successful recovery is allowed")
+
+    def test_fetch_target_environment_is_explicit_and_not_inherited(self):
+        with patch.dict("os.environ", {"PI_SUBAGENT_EVAL_FETCH_URL": "https://fixture.invalid/private"}):
+            self.assertNotIn("PI_SUBAGENT_EVAL_FETCH_URL", observation_env(Path("fixture-trace")))
+            self.assertEqual(observation_env(Path("fixture-trace"), fetch_url=evaluator.SMOKE_WEB_URL)
+                             ["PI_SUBAGENT_EVAL_FETCH_URL"], evaluator.SMOKE_WEB_URL)
 
     def test_web_title_alone_is_not_sufficient(self):
         messages = smoke_messages("web")

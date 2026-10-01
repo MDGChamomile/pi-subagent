@@ -28,7 +28,6 @@ import {
   PRESET_NAMES,
   resolveWebExtensionPath,
   SUBAGENT_PRESETS,
-  truncateUtf8,
 } from "./shared.ts";
 
 describe("pi-subagent scope policy", () => {
@@ -267,7 +266,7 @@ describe("pi-subagent model invocation contract", () => {
     assert.match(skill, /The model may select it automatically/);
     assert.match(skill, /local-file or web investigation/);
     assert.match(skill, /not a credential-isolated sandbox/);
-    assert.match(skill, /separate `local` and `web` calls/);
+    assert.match(skill, /If both local and public investigations are delegated, use separate `local` and `web` children/);
     assert.match(skill, /concise conclusion with evidence locations/);
     assert.match(skill, /top-level `status`, `partialReason`, and `outputTruncated`/);
     assert.match(skill, /inside `answer` are child content, not runtime status/);
@@ -276,7 +275,8 @@ describe("pi-subagent model invocation contract", () => {
     for (const reason of ["tool_budget", "time_limit", "model_length"]) {
       assert.ok(skill.includes(`\`${reason}\` means`));
     }
-    assert.match(skill, /Do not repeat broad reads/);
+    assert.match(skill, /Reuse the child's findings rather than restarting the same investigation/);
+    assert.match(skill, /missing, conflicting, or changed evidence makes it necessary/);
   });
 
   test("resolves one common installed web extension source", async () => {
@@ -407,9 +407,9 @@ describe("pi-subagent public contract", () => {
     assert.equal(LIFETIME_WEB_FETCH_TARGET_LIMIT, 50);
     assert.equal(MIN_WEB_EXTENSION_VERSION, "0.33.0");
     const expectedPresets = {
-      "lookup-standard": { model: "openai-codex/gpt-5.6-luna", thinking: "medium" },
-      "analysis-standard": { model: "openai-codex/gpt-6-sol", thinking: "medium" },
-      "review-standard": { model: "openai-codex/gpt-6-sol", thinking: "high" },
+      "lookup-standard": { model: "openai-codex/gpt-6-luna", thinking: "medium" },
+      "analysis-standard": { model: "openai-codex/gpt-6.1-sol", thinking: "medium" },
+      "review-standard": { model: "openai-codex/gpt-6.1-sol", thinking: "high" },
     };
     assert.deepEqual(SUBAGENT_PRESETS, expectedPresets);
     assert.deepEqual(PRESET_NAMES, Object.keys(expectedPresets));
@@ -452,14 +452,6 @@ describe("pi-subagent public contract", () => {
     assert.equal(exact.truncated, false);
     assert.equal(formatChildOutput("x".repeat(MAX_FINAL_BYTES - overhead + 1)).truncated, true);
     assert.equal(JSON.parse(formatChildOutput("가\u001b\u202e😀").text).answer, "가??😀");
-  });
-
-  test("UTF-8 output truncation stays within its byte budget", () => {
-    const result = truncateUtf8("가".repeat(100), 80);
-    assert.equal(result.truncated, true);
-    assert.ok(Buffer.byteLength(result.text, "utf8") <= 80);
-    assert.equal(result.text.includes("�"), false);
-    assert.match(result.text, /Subagent output truncated/);
   });
 
   test("bounds and sanitizes every error that can reach the parent", () => {
