@@ -20,6 +20,31 @@ export default function observeRuntime(pi: ExtensionAPI): void {
       || (expectedThinking && (ctx.thinkingLevel !== expectedThinking || payload.reasoning?.effort !== expectedThinking))
     )) throw new Error("Evaluation child model/thinking mismatch; refusing the request");
   });
+  // Keep only a target-match bit while the call runs. Never persist its input,
+  // URL, result text, response ID, or error. End events include final isError
+  // after tool-result hooks, including failures blocked before execution.
+  const fetchUrl = process.env.PI_SUBAGENT_EVAL_FETCH_URL;
+  const fetches = new Map<string, boolean>();
+  pi.on("tool_execution_start", (event) => {
+    if (actor !== "child" || !fetchUrl || event.toolName !== "fetch_content") return;
+    const urls = event.args?.urls;
+    const url = event.args?.url;
+    const targets = Array.isArray(urls) && urls.length > 0 ? urls : url ? [url] : [];
+    fetches.set(event.toolCallId, targets.length === 1 && targets[0] === fetchUrl);
+  });
+  pi.on("tool_execution_end", (event) => {
+    const targetMatch = fetches.get(event.toolCallId);
+    if (targetMatch === undefined) return;
+    fetches.delete(event.toolCallId);
+    const details = event.result?.details;
+    // pi-web-access can return extraction failures without setting isError.
+    // Require its single-target success metadata and nonempty extracted text.
+    const success = event.isError === false && details?.successful === 1
+      && details?.urlCount === 1 && Array.isArray(details?.urls)
+      && details.urls.length === 1 && details.urls[0] === fetchUrl
+      && !details.error && typeof details.totalChars === "number" && details.totalChars > 0;
+    record({ kind: "web_fetch", targetMatch, success });
+  });
   pi.on("message_end", (event) => {
     if (event.message.role !== "assistant") return;
     record({ kind: "assistant", model: `${event.message.provider}/${event.message.model}`, stopReason: event.message.stopReason });

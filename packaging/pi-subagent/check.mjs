@@ -207,6 +207,10 @@ try {
     ["broken-import", async (directory) => {
       await writeFile(join(directory, "index.ts"), 'import "./missing-extension.ts";\n');
     }, /Pi extension loading failed/],
+    ["broken-child-import", async (directory) => {
+      const child = join(directory, "extensions/pi-subagent/child-guard.ts");
+      await writeFile(child, 'import "./missing-child-dependency.ts";\n' + await readFile(child, "utf8"));
+    }, /Pi child extension loading failed/],
     ["missing-tool", async (directory) => {
       await writeFile(join(directory, "index.ts"), "export default function () {}\n");
     }, /expected pi_subagent tool registration/],
@@ -228,4 +232,4 @@ try {
   await rm(temporaryConfig, { recursive: true, force: true });
 }
 
-console.log(`${manifest.name}@${manifest.version}: ${actualFiles.length} package files, Pi discovery, and 3 negative controls verified`);
+console.log(`${manifest.name}@${manifest.version}: ${actualFiles.length} package files, Pi parent/child discovery, and 4 negative controls verified`);

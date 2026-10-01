@@ -310,6 +310,11 @@ def evaluate_smoke(output: str, observations: list[dict[str, Any]], *, capabilit
             or (capability == "web" and SMOKE_WEB_PURPOSE in answer.casefold() and SMOKE_WEB_QUOTE in answer.casefold()),
         "evidence_present": "fixture.txt:1" in answer if capability == "local" else SMOKE_WEB_URL in answer,
         "no_parent_investigation_or_loader_calls": not parent_other_calls,
+        "observed_successful_target_fetch": capability != "web" or any(
+            row.get("actor") == "child" and row.get("kind") == "web_fetch"
+            and row.get("targetMatch") is True and row.get("success") is True
+            for row in observations
+        ),
         "reported_preset": details.get("preset") == preset,
         "reported_model": details.get("model") == selection["model"],
         "reported_thinking": details.get("thinking") == selection["thinking"],
@@ -370,7 +375,10 @@ def run_smoke(args: argparse.Namespace) -> int:
                     "Do not use parent web tools and do not repeat the child investigation."
                 )
             try:
-                completed, observations = observe_run(command, cwd=cwd, prompt=prompt, timeout=args.timeout_seconds, **selection)
+                completed, observations = observe_run(
+                    command, cwd=cwd, prompt=prompt, timeout=args.timeout_seconds,
+                    **selection, **({"fetch_url": SMOKE_WEB_URL} if args.capability == "web" else {}),
+                )
                 result = evaluate_smoke(completed.stdout, observations, capability=args.capability, preset=preset, selection=selection)
                 result["exit_code"] = completed.returncode
                 if completed.returncode != 0:
