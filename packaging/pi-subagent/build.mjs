@@ -21,14 +21,6 @@ export const packageFiles = [
   ["extensions/pi-subagent/child-guard.ts", "extensions/pi-subagent/child-guard.ts"],
   ["extensions/pi-subagent/parent-liveness.ts", "extensions/pi-subagent/parent-liveness.ts"],
   ["extensions/pi-subagent/README.md", "extensions/pi-subagent/README.md"],
-  [
-    "extensions/pi-subagent/assets/pi-subagent-automatic.gif",
-    "extensions/pi-subagent/assets/pi-subagent-automatic.gif",
-  ],
-  [
-    "extensions/pi-subagent/assets/pi-subagent-architecture.png",
-    "extensions/pi-subagent/assets/pi-subagent-architecture.png",
-  ],
   ["skills/pi-subagent/SKILL.md", "skills/pi-subagent/SKILL.md"],
   ["skills/pi-subagent/README.md", "skills/pi-subagent/README.md"],
 ];
@@ -57,6 +49,16 @@ export function renderPackageReadme(source, version) {
     .replace(/(\]\()([^\s)]+)(\))/g, (_, prefix, target, suffix) => `${prefix}${rebase(target, releaseRoot)}${suffix}`);
 }
 
+// Keep the bundled guide's document links local, but serve its images from
+// the same tagged repository assets as the top-level README and gallery.
+export function renderExtensionReadme(source, version) {
+  const rawAssets = `https://raw.githubusercontent.com/MDGChamomile/pi-subagent/v${version}/extensions/pi-subagent/`;
+  return releaseUrls(source, version).replace(
+    /(\]\()(assets\/[^\s)]+)(\))/g,
+    (_, prefix, target, suffix) => `${prefix}${rawAssets}${target}${suffix}`,
+  );
+}
+
 export async function buildPackage() {
   const manifest = JSON.parse(await readFile(join(packageRoot, "manifest.json"), "utf8"));
   const image = releaseUrls(manifest.pi.image, manifest.version);
@@ -71,6 +73,10 @@ export async function buildPackage() {
     ...manifest, pi: { ...manifest.pi, image },
   }, null, 2)}\n`);
   await writeFile(join(stagingDirectory, "README.md"), readme);
+  const extensionReadme = "extensions/pi-subagent/README.md";
+  await writeFile(join(stagingDirectory, extensionReadme), renderExtensionReadme(
+    await readFile(join(repositoryRoot, extensionReadme), "utf8"), manifest.version,
+  ));
   return stagingDirectory;
 }
 
