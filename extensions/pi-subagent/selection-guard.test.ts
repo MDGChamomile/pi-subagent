@@ -13,6 +13,7 @@ const failures = {
   "missing-web-extension": "initialization", "before-session-start": "initialization",
   "local-owner": "toolOwnership", "web-owner": "toolOwnership",
   "readiness-failure": "readiness", "budget-failure": "readiness",
+  "tool-notice-failure": "runtime", "final-answer-failure": "runtime",
 } as const;
 for (const scenario of ["match", ...Object.keys(failures)]) {
   test(`real Pi request dispatch: ${scenario}`, () => {
@@ -30,7 +31,7 @@ for (const scenario of ["match", ...Object.keys(failures)]) {
       const reason = failures[scenario as keyof typeof failures];
       assert.equal(result.status, CHILD_GUARD_EXIT_CODES[reason]);
       assert.equal(output.requests, 0, "failure must exit before the transport spy, not throw and continue");
-      assert.equal(output.guardReady, reason === "modelSelection");
+      assert.equal(output.guardReady, reason === "modelSelection" || reason === "runtime");
       if (reason !== "modelSelection" && scenario !== "before-session-start") assert.deepEqual(output.activeTools, []);
     }
   });

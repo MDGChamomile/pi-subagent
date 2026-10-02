@@ -40,12 +40,13 @@ export const CHILD_FINALIZATION_GRACE_MS = 2 * 60 * 1000;
 export const POLICY_ENV = "PI_SUBAGENT_POLICY_FILE";
 export const READY_ENV = "PI_SUBAGENT_READY_FILE";
 export const READY_MARKER = "pi-subagent-guard-ready-v1\n";
-// Fixed, content-free child startup diagnostics; never forward raw child stderr.
+// Fixed, content-free child guard diagnostics; never forward raw child stderr.
 export const CHILD_GUARD_EXIT_CODES = {
   initialization: 70,
   toolOwnership: 71,
   readiness: 72,
   modelSelection: 73,
+  runtime: 74,
 } as const;
 export const BUDGET_TELEMETRY_ENV = "PI_SUBAGENT_BUDGET_TELEMETRY_FILE";
 export const WEB_EXTENSION_ENV = "PI_SUBAGENT_WEB_EXTENSION_PATH";

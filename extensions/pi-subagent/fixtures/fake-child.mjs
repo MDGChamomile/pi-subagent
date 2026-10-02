@@ -31,6 +31,7 @@ if (scenario === "startup-error") {
   process.exit(1);
 }
 if (scenario.startsWith("guard-")) {
+  if (scenario === "guard-runtime") writeFileSync(readyPath, READY_MARKER, { mode: 0o600, flag: "wx" });
   process.stderr.write("private initialization detail must not reach the parent\n");
   process.exit(CHILD_GUARD_EXIT_CODES[scenario.slice("guard-".length)] ?? 9);
 }

@@ -402,7 +402,7 @@ export default function childGuard(
     // Tool disabling alone does not prevent a provider request. Require the
     // complete startup path, including readiness publication, before transmission.
     if (!guardReady || !policy || policyError) {
-      process.exit(guardReady ? CHILD_GUARD_EXIT_CODES.initialization : startupExitCode);
+      process.exit(guardReady ? CHILD_GUARD_EXIT_CODES.runtime : startupExitCode);
     }
     try {
       const expected = JSON.parse(expectedSelection ?? "null") as PresetSelection | null;
