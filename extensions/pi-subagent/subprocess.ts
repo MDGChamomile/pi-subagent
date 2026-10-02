@@ -6,7 +6,7 @@ import { StringDecoder } from "node:string_decoder";
 import { setTimeout as delay } from "node:timers/promises";
 import { fileURLToPath } from "node:url";
 import type { Usage as PiUsage } from "@earendil-works/pi-ai";
-import { killProcessGroup, PARENT_LIVENESS_ENV, PARENT_LIVENESS_FD } from "./parent-liveness.ts";
+import { isProcessGroupGone, killProcessGroup, PARENT_LIVENESS_ENV, PARENT_LIVENESS_FD } from "./parent-liveness.ts";
 import {
   boundedParentError,
   BUDGET_TELEMETRY_ENV,
@@ -541,10 +541,20 @@ export async function runChild(options: {
     if (stopping) return;
     stopping = true;
     killProcessGroup(child.pid, "SIGTERM");
-    // Keep this timer referenced: the leader may close while descendants survive.
-    stopCleanup = delay(options.killGraceMs ?? 5_000).then(() => {
-      killProcessGroup(child.pid, "SIGKILL");
-    });
+    // The leader may close while descendants survive. Only confirmed group
+    // disappearance can end cleanup early; uncertain probes retain escalation.
+    stopCleanup = (async () => {
+      const deadline = performance.now() + (options.killGraceMs ?? 5_000);
+      while (!isProcessGroupGone(child.pid)) {
+        const remaining = deadline - performance.now();
+        if (remaining <= 0) {
+          killProcessGroup(child.pid, "SIGKILL");
+          return;
+        }
+        // Keep this timer referenced until the entire group is gone or killed.
+        await delay(Math.min(100, remaining));
+      }
+    })();
   };
 
   const emitProgress = () => {
