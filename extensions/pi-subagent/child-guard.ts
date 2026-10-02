@@ -8,6 +8,7 @@ import {
   ALLOWED_WEB_TOOLS,
   authorizeReadPath,
   BUDGET_TELEMETRY_ENV,
+  CHILD_GUARD_EXIT_CODES,
   DEFAULT_WEB_RESULTS_PER_QUERY,
   isWithin,
   LIFETIME_TOOL_CALL_LIMITS,
@@ -280,6 +281,8 @@ export default function childGuard(
   let finalAnswerSeen = false;
   let finalizationRequested = false;
   let policyError: string | undefined;
+  let guardReady = false;
+  let startupExitCode: number = CHILD_GUARD_EXIT_CODES.initialization;
   let stopParentLivenessMonitor: (() => void) | undefined;
   const validatedToolCallIds = new Set<string>();
   const permittedToolCallIds = new Set<string>();
@@ -396,6 +399,11 @@ export default function childGuard(
   // a model ID or clamp thinking when the child's registry differs from the parent's.
   const expectedSelection = process.env[MODEL_SELECTION_ENV];
   pi.on("before_provider_request", (_event, ctx) => {
+    // Tool disabling alone does not prevent a provider request. Require the
+    // complete startup path, including readiness publication, before transmission.
+    if (!guardReady || !policy || policyError) {
+      process.exit(guardReady ? CHILD_GUARD_EXIT_CODES.initialization : startupExitCode);
+    }
     try {
       const expected = JSON.parse(expectedSelection ?? "null") as PresetSelection | null;
       if (!expected || typeof expected.model !== "string" || typeof expected.thinking !== "string" ||
@@ -408,17 +416,18 @@ export default function childGuard(
     } catch {
       // Pi 0.84.2/0.85.0 swallow hook exceptions and continue the request. Exit
       // synchronously instead; the parent observes failure and cleans runtime files.
-      process.exit(1);
+      process.exit(CHILD_GUARD_EXIT_CODES.modelSelection);
     }
   });
 
   pi.on("session_start", () => {
-    if (!policy || !readyPath || !budgetTelemetryPath || (policy.capability === "web" && !webExtensionPath)) {
+    if (!policy || policyError || !readyPath || !budgetTelemetryPath || (policy.capability === "web" && !webExtensionPath)) {
       pi.setActiveTools([]);
       return;
     }
     const tools = pi.getAllTools();
     const activeTools = toolsForCapability(policy.capability);
+    startupExitCode = CHILD_GUARD_EXIT_CODES.toolOwnership;
     if (policy.capability === "local") {
       for (const name of ALLOWED_FILE_TOOLS) {
         const tool = tools.find((candidate) => candidate.name === name);
@@ -442,6 +451,7 @@ export default function childGuard(
         }
       }
     }
+    startupExitCode = CHILD_GUARD_EXIT_CODES.readiness;
     try {
       writeFileSync(budgetTelemetryPath!, JSON.stringify(budget), { encoding: "utf8", mode: 0o600, flag: "wx" });
       writeFileSync(readyPath, READY_MARKER, { encoding: "utf8", mode: 0o600, flag: "wx" });
@@ -456,6 +466,7 @@ export default function childGuard(
       softDeadlineTimer = setTimeout(requestPartialAnswer, Math.max(0, softDeadline - Date.now()));
       softDeadlineTimer.unref?.();
     }
+    guardReady = true;
   });
 
   pi.on("tool_execution_start", (event) => {
