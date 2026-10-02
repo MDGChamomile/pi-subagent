@@ -4,7 +4,7 @@ import { cp, mkdir, mkdtemp, readFile, rm, stat, writeFile } from "node:fs/promi
 import { tmpdir } from "node:os";
 import { dirname, join, resolve } from "node:path";
 import { fileURLToPath } from "node:url";
-import { buildPackage, packageFiles, releaseUrls, renderPackageReadme, stagingDirectory } from "./build.mjs";
+import { buildPackage, packageFiles, releaseUrls, renderExtensionReadme, renderPackageReadme, stagingDirectory } from "./build.mjs";
 import { SUBAGENT_PRESETS } from "../../extensions/pi-subagent/shared.ts";
 
 // A future version must update every generated release URL without source edits.
@@ -12,6 +12,8 @@ const packageRoot = dirname(fileURLToPath(import.meta.url));
 const sourceRoot = resolve(packageRoot, "../..");
 const maintainedManifestText = await readFile(join(packageRoot, "manifest.json"), "utf8");
 const sourceReadme = await readFile(join(sourceRoot, "README.md"), "utf8");
+const extensionReadmePath = "extensions/pi-subagent/README.md";
+const sourceExtensionReadme = await readFile(join(sourceRoot, extensionReadmePath), "utf8");
 const maintainedManifest = JSON.parse(maintainedManifestText);
 const futureVersion = "99.12.34";
 const rawRoot = "https://raw.githubusercontent.com/MDGChamomile/pi-subagent";
@@ -34,9 +36,18 @@ const inlineLinks = '![Preview](extensions/pi-subagent/assets/pi-subagent-automa
 assert.equal(renderPackageReadme(inlineLinks, futureVersion),
   `![Preview](${rawRoot}/v${futureVersion}/extensions/pi-subagent/assets/pi-subagent-automatic.gif)\n[Guide](https://github.com/MDGChamomile/pi-subagent/blob/v${futureVersion}/extensions/pi-subagent/README.md#presets)\n[Here](#presets)\n[Remote](https://example.com/guide)\n[Mail](mailto:help@example.com)`);
 
+const guideLinks = '![Demo](assets/pi-subagent-automatic.gif)\n[![Architecture](assets/pi-subagent-architecture.png)](assets/pi-subagent-architecture.png)\n[Skill](../../skills/pi-subagent/README.md)\n[Here](#presets)\n[Remote](https://example.com/image.png)';
+const futureAssets = `${rawRoot}/v${futureVersion}/extensions/pi-subagent/assets/`;
+assert.equal(renderExtensionReadme(guideLinks, futureVersion),
+  `![Demo](${futureAssets}pi-subagent-automatic.gif)\n[![Architecture](${futureAssets}pi-subagent-architecture.png)](${futureAssets}pi-subagent-architecture.png)\n[Skill](../../skills/pi-subagent/README.md)\n[Here](#presets)\n[Remote](https://example.com/image.png)`);
+const futureExtensionReadme = renderExtensionReadme(sourceExtensionReadme, futureVersion);
+assert.equal(renderExtensionReadme(futureExtensionReadme, futureVersion), futureExtensionReadme);
+assert.throws(() => renderExtensionReadme(sourceExtensionReadme, "1.0.0-beta.1"), /stable release version/);
+
 await buildPackage();
 assert.equal(await readFile(join(packageRoot, "manifest.json"), "utf8"), maintainedManifestText);
 assert.equal(await readFile(join(sourceRoot, "README.md"), "utf8"), sourceReadme);
+assert.equal(await readFile(join(sourceRoot, extensionReadmePath), "utf8"), sourceExtensionReadme);
 
 const manifest = JSON.parse(await readFile(join(stagingDirectory, "package.json"), "utf8"));
 assert.equal(manifest.name, "@mdgchamomile/pi-subagent");
@@ -54,6 +65,19 @@ assert.equal(
   sourceReadme,
   "package README must preserve the entire canonical body, changing only link destinations",
 );
+
+const bundledExtensionReadme = await readFile(join(stagingDirectory, extensionReadmePath), "utf8");
+assert.equal(bundledExtensionReadme, renderExtensionReadme(sourceExtensionReadme, manifest.version));
+assert.equal(
+  bundledExtensionReadme.replaceAll(`${rawRoot}/v${manifest.version}/extensions/pi-subagent/`, ""),
+  sourceExtensionReadme,
+  "bundled extension guide must preserve its body and document links, rebasing only asset links",
+);
+for (const asset of ["pi-subagent-automatic.gif", "pi-subagent-architecture.png"]) {
+  assert.equal((await stat(join(sourceRoot, "extensions/pi-subagent/assets", asset))).isFile(), true,
+    "repository assets must remain available for tagged URLs");
+  assert.ok(bundledExtensionReadme.includes(`${rawRoot}/v${manifest.version}/extensions/pi-subagent/assets/${asset}`));
+}
 
 const sharedRequirementPatterns = [
   ["minimum Pi version", /Pi 0\.99\.1 or later/],
@@ -149,6 +173,8 @@ assert.equal(report[0].version, manifest.version);
 const actualFiles = report[0].files.map(({ path }) => path).sort();
 const expectedFiles = packageFiles.map(([, target]) => target).sort();
 assert.deepEqual(actualFiles, expectedFiles, "npm tarball contains an unexpected file set");
+assert.equal(actualFiles.some((path) => path.startsWith("extensions/pi-subagent/assets/")), false,
+  "repository presentation assets must not be bundled in the npm package");
 
 for (const [markdownPath, root] of [
   ["README.md", sourceRoot],
@@ -182,17 +208,23 @@ try {
   assert.equal(futureManifest.version, futureVersion);
   assert.equal(futureManifest.pi.image, `${rawRoot}/v${futureVersion}/extensions/pi-subagent/assets/pi-subagent-automatic.gif`);
   assert.equal(await readFile(join(fixturePackage, "dist/README.md"), "utf8"), futureReadme);
+  assert.equal(await readFile(join(fixturePackage, "dist", extensionReadmePath), "utf8"), futureExtensionReadme);
   assert.equal(await readFile(join(fixtureRoot, "README.md"), "utf8"), sourceReadme);
+  assert.equal(await readFile(join(fixtureRoot, extensionReadmePath), "utf8"), sourceExtensionReadme);
 
   // A body-only source edit must propagate through the real builder without a
   // second maintained README, and the builder must not overwrite its input.
   const editedReadme = `${sourceReadme}\nCanonical body fixture.\n`;
+  const editedExtensionReadme = `${sourceExtensionReadme}\nExtension guide body fixture.\n`;
   await writeFile(join(fixtureRoot, "README.md"), editedReadme);
+  await writeFile(join(fixtureRoot, extensionReadmePath), editedExtensionReadme);
   const rebuilt = spawnSync(process.execPath, [join(fixturePackage, "build.mjs")], { encoding: "utf8", timeout: 30_000 });
   assert.ifError(rebuilt.error);
   assert.equal(rebuilt.status, 0, rebuilt.stderr);
   assert.equal(await readFile(join(fixturePackage, "dist/README.md"), "utf8"), renderPackageReadme(editedReadme, futureVersion));
   assert.equal(await readFile(join(fixtureRoot, "README.md"), "utf8"), editedReadme);
+  assert.equal(await readFile(join(fixturePackage, "dist", extensionReadmePath), "utf8"), renderExtensionReadme(editedExtensionReadme, futureVersion));
+  assert.equal(await readFile(join(fixtureRoot, extensionReadmePath), "utf8"), editedExtensionReadme);
 
   const home = join(temporaryConfig, "home");
   await mkdir(home);
