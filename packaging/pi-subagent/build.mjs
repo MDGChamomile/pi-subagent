@@ -10,7 +10,7 @@ export const stagingDirectory = join(packageRoot, "dist");
 export const packageFiles = [
   ["packaging/pi-subagent/manifest.json", "package.json"],
   ["packaging/pi-subagent/index.ts", "index.ts"],
-  ["packaging/pi-subagent/README.md", "README.md"],
+  ["README.md", "README.md"],
   ["LICENSE", "LICENSE"],
   ["extensions/pi-subagent/index.ts", "extensions/pi-subagent/index.ts"],
   ["extensions/pi-subagent/shared.ts", "extensions/pi-subagent/shared.ts"],
@@ -45,10 +45,22 @@ export function releaseUrls(text, version) {
   );
 }
 
+// The root README is the sole maintained body. Rebase its inline image and
+// document links for npm without changing prose or adding another template.
+export function renderPackageReadme(source, version) {
+  const versioned = releaseUrls(source, version);
+  const rawRoot = `https://raw.githubusercontent.com/MDGChamomile/pi-subagent/v${version}/`;
+  const releaseRoot = `https://github.com/MDGChamomile/pi-subagent/blob/v${version}/`;
+  const rebase = (target, root) => /^(?:[a-z][a-z\d+.-]*:|[/#])/i.test(target) ? target : `${root}${target}`;
+  return versioned
+    .replace(/(!\[[^\]]*\]\()([^\s)]+)(\))/g, (_, prefix, target, suffix) => `${prefix}${rebase(target, rawRoot)}${suffix}`)
+    .replace(/(\]\()([^\s)]+)(\))/g, (_, prefix, target, suffix) => `${prefix}${rebase(target, releaseRoot)}${suffix}`);
+}
+
 export async function buildPackage() {
   const manifest = JSON.parse(await readFile(join(packageRoot, "manifest.json"), "utf8"));
   const image = releaseUrls(manifest.pi.image, manifest.version);
-  const readme = releaseUrls(await readFile(join(packageRoot, "README.md"), "utf8"), manifest.version);
+  const readme = renderPackageReadme(await readFile(join(repositoryRoot, "README.md"), "utf8"), manifest.version);
   await rm(stagingDirectory, { recursive: true, force: true });
   for (const [source, target] of packageFiles) {
     const output = join(stagingDirectory, target);

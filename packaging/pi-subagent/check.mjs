@@ -4,13 +4,14 @@ import { cp, mkdir, mkdtemp, readFile, rm, stat, writeFile } from "node:fs/promi
 import { tmpdir } from "node:os";
 import { dirname, join, resolve } from "node:path";
 import { fileURLToPath } from "node:url";
-import { buildPackage, packageFiles, releaseUrls, stagingDirectory } from "./build.mjs";
+import { buildPackage, packageFiles, releaseUrls, renderPackageReadme, stagingDirectory } from "./build.mjs";
 import { SUBAGENT_PRESETS } from "../../extensions/pi-subagent/shared.ts";
 
-// A future version must update every maintained release URL without source edits.
+// A future version must update every generated release URL without source edits.
 const packageRoot = dirname(fileURLToPath(import.meta.url));
+const sourceRoot = resolve(packageRoot, "../..");
 const maintainedManifestText = await readFile(join(packageRoot, "manifest.json"), "utf8");
-const maintainedReadme = await readFile(join(packageRoot, "README.md"), "utf8");
+const sourceReadme = await readFile(join(sourceRoot, "README.md"), "utf8");
 const maintainedManifest = JSON.parse(maintainedManifestText);
 const futureVersion = "99.12.34";
 const rawRoot = "https://raw.githubusercontent.com/MDGChamomile/pi-subagent";
@@ -19,20 +20,23 @@ assert.equal(
   `${rawRoot}/v${futureVersion}/extensions/pi-subagent/assets/pi-subagent-automatic.gif`,
   "gallery must use the model-invoked demo at the selected version",
 );
-const futureReadme = releaseUrls(maintainedReadme, futureVersion);
-const maintainedUrls = maintainedReadme.match(/https:\/\/[^\s)]+\/v\d+\.\d+\.\d+\/[^\s)]+/g) ?? [];
+const futureReadme = renderPackageReadme(sourceReadme, futureVersion);
+const maintainedUrls = renderPackageReadme(sourceReadme, maintainedManifest.version).match(/https:\/\/[^\s)]+\/v\d+\.\d+\.\d+\/[^\s)]+/g) ?? [];
 assert.ok(maintainedUrls.length >= 8, "exercise images, architecture, guides, and license URLs");
 for (const url of maintainedUrls) {
   assert.ok(futureReadme.includes(url.replace(/\/v\d+\.\d+\.\d+\//, `/v${futureVersion}/`)));
 }
 const unrelated = "https://github.com/other/project/blob/v0.5.0/README.md extensions/pi-subagent/assets/pi-subagent-automatic.gif";
 assert.equal(releaseUrls(unrelated, futureVersion), unrelated);
-assert.equal(releaseUrls(futureReadme, futureVersion), futureReadme, "URL rendering is idempotent");
-assert.throws(() => releaseUrls(maintainedReadme, "1.0.0-beta.1"), /stable release version/);
+assert.equal(renderPackageReadme(futureReadme, futureVersion), futureReadme, "URL rendering is idempotent");
+assert.throws(() => renderPackageReadme(sourceReadme, "1.0.0-beta.1"), /stable release version/);
+const inlineLinks = '![Preview](extensions/pi-subagent/assets/pi-subagent-automatic.gif)\n[Guide](extensions/pi-subagent/README.md#presets)\n[Here](#presets)\n[Remote](https://example.com/guide)\n[Mail](mailto:help@example.com)';
+assert.equal(renderPackageReadme(inlineLinks, futureVersion),
+  `![Preview](${rawRoot}/v${futureVersion}/extensions/pi-subagent/assets/pi-subagent-automatic.gif)\n[Guide](https://github.com/MDGChamomile/pi-subagent/blob/v${futureVersion}/extensions/pi-subagent/README.md#presets)\n[Here](#presets)\n[Remote](https://example.com/guide)\n[Mail](mailto:help@example.com)`);
 
 await buildPackage();
 assert.equal(await readFile(join(packageRoot, "manifest.json"), "utf8"), maintainedManifestText);
-assert.equal(await readFile(join(packageRoot, "README.md"), "utf8"), maintainedReadme);
+assert.equal(await readFile(join(sourceRoot, "README.md"), "utf8"), sourceReadme);
 
 const manifest = JSON.parse(await readFile(join(stagingDirectory, "package.json"), "utf8"));
 assert.equal(manifest.name, "@mdgchamomile/pi-subagent");
@@ -42,14 +46,13 @@ assert.deepEqual(manifest.keywords.includes("pi-package"), true);
 assert.equal(manifest.pi.image, `${rawRoot}/v${manifest.version}/extensions/pi-subagent/assets/pi-subagent-automatic.gif`);
 
 const topLevelReadme = await readFile(join(stagingDirectory, "README.md"), "utf8");
-const sourceRoot = resolve(dirname(fileURLToPath(import.meta.url)), "../..");
-const sourceReadme = await readFile(join(sourceRoot, "README.md"), "utf8");
-assert.equal(topLevelReadme, releaseUrls(maintainedReadme, manifest.version));
-const demoSection = (text) => text.split("### See it in action\n")[1].split("\n## Why use it?")[0];
+assert.equal(topLevelReadme, renderPackageReadme(sourceReadme, manifest.version));
 assert.equal(
-  demoSection(topLevelReadme).replaceAll(`${rawRoot}/v${manifest.version}/`, ""),
-  demoSection(sourceReadme),
-  "source and package demo descriptions must agree",
+  topLevelReadme
+    .replaceAll(`${rawRoot}/v${manifest.version}/`, "")
+    .replaceAll(`https://github.com/MDGChamomile/pi-subagent/blob/v${manifest.version}/`, ""),
+  sourceReadme,
+  "package README must preserve the entire canonical body, changing only link destinations",
 );
 
 const sharedRequirementPatterns = [
@@ -60,7 +63,6 @@ const sharedRequirementPatterns = [
 ];
 for (const [description, pattern] of sharedRequirementPatterns) {
   assert.match(sourceReadme, pattern, `source README is missing ${description}`);
-  assert.match(topLevelReadme, pattern, `package README is missing ${description}`);
 }
 for (const path of ["extensions/pi-subagent/README.md", "skills/pi-subagent/README.md", "skills/pi-subagent/SKILL.md"]) {
   const guide = await readFile(join(sourceRoot, path), "utf8");
@@ -81,28 +83,26 @@ const presetRows = (markdown) => {
   });
 };
 const expectedPresets = Object.entries(SUBAGENT_PRESETS).map(([preset, settings]) => ({ preset, ...settings }));
-for (const [name, markdown] of [["source", sourceReadme], ["package", topLevelReadme]]) {
-  const checkPresets = (text) => assert.deepEqual(
-    presetRows(text), expectedPresets, `${name} README preset contract is inaccurate`,
-  );
-  checkPresets(markdown);
+const checkPresets = (text) => assert.deepEqual(
+  presetRows(text), expectedPresets, "canonical README preset contract is inaccurate",
+);
+checkPresets(sourceReadme);
 
-  // Negative controls must reject stale values and missing or unexpected rows.
-  const { preset, model, thinking } = expectedPresets[0];
-  const row = `| \`${preset}\` | \`${model}\` | \`${thinking}\` |`;
-  for (const replacement of [
-    `| \`${preset}\` | \`fixture/stale-model\` | \`${thinking}\` |`,
-    `| \`${preset}\` | \`${model}\` | \`fixture-stale-thinking\` |`,
-    "",
-    `${row}\n| \`fixture-unexpected-preset\` | \`${model}\` | \`${thinking}\` |`,
-    `${row}\n| \`fixture-unexpected-preset\` | \`${model}\` | ${thinking} |`,
-    `${row}\n| fixture-unexpected-preset | ${model} | ${thinking} |`,
-  ]) {
-    assert.throws(() => checkPresets(markdown.replace(row, replacement)), {
-      code: "ERR_ASSERTION",
-      message: new RegExp(`${name} README preset contract is inaccurate`),
-    });
-  }
+// Negative controls must reject stale values and missing or unexpected rows.
+const { preset, model, thinking } = expectedPresets[0];
+const row = `| \`${preset}\` | \`${model}\` | \`${thinking}\` |`;
+for (const replacement of [
+  `| \`${preset}\` | \`fixture/stale-model\` | \`${thinking}\` |`,
+  `| \`${preset}\` | \`${model}\` | \`fixture-stale-thinking\` |`,
+  "",
+  `${row}\n| \`fixture-unexpected-preset\` | \`${model}\` | \`${thinking}\` |`,
+  `${row}\n| \`fixture-unexpected-preset\` | \`${model}\` | ${thinking} |`,
+  `${row}\n| fixture-unexpected-preset | ${model} | ${thinking} |`,
+]) {
+  assert.throws(() => checkPresets(sourceReadme.replace(row, replacement)), {
+    code: "ERR_ASSERTION",
+    message: /canonical README preset contract is inaccurate/,
+  });
 }
 
 const topLevelLinks = new Map(
@@ -150,14 +150,17 @@ const actualFiles = report[0].files.map(({ path }) => path).sort();
 const expectedFiles = packageFiles.map(([, target]) => target).sort();
 assert.deepEqual(actualFiles, expectedFiles, "npm tarball contains an unexpected file set");
 
-for (const markdownPath of actualFiles.filter((path) => path.endsWith(".md"))) {
-  const markdown = await readFile(join(stagingDirectory, markdownPath), "utf8");
+for (const [markdownPath, root] of [
+  ["README.md", sourceRoot],
+  ...actualFiles.filter((path) => path.endsWith(".md")).map((path) => [path, stagingDirectory]),
+]) {
+  const markdown = await readFile(join(root, markdownPath), "utf8");
   for (const match of markdown.matchAll(/\[[^\]]*\]\(([^)]+)\)/g)) {
     const target = match[1];
     if (target.includes("://") || target.startsWith("#")) continue;
     const relativePath = target.split("#", 1)[0];
     if (!relativePath) continue;
-    await stat(join(stagingDirectory, dirname(markdownPath), relativePath));
+    await stat(join(root, dirname(markdownPath), relativePath));
   }
 }
 
@@ -179,7 +182,17 @@ try {
   assert.equal(futureManifest.version, futureVersion);
   assert.equal(futureManifest.pi.image, `${rawRoot}/v${futureVersion}/extensions/pi-subagent/assets/pi-subagent-automatic.gif`);
   assert.equal(await readFile(join(fixturePackage, "dist/README.md"), "utf8"), futureReadme);
-  assert.equal(await readFile(join(fixturePackage, "README.md"), "utf8"), maintainedReadme);
+  assert.equal(await readFile(join(fixtureRoot, "README.md"), "utf8"), sourceReadme);
+
+  // A body-only source edit must propagate through the real builder without a
+  // second maintained README, and the builder must not overwrite its input.
+  const editedReadme = `${sourceReadme}\nCanonical body fixture.\n`;
+  await writeFile(join(fixtureRoot, "README.md"), editedReadme);
+  const rebuilt = spawnSync(process.execPath, [join(fixturePackage, "build.mjs")], { encoding: "utf8", timeout: 30_000 });
+  assert.ifError(rebuilt.error);
+  assert.equal(rebuilt.status, 0, rebuilt.stderr);
+  assert.equal(await readFile(join(fixturePackage, "dist/README.md"), "utf8"), renderPackageReadme(editedReadme, futureVersion));
+  assert.equal(await readFile(join(fixtureRoot, "README.md"), "utf8"), editedReadme);
 
   const home = join(temporaryConfig, "home");
   await mkdir(home);
