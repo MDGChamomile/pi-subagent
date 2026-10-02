@@ -8,7 +8,7 @@ import { fileURLToPath } from "node:url";
 import { normalizeContext, type Message, type Model } from "@earendil-works/pi-ai";
 import { convertResponsesMessages } from "@earendil-works/pi-ai/api/openai-responses-shared";
 import { ChildRunError, emptyUsage, runChild, type ChildResult } from "./subprocess.ts";
-import { buildChildPolicy, MAX_FINAL_BYTES, MAX_PARENT_ERROR_BYTES } from "./shared.ts";
+import { buildChildPolicy, CHILD_GUARD_EXIT_CODES, MAX_FINAL_BYTES, MAX_PARENT_ERROR_BYTES } from "./shared.ts";
 
 const FAKE_CHILD = fileURLToPath(new URL("./fixtures/fake-child.mjs", import.meta.url));
 const ABRUPT_PARENT = fileURLToPath(new URL("./fixtures/abrupt-parent.mjs", import.meta.url));
@@ -322,6 +322,42 @@ describe("pi-subagent spawned-child integration", () => {
     });
   }
 
+  for (const reason of Object.keys(CHILD_GUARD_EXIT_CODES) as Array<keyof typeof CHILD_GUARD_EXIT_CODES>) {
+    test(`reports the fixed guard failure reason ${reason} without child content`, async () => {
+      await assert.rejects(
+        () => withFixture(`guard-${reason}`, (options) => runChild(options)),
+        (error: unknown) => {
+          assert.ok(error instanceof ChildRunError);
+          assert.match(error.message, new RegExp(`Subagent guard failed: ${reason}`));
+          assert.match(error.message, new RegExp(`"exitCode":${CHILD_GUARD_EXIT_CODES[reason]}`));
+          assert.doesNotMatch(error.message, /private|initialization detail|policy\.json|guard\.ready/);
+          return true;
+        },
+      );
+    });
+  }
+
+  test("stops and waits for a child before sending its task when the first progress update fails", async () => {
+    await withFixture("progress-before-input", async (options) => {
+      let updates = 0;
+      const startedAt = Date.now();
+      await assert.rejects(
+        () => runChild({ ...options, onUpdate() { updates++; throw new Error("private callback detail"); } }),
+        (error: unknown) => {
+          assert.ok(error instanceof ChildRunError);
+          assert.match(error.message, /progress reporting failed/);
+          assert.match(error.message, /"phase":"progress"/);
+          assert.doesNotMatch(error.message, /private callback detail/);
+          assert.equal(error.usage.totalTokens, 0);
+          return true;
+        },
+      );
+      assert.equal(updates, 1, "do not retry the failed progress callback");
+      assert.ok(Date.now() - startedAt < 1_500, "cleanup must not wait for the investigation timeout");
+      await assert.rejects(readFile(join(options.policy.cwd, "input-received")), { code: "ENOENT" });
+    });
+  });
+
   test("terminates a child process that ignores the timeout SIGTERM", async () => {
     const startedAt = Date.now();
     await assert.rejects(
@@ -364,7 +400,7 @@ describe("pi-subagent spawned-child integration", () => {
     );
   });
 
-  for (const reason of ["abort", "timeout", "protocol"] as const) {
+  for (const reason of ["abort", "timeout", "protocol", "progress-output", "progress-timer"] as const) {
     test(`finishes group escalation after the leader exits during ${reason}`, {
       skip: process.platform === "win32",
     }, async () => {
@@ -372,11 +408,17 @@ describe("pi-subagent spawned-child integration", () => {
         const controller = new AbortController();
         const killGraceMs = 150;
         let pids: { childPid: number; descendantPid: number } | undefined;
+        let updates = 0;
         const running = runChild({
           ...options,
           timeoutMs: reason === "timeout" ? 1_500 : 5_000,
           killGraceMs,
           signal: controller.signal,
+          ...(reason.startsWith("progress-") ? {
+            onUpdate() {
+              if (++updates === 2) throw new Error("private callback detail");
+            },
+          } : {}),
         }).then(() => undefined, (error: unknown) => error);
         try {
           const deadline = Date.now() + 3_000;
@@ -391,7 +433,13 @@ describe("pi-subagent spawned-child integration", () => {
           if (reason === "abort") controller.abort();
           const error = await running;
           assert.ok(error instanceof ChildRunError);
-          assert.match(error.message, new RegExp(`"phase":"${reason === "abort" ? "cancelled" : reason}"`));
+          const phase = reason === "abort" ? "cancelled" : reason.startsWith("progress-") ? "progress" : reason;
+          assert.match(error.message, new RegExp(`"phase":"${phase}"`));
+          if (reason.startsWith("progress-")) {
+            assert.equal(updates, 2);
+            assert.doesNotMatch(error.message, /private callback detail/);
+            if (reason === "progress-output") assert.equal(error.usage.totalTokens, 16);
+          }
           const leaderStoppedAt = Number(await readFile(join(options.policy.cwd, "leader-stopped"), "utf8"));
           assert.ok(Date.now() - leaderStoppedAt >= killGraceMs - 30,
             "runChild must not settle when only the leader has exited");

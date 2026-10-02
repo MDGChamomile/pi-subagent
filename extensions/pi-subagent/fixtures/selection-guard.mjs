@@ -1,34 +1,80 @@
 // Isolated process: exercise Pi's actual hook exception handling without a provider request.
-import { existsSync } from "node:fs";
+import { existsSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from "node:fs";
+import { tmpdir } from "node:os";
+import { join } from "node:path";
 import childGuard from "../child-guard.ts";
-import { MODEL_SELECTION_ENV } from "../shared.ts";
+import {
+  ALLOWED_FILE_TOOLS, ALLOWED_WEB_TOOLS, BUDGET_TELEMETRY_ENV,
+  MODEL_SELECTION_ENV, POLICY_ENV, READY_ENV, READY_MARKER,
+  SOFT_DEADLINE_ENV, WEB_EXTENSION_ENV,
+} from "../shared.ts";
 const sdkEntry = import.meta.resolve("@earendil-works/pi-coding-agent");
 const bundledEntry = new URL("./bundle/index.js", sdkEntry);
 const { ExtensionRunner } = await import(existsSync(bundledEntry) ? bundledEntry.href : sdkEntry);
 const scenario = process.argv[2];
-const registered = { provider: "openrouter", id: "anthropic/known", reasoning: true };
-const expected = { model: "openrouter/anthropic/known", thinking: "high" };
+const root = mkdtempSync(join(tmpdir(), "pi-subagent-request-guard-"));
+let requests = 0;
+let activeTools = [];
+process.on("exit", () => {
+  let guardReady = false;
+  try { guardReady = readFileSync(process.env[READY_ENV], "utf8") === READY_MARKER; } catch {}
+  console.log(JSON.stringify({ requests, guardReady, activeTools }));
+  rmSync(root, { recursive: true, force: true });
+});
+const web = scenario === "web-owner" || scenario === "missing-web-extension";
+const policyFile = join(root, "policy.json");
+const readyFile = join(root, "guard.ready");
+const budgetFile = join(root, "budget.json");
+process.env[POLICY_ENV] = policyFile;
+process.env[READY_ENV] = readyFile;
+process.env[BUDGET_TELEMETRY_ENV] = budgetFile;
+if (scenario !== "missing-policy") {
+  writeFileSync(policyFile, scenario === "malformed-policy" ? "{" : JSON.stringify({
+    version: 1, cwd: root, capability: web ? "web" : "local",
+    roots: web ? [] : [{ path: root, kind: "directory" }],
+  }), { mode: 0o600 });
+}
+if (scenario === "readiness-failure") writeFileSync(readyFile, "invalid\n", { mode: 0o600 });
+if (scenario === "budget-failure") writeFileSync(budgetFile, "{}", { mode: 0o600 });
+if (scenario === "invalid-deadline") process.env[SOFT_DEADLINE_ENV] = "invalid";
+const webExtension = join(root, "web.ts");
+if (web && scenario !== "missing-web-extension") {
+  writeFileSync(webExtension, "export default () => {};\n", { mode: 0o600 });
+  process.env[WEB_EXTENSION_ENV] = webExtension;
+}
+const registered = { provider: "test", id: "known", reasoning: true };
+const expected = { model: "test/known", thinking: "high" };
 let effective = registered;
 let thinkingLevel = "high";
 if (scenario === "missing-entry") {
-  expected.model = "openrouter/anthropic/parent-only";
-  effective = { ...registered, id: "anthropic/parent-only" }; // CLI synthetic fallback
+  expected.model = "test/parent-only";
+  effective = { ...registered, id: "parent-only" }; // CLI synthetic fallback
 }
-if (scenario === "provider") effective = { ...registered, provider: "anthropic" };
+if (scenario === "provider") effective = { ...registered, provider: "other" };
 if (scenario === "thinking") thinkingLevel = "medium";
 if (scenario === "unsupported") registered.reasoning = false;
 process.env[MODEL_SELECTION_ENV] = scenario === "malformed" ? "{" : JSON.stringify(expected);
 if (scenario === "missing") delete process.env[MODEL_SELECTION_ENV];
 const handlers = new Map();
-childGuard({ on(name, handler) { handlers.set(name, [...(handlers.get(name) ?? []), handler]); } }, () => () => {});
+childGuard({
+  on(name, handler) { handlers.set(name, [...(handlers.get(name) ?? []), handler]); },
+  getAllTools() {
+    return web
+      ? ALLOWED_WEB_TOOLS.map((name) => ({ name, sourceInfo: { path: scenario === "web-owner" ? policyFile : webExtension } }))
+      : ALLOWED_FILE_TOOLS.map((name) => ({ name, sourceInfo: { source: scenario === "local-owner" ? "local" : "builtin" } }));
+  },
+  setActiveTools(names) { activeTools = names; },
+}, () => {
+  if (scenario === "liveness-failure") throw new Error("synthetic liveness failure");
+  return () => {};
+});
 // Use real Pi dispatch (which catches thrown handlers). Only the context/registry
 // and the transport are doubles; neither credentials nor network are involved.
 const runner = new ExtensionRunner([{ path: "selection-guard", handlers }], {}, ".", {}, {});
 runner.createContext = () => ({ model: effective, thinkingLevel,
   modelRegistry: { find: (provider, id) => provider === registered.provider && id === registered.id ? registered : undefined },
 });
-let requests = 0;
+if (scenario !== "before-session-start") await runner.emit({ type: "session_start" });
 await runner.emitBeforeProviderRequest({ model: effective.id });
 const transportSpy = () => { requests++; };
 transportSpy();
-console.log(JSON.stringify({ requests }));
