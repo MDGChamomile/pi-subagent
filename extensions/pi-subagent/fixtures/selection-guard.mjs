@@ -4,7 +4,7 @@ import { tmpdir } from "node:os";
 import { join } from "node:path";
 import childGuard from "../child-guard.ts";
 import {
-  ALLOWED_FILE_TOOLS, ALLOWED_WEB_TOOLS, BUDGET_TELEMETRY_ENV,
+  ALLOWED_FILE_TOOLS, ALLOWED_WEB_TOOLS, BUDGET_TELEMETRY_ENV, LIFETIME_TOOL_CALL_LIMITS,
   MODEL_SELECTION_ENV, POLICY_ENV, READY_ENV, READY_MARKER,
   SOFT_DEADLINE_ENV, WEB_EXTENSION_ENV,
 } from "../shared.ts";
@@ -64,6 +64,7 @@ childGuard({
       : ALLOWED_FILE_TOOLS.map((name) => ({ name, sourceInfo: { source: scenario === "local-owner" ? "local" : "builtin" } }));
   },
   setActiveTools(names) { activeTools = names; },
+  sendUserMessage() { throw new Error("private runtime message failure"); },
 }, () => {
   if (scenario === "liveness-failure") throw new Error("synthetic liveness failure");
   return () => {};
@@ -75,6 +76,12 @@ runner.createContext = () => ({ model: effective, thinkingLevel,
   modelRegistry: { find: (provider, id) => provider === registered.provider && id === registered.id ? registered : undefined },
 });
 if (scenario !== "before-session-start") await runner.emit({ type: "session_start" });
+if (scenario === "tool-notice-failure") {
+  for (let index = 0; index < LIFETIME_TOOL_CALL_LIMITS.local.soft; index++) {
+    await runner.emit({ type: "tool_execution_start", toolCallId: `read-${index}`, toolName: "read", args: {} });
+  }
+}
+if (scenario === "final-answer-failure") await runner.emit({ type: "agent_end", messages: [] });
 await runner.emitBeforeProviderRequest({ model: effective.id });
 const transportSpy = () => { requests++; };
 transportSpy();

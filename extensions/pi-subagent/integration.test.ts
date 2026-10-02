@@ -330,6 +330,7 @@ describe("pi-subagent spawned-child integration", () => {
           assert.ok(error instanceof ChildRunError);
           assert.match(error.message, new RegExp(`Subagent guard failed: ${reason}`));
           assert.match(error.message, new RegExp(`"exitCode":${CHILD_GUARD_EXIT_CODES[reason]}`));
+          assert.match(error.message, new RegExp(`"guardReady":${reason === "runtime"}`));
           assert.doesNotMatch(error.message, /private|initialization detail|policy\.json|guard\.ready/);
           return true;
         },
