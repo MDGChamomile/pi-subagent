@@ -431,6 +431,37 @@ describe("pi-subagent spawned-child integration", () => {
     });
   });
 
+  test("protocol cleanup after child close never signals a single PID", {
+    skip: process.platform === "win32",
+  }, async (t) => {
+    const probe = process.kill.bind(process);
+    const signals: Array<{ pid: number; signal: string | number | undefined; gone: boolean }> = [];
+    t.mock.method(process, "kill", (pid: number, signal?: string | number) => {
+      if (signal === 0) return probe(pid, signal);
+      let gone = false;
+      try { probe(pid, 0); }
+      catch (error) { gone = (error as NodeJS.ErrnoException).code === "ESRCH"; }
+      signals.push({ pid, signal, gone });
+      // Record the attempted target without sending a real termination signal.
+      throw Object.assign(new Error("synthetic missing target"), { code: "ESRCH" });
+    });
+    await assert.rejects(
+      () => withFixture("success", (options) => runChild({
+        ...options,
+        invocationOverride: {
+          command: process.execPath,
+          // No newline: the protocol error is discovered by finish() after close.
+          args: ["-e", 'process.stdout.write(\'{"type":"message_end",broken}\');'],
+        },
+      })),
+      /"phase":"protocol"/,
+    );
+    assert.equal(signals.length, 1);
+    assert.ok(signals[0].pid < 0);
+    assert.equal(signals[0].signal, "SIGTERM");
+    assert.equal(signals[0].gone, true, "the child group must already be gone at cleanup");
+  });
+
   for (const reason of ["abort", "timeout", "protocol", "progress-output", "progress-timer"] as const) {
     test(`finishes group escalation after the leader exits during ${reason}`, {
       skip: process.platform === "win32",
