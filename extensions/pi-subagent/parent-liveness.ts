@@ -30,6 +30,18 @@ export function killProcessGroup(pid: number | undefined, signal: NodeJS.Signals
   try { process.kill(pid, signal); } catch {}
 }
 
+/** Only ESRCH proves that the POSIX process group has disappeared. */
+export function isProcessGroupGone(pid: number | undefined): boolean {
+  // Missing PIDs and native Windows retain the full escalation grace period.
+  if (!pid || process.platform === "win32") return false;
+  try {
+    process.kill(-pid, 0);
+  } catch (error) {
+    return (error as NodeJS.ErrnoException).code === "ESRCH";
+  }
+  return false;
+}
+
 function terminateOwnProcessGroup(): void {
   killProcessGroup(process.pid, "SIGKILL");
   process.exit(1);

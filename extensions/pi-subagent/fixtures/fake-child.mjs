@@ -104,6 +104,10 @@ if (scenario === "success") {
     pattern: "SYNTHETIC_SCOPE_MARKER",
   });
   emit({ role: "assistant", content: result.content, usage, stopReason: "stop" });
+} else if (scenario === "cooperative-abort") {
+  process.on("SIGTERM", () => process.exit(0));
+  writeFileSync(join(process.cwd(), "child-pid"), String(process.pid));
+  setInterval(() => {}, 1_000);
 } else if (scenario.startsWith("orphan-")) {
   // The descendant shares the process group but none of the leader's stdio.
   const descendant = spawn(process.execPath, [

@@ -401,6 +401,36 @@ describe("pi-subagent spawned-child integration", () => {
     );
   });
 
+  test("finishes cancellation before the grace deadline when the whole group exits", {
+    skip: process.platform === "win32",
+  }, async () => {
+    await withFixture("cooperative-abort", async (options) => {
+      const controller = new AbortController();
+      const killGraceMs = 5_000;
+      let childPid: number | undefined;
+      const running = runChild({ ...options, timeoutMs: 10_000, killGraceMs, signal: controller.signal })
+        .then(() => undefined, (error: unknown) => error);
+      try {
+        const deadline = Date.now() + 3_000;
+        while (childPid === undefined && Date.now() < deadline) {
+          try { childPid = Number(await readFile(join(options.policy.cwd, "child-pid"), "utf8")); }
+          catch { await new Promise((resolve) => setTimeout(resolve, 10)); }
+        }
+        assert.ok(childPid, "child must install its SIGTERM handler before cancellation");
+        const stoppedAt = performance.now();
+        controller.abort();
+        const error = await running;
+        assert.ok(error instanceof ChildRunError);
+        assert.match(error.message, /"phase":"cancelled"/);
+        assert.ok(performance.now() - stoppedAt < killGraceMs / 2, "a vanished group must not wait the full grace period");
+        assert.throws(() => process.kill(-childPid!, 0), { code: "ESRCH" });
+      } finally {
+        controller.abort();
+        await running;
+      }
+    });
+  });
+
   for (const reason of ["abort", "timeout", "protocol", "progress-output", "progress-timer"] as const) {
     test(`finishes group escalation after the leader exits during ${reason}`, {
       skip: process.platform === "win32",
