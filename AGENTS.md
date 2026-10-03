@@ -14,7 +14,7 @@ Pi Subagent delegates bounded, read-only investigations to ephemeral child Pi pr
 
 ## Source map
 
-- `extensions/pi-subagent/`: TypeScript runtime, regression tests, and current evaluation scripts. Read the [extension guide](extensions/pi-subagent/README.md) when changing runtime contracts.
+- `extensions/pi-subagent/`: TypeScript runtime, regression tests, current evaluation scripts, and retained verification records. Read the [extension guide](extensions/pi-subagent/README.md) when changing runtime contracts.
 - `skills/pi-subagent/`: delegation guidance; keep it consistent with enforced runtime capabilities.
 - `packaging/pi-subagent/`: maintained assembly and validation code. Do not hand-edit generated `dist/`. Read [package maintenance](packaging/pi-subagent/DEVELOPMENT.md) for packaging or release work.
 - `.github/scripts/`: skill validation and its Python tests.
