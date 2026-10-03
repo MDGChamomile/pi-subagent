@@ -61,7 +61,7 @@ ln -s "$PWD/extensions/pi-subagent" "$extension_target"
 ln -s "$PWD/skills/pi-subagent" "$skill_target"
 ```
 
-To update a linked source installation, update the checkout after reviewing its changes; do not rerun the link commands. Restart Pi or run `/reload` after installation or update.
+To update a linked source installation, update the checkout after reviewing its changes; do not rerun the link commands. Use either the npm package or a source installation, not both. Restart Pi or run `/reload` after installation or update.
 
 ### First investigation
 
@@ -250,9 +250,5 @@ python3 -B extensions/pi-subagent/scripts/context_isolation_eval.py \
 Replace `/path/to/pi-web-access/index.ts` with your package's declared entry file. A missing `--web-extension` or non-file path fails before any model session starts. Local smoke does not require or resolve this option. The source-only helper is not installed into the active Pi environment and is not included in the npm package.
 
 The helper loads last in the parent, keeps `pi-web-access` tools registered with their original provenance, activates only `pi_subagent`, and blocks other parent tool calls. The helper is not loaded in the child; the existing test observer and production guard remain in place, and package/version/entry-point checks are unchanged. No CLI tool allowlist is applied to the web-smoke parent, because Pi would remove the web tools from its registry rather than merely hiding them from the model. The smoke fetches IANA's example-domain documentation without searching, requires a test-only observation of a successful single-target `fetch_content` call with nonempty content, requires verbatim body evidence for both the documentation purpose and registration/transfer restriction, and fails on any parent investigation or loader call. The fetch observation records only target-match and success booleans, never URLs, content, or credentials; this does not expand production telemetry. Offline tests verify command assembly, early failures, and helper behavior; live provider/web compatibility requires a separately authorized smoke run.
-
-### Verified environment summary
-
-With Pi 0.85.1 and `pi-web-access` 0.29.0, Astra/medium parents passed all three local presets and web lookup/analysis: **five of six checks passed**. Web review omitted a required evidence quotation, so this is not an all-green web compatibility result or a performance benchmark. See the [maintenance record](https://github.com/MDGChamomile/pi-subagent/blob/main/packaging/pi-subagent/DEVELOPMENT.md#astra-parent-source-smoke-2026-09-15) and [source verification record](https://github.com/MDGChamomile/pi-subagent/blob/main/extensions/pi-subagent/verification/2026-09-15-astra-medium.json) for the environment, harness, request counts, and detailed evidence.
 
 The default offline suite covers final-answer isolation, complete and partial outcomes, tool-disabled finalization, empty answers, bounded provider errors, cancellation, timeout escalation, abrupt parent exit, usage aggregation, scope, recoverable web denials, and tool ownership. Opt-in smoke tests cover live model selection and the local/web runtime boundaries.

@@ -115,7 +115,7 @@ The runtime canonicalizes local paths, blocks lexical and symlink escapes, verif
 - [Issue tracker](https://github.com/MDGChamomile/pi-subagent/issues)
 - [Contributing](CONTRIBUTING.md) — development setup and offline verification.
 - [Package maintenance](packaging/pi-subagent/DEVELOPMENT.md) — package assembly and release procedures.
-- [Migration](MIGRATION.md) — existing npm and source installations.
+- [Migration](MIGRATION.md) — breaking changes for existing installations.
 - [Design principles](PRINCIPLE.md) — local pointer to the [canonical principles](https://github.com/MDGChamomile/MDGChamomile/blob/main/PRINCIPLE.md).
 
 ## License
