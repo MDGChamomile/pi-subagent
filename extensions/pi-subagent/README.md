@@ -21,7 +21,7 @@ Both approaches use the same bounded `pi_subagent` runtime. Intermediate child t
 Core requirements:
 
 - Linux, including Ubuntu on WSL; native Windows is not officially supported or tested;
-- Pi 0.99.1 or later;
+- Pi 1.0.0 or later;
 - authentication for the configured child provider and access to its model (`openai-codex` by default; see [Presets](#presets)). Installing this extension does not grant model access.
 
 Capability-specific requirements:
@@ -61,7 +61,7 @@ ln -s "$PWD/extensions/pi-subagent" "$extension_target"
 ln -s "$PWD/skills/pi-subagent" "$skill_target"
 ```
 
-To update a linked source installation, update the checkout after reviewing its changes; do not rerun the link commands. Restart Pi or run `/reload` after installation or update.
+To update a linked source installation, update the checkout after reviewing its changes; do not rerun the link commands. Use either the npm package or a source installation, not both. Restart Pi or run `/reload` after installation or update.
 
 ### First investigation
 
@@ -126,7 +126,7 @@ Only the selected preset is updated; other overrides remain intact and omitted d
 
 Omitted presets and fields retain their defaults. To change a model, specify both `provider` and `model`; model IDs may include `@`, slashes (as on OpenRouter), and colons (as on Ollama). IDs must be nonempty, at most 256 characters, free of control characters, and have no surrounding whitespace; their spelling is preserved. A thinking-only override is allowed. Accepted thinking names are `off`, `minimal`, `low`, `medium`, `high`, `xhigh`, and `max`; the selected model must support the level according to Pi's metadata. Pi maps these names to each provider's own reasoning controls, so they are not identical token budgets across providers. Unknown fields, malformed settings, unavailable models, and unsupported levels fail during preflight with configuration guidance, not a fallback or silent clamp.
 
-Use exact model IDs present in your Pi registry and authenticate through Pi's usual login/environment configuration. Examples do not guarantee account access. Pi 0.99.1's bundled catalog includes the default `gpt-6-luna` and `gpt-6.1-sol` models, but you still need access to the selected model; configure another available model if necessary. This package does not install models, store credentials, or change the parent model/thinking. Built-in providers such as Anthropic and OpenRouter and user `models.json` configurations are supported; providers requiring parent-only extensions are not, because child extension discovery stays disabled. The child verifies its effective provider/model and thinking before each provider request; disagreement with the selected settings fails closed before transmission.
+Use exact model IDs present in your Pi registry and authenticate through Pi's usual login/environment configuration. Examples do not guarantee account access. Pi 1.0.0's bundled catalog includes the default `gpt-6-luna` and `gpt-6.1-sol` models, but you still need access to the selected model; configure another available model if necessary. This package does not install models, store credentials, or change the parent model/thinking. Built-in providers such as Anthropic and OpenRouter and user `models.json` configurations are supported; providers requiring parent-only extensions are not, because child extension discovery stays disabled. The child verifies its effective provider/model and thinking before each provider request; disagreement with the selected settings fails closed before transmission.
 
 Selecting a provider changes where delegated inputs are sent and may incur its charges. Review those settings and your provider permissions before delegating. There is no automatic provider fallback or per-call approval UI. The settings command confirms only the saved defaults, not future provider usage.
 
@@ -232,7 +232,7 @@ python3 -B extensions/pi-subagent/scripts/context_isolation_eval.py \
 
 The live observation harness is Codex-specific and evaluates default presets, not arbitrary provider overrides. Use a dedicated Pi agent directory without `pi-subagent.json` for these opt-in commands. Offline configuration tests cover Anthropic/OpenRouter selection; they do not establish live provider compatibility.
 
-The development dependencies are pinned to Pi 0.99.1. The default offline suite includes Python evaluation-contract tests as well as the TypeScript runtime tests; Python 3 and `rg` are required. The scoped-search regression uses Pi's native grep tool and an existing ripgrep binary without downloading tools or making model requests. Live checks require the Node.js Pi installation and consume model/provider usage. `--preset all` (the default) runs every current runtime preset in a fresh parent session; select one with, for example, `--preset review-standard`. If both `PI_PROVIDER` and `PI_MODEL` are set, `--main-model` may be omitted, but explicit parent model and thinking arguments are preferred for reproducibility.
+The development dependencies are pinned to Pi 1.0.0, the declared minimum. The default offline suite includes Python evaluation-contract tests as well as the TypeScript runtime tests; Python 3 and `rg` are required. The scoped-search regression uses Pi's native grep tool and an existing ripgrep binary without downloading tools or making model requests. Live checks require the Node.js Pi installation and consume model/provider usage. `--preset all` (the default) runs every current runtime preset in a fresh parent session; select one with, for example, `--preset review-standard`. If both `PI_PROVIDER` and `PI_MODEL` are set, `--main-model` may be omitted, but explicit parent model and thinking arguments are preferred for reproducibility.
 
 Live checks verify the requested preset/capability/scope, returned model/thinking, complete untruncated output, usage, evidence, and absence of parent investigation. A test-only observer loads before the production guard and independently checks the effective child model/thinking, outgoing model/reasoning fields, and returned model identity. It records only configuration metadata in temporary files, never prompts, response text, headers, or credentials. Missing observations and silent thinking clamping fail the check. It does not change production presets or global model configuration.
 
@@ -250,9 +250,5 @@ python3 -B extensions/pi-subagent/scripts/context_isolation_eval.py \
 Replace `/path/to/pi-web-access/index.ts` with your package's declared entry file. A missing `--web-extension` or non-file path fails before any model session starts. Local smoke does not require or resolve this option. The source-only helper is not installed into the active Pi environment and is not included in the npm package.
 
 The helper loads last in the parent, keeps `pi-web-access` tools registered with their original provenance, activates only `pi_subagent`, and blocks other parent tool calls. The helper is not loaded in the child; the existing test observer and production guard remain in place, and package/version/entry-point checks are unchanged. No CLI tool allowlist is applied to the web-smoke parent, because Pi would remove the web tools from its registry rather than merely hiding them from the model. The smoke fetches IANA's example-domain documentation without searching, requires a test-only observation of a successful single-target `fetch_content` call with nonempty content, requires verbatim body evidence for both the documentation purpose and registration/transfer restriction, and fails on any parent investigation or loader call. The fetch observation records only target-match and success booleans, never URLs, content, or credentials; this does not expand production telemetry. Offline tests verify command assembly, early failures, and helper behavior; live provider/web compatibility requires a separately authorized smoke run.
-
-### Verified environment summary
-
-With Pi 0.85.1 and `pi-web-access` 0.29.0, Astra/medium parents passed all three local presets and web lookup/analysis: **five of six checks passed**. Web review omitted a required evidence quotation, so this is not an all-green web compatibility result or a performance benchmark. See the [maintenance record](https://github.com/MDGChamomile/pi-subagent/blob/main/packaging/pi-subagent/DEVELOPMENT.md#astra-parent-source-smoke-2026-09-15) and [source verification record](https://github.com/MDGChamomile/pi-subagent/blob/main/extensions/pi-subagent/verification/2026-09-15-astra-medium.json) for the environment, harness, request counts, and detailed evidence.
 
 The default offline suite covers final-answer isolation, complete and partial outcomes, tool-disabled finalization, empty answers, bounded provider errors, cancellation, timeout escalation, abrupt parent exit, usage aggregation, scope, recoverable web denials, and tool ownership. Opt-in smoke tests cover live model selection and the local/web runtime boundaries.

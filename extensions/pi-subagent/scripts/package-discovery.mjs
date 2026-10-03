@@ -3,8 +3,7 @@ import { existsSync } from "node:fs";
 import { join, resolve } from "node:path";
 
 // Resolve the development package's selected Pi version. Prefer its bundled SDK
-// when shipped; Pi 0.85.0's unbundled SDK historically imported an undeclared
-// pi-server dependency. Never mask a loading failure.
+// when shipped, and the regular SDK otherwise. Never mask a loading failure.
 const sdkEntry = import.meta.resolve("@earendil-works/pi-coding-agent");
 const bundledEntry = new URL("./bundle/index.js", sdkEntry);
 const { DefaultResourceLoader, SettingsManager } = await import(

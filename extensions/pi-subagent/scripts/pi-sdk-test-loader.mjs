@@ -1,9 +1,8 @@
 import { existsSync } from "node:fs";
 import { registerHooks } from "node:module";
 
-// Match Pi's bundled extension SDK when shipped. Pi 0.85.0's unbundled root
-// historically imported an undeclared pi-server dependency. Retain the regular
-// SDK when no bundle exists. This hook is for offline Node tests only.
+// Test against Pi's bundled extension SDK when the installed version ships one,
+// and the regular SDK otherwise. This hook is for offline Node tests only.
 const entry = import.meta.resolve("@earendil-works/pi-coding-agent");
 const bundled = new URL("./bundle/index.js", entry);
 if (existsSync(bundled)) {
