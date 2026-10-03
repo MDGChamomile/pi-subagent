@@ -1,10 +1,9 @@
 # Pullfrog: review-only setup
 
-This repository uses Pullfrog only as a GitHub reviewer, not as an implementer
-or release agent. The workflow is a dispatch entrypoint, not permission to run
-models. Owner-approved automatic reviews and re-reviews may dispatch it under
-the configured model and usage authorization. Manual reviews, setup tests, and
-additional paid runs require separate authorization.
+This repository uses Pullfrog only as a GitHub reviewer. Owner-approved
+automatic reviews and re-reviews may dispatch the workflow under the configured
+model and usage authorization; manual reviews, setup tests, and additional paid
+runs require separate authorization.
 
 ## Apply before any run
 
@@ -29,13 +28,11 @@ file does not apply settings automatically:
   authentication stores credentials in Pullfrog's encrypted secret store;
   never copy authentication contents into repository files or logs.
 - Paste the Review instructions below into the console's Modes / Review field.
-  Merely committing this file does not load those instructions.
 
 The workflow explicitly sets `push: disabled` and `shell: restricted`; explicit
 workflow inputs override console values. `contents: read` limits GITHUB_TOKEN,
 not Pullfrog's separate App installation token. No code pushes still allows
-comments and reviews; it is not a ban on all external writes or local edits.
-Review instructions are behavioral guidance, not a replacement for permissions.
+comments and reviews.
 
 ## Review instructions (console)
 
@@ -56,35 +53,22 @@ Review instructions are behavioral guidance, not a replacement for permissions.
 > Use only authorized offline checks from CONTRIBUTING.md when available;
 > distinguish checks actually run from static inspection and unverified claims.
 
-## Activation and verification
+## Activation and review completion
 
-Pullfrog dispatches against the default branch (`main`). The workflow must reach
-`main` through an explicitly authorized change before it can be used there.
-Normal task branches and PRs target `updates`; release PRs to `main` need separate
-authorization. Do not bypass that policy or change the default branch for setup.
-Ensure the latest agent and contribution guidance is available on `main` too.
+Pullfrog dispatches against the default branch (`main`), so the workflow and
+the latest agent and contribution guidance must reach `main` through an
+explicitly authorized change. Normal task PRs target `updates`; do not change
+the default branch for setup.
 
-The earlier setup check found AGENTS.md and contribution-branch rules on
-`updates` but not `main`. That gap was resolved: both branches contained the
-files at commit `401dda8bc62471c005aecf410f45d6aa47e88459`. For future runs,
-verify the applicable guidance on the actual PR and default branch rather than
-assuming that the branches remain synchronized.
-
-After console verification and owner authorization, automatic reviews run for
-eligible PRs targeting `updates`, with re-reviews on subsequent pushes. Verify
-review completion against the latest PR head and inspect the actual findings;
-a successful run-status check alone is not review approval. If a review does
-not start, inspect its eligibility and configuration rather than issuing an
-unauthorized manual dispatch or mention.
+Verify review completion against the latest PR head and inspect the actual
+findings; a successful run-status check alone is not review approval. If a
+review does not start, inspect its eligibility and configuration rather than
+issuing an unauthorized manual dispatch or mention.
 
 Pi evaluates findings, implements justified in-scope fixes, verifies and pushes
-changes, and performs the final merge only when authorized and all applicable
-conditions are met. Pullfrog only reviews. Existing offline project checks
-remain authoritative; an agent review does not replace them.
-
-The action SHA pins the entrypoint only: Pullfrog can acquire runtime code
-separately. Offline YAML checks cannot establish App installation, console
-settings, authentication, runtime behavior, or live compatibility.
+changes, and performs the final merge only when authorized. Pullfrog only
+reviews, and existing offline project checks remain authoritative. The action
+SHA pins the entrypoint only; Pullfrog can acquire runtime code separately.
 
 ## Official references
 
