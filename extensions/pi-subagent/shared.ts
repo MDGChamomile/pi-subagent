@@ -40,6 +40,14 @@ export const CHILD_FINALIZATION_GRACE_MS = 2 * 60 * 1000;
 export const POLICY_ENV = "PI_SUBAGENT_POLICY_FILE";
 export const READY_ENV = "PI_SUBAGENT_READY_FILE";
 export const READY_MARKER = "pi-subagent-guard-ready-v1\n";
+// Fixed, content-free child guard diagnostics; never forward raw child stderr.
+export const CHILD_GUARD_EXIT_CODES = {
+  initialization: 70,
+  toolOwnership: 71,
+  readiness: 72,
+  modelSelection: 73,
+  runtime: 74,
+} as const;
 export const BUDGET_TELEMETRY_ENV = "PI_SUBAGENT_BUDGET_TELEMETRY_FILE";
 export const WEB_EXTENSION_ENV = "PI_SUBAGENT_WEB_EXTENSION_PATH";
 export const SOFT_DEADLINE_ENV = "PI_SUBAGENT_SOFT_DEADLINE_EPOCH_MS";
@@ -62,23 +70,6 @@ export const SUBAGENT_PRESETS = {
 } as const satisfies Record<string, { model: string; thinking: Thinking }>;
 export type Preset = keyof typeof SUBAGENT_PRESETS;
 export const PRESET_NAMES = Object.keys(SUBAGENT_PRESETS) as Preset[];
-
-const LEGACY_PRESETS: Readonly<Record<string, Preset>> = {
-  "lookup-standard": "lookup-standard",
-  "lookup-balanced": "lookup-standard",
-  "lookup-deep": "lookup-standard",
-  "analysis-standard": "analysis-standard",
-  "analysis-deep": "analysis-standard",
-  "analysis-exhaustive": "analysis-standard",
-  "review-standard": "review-standard",
-  "review-deep": "review-standard",
-  "review-exhaustive": "review-standard",
-};
-
-export function normalizePreset(preset: unknown, profile: unknown): Preset | undefined {
-  if (preset !== undefined) return typeof preset === "string" ? LEGACY_PRESETS[preset] : undefined;
-  return typeof profile === "string" ? LEGACY_PRESETS[`${profile}-standard`] : undefined;
-}
 
 export type Capability = "local" | "web";
 export type ResultStatus = "complete" | "partial";
@@ -104,6 +95,7 @@ export type SubagentFailurePhase =
   | "cancelled"
   | "timeout"
   | "protocol"
+  | "progress"
   | "process"
   | "readiness"
   | "model"

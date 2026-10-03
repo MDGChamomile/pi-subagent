@@ -6,10 +6,11 @@ import { StringDecoder } from "node:string_decoder";
 import { setTimeout as delay } from "node:timers/promises";
 import { fileURLToPath } from "node:url";
 import type { Usage as PiUsage } from "@earendil-works/pi-ai";
-import { killProcessGroup, PARENT_LIVENESS_ENV, PARENT_LIVENESS_FD } from "./parent-liveness.ts";
+import { isProcessGroupGone, killProcessGroup, PARENT_LIVENESS_ENV, PARENT_LIVENESS_FD } from "./parent-liveness.ts";
 import {
   boundedParentError,
   BUDGET_TELEMETRY_ENV,
+  CHILD_GUARD_EXIT_CODES,
   buildChildPrompt,
   CHILD_FINALIZATION_GRACE_MS,
   CHILD_TIMEOUT_MS,
@@ -526,35 +527,52 @@ export async function runChild(options: {
       durationMs: Date.now() - startedAt,
     }));
   }
-  parentLivenessPipe.on("error", () => undefined);
-
   let timedOut = false;
   let aborted = false;
+  let progressFailed = false;
   let latestReportedTokens = 0;
   let stopping = false;
   let stopCleanup: Promise<void> | undefined;
   let progressTimer: ReturnType<typeof setInterval> | undefined;
 
-  const requestStop = (reason: "timeout" | "aborted" | "protocol") => {
+  const requestStop = (reason: "timeout" | "aborted" | "protocol" | "progress" | "setup") => {
     if (reason === "timeout") timedOut = true;
     if (reason === "aborted") aborted = true;
     if (stopping) return;
     stopping = true;
     killProcessGroup(child.pid, "SIGTERM");
-    // Keep this timer referenced: the leader may close while descendants survive.
-    stopCleanup = delay(options.killGraceMs ?? 5_000).then(() => {
-      killProcessGroup(child.pid, "SIGKILL");
-    });
+    // The leader may close while descendants survive. Only confirmed group
+    // disappearance can end cleanup early; uncertain probes retain escalation.
+    stopCleanup = (async () => {
+      const deadline = performance.now() + (options.killGraceMs ?? 5_000);
+      while (!isProcessGroupGone(child.pid)) {
+        const remaining = deadline - performance.now();
+        if (remaining <= 0) {
+          killProcessGroup(child.pid, "SIGKILL");
+          return;
+        }
+        // Keep this timer referenced until the entire group is gone or killed.
+        await delay(Math.min(100, remaining));
+      }
+    })();
   };
 
   const emitProgress = () => {
-    options.onUpdate?.({
-      content: [{
-        type: "text",
-        text: formatProgress(options.model, options.thinking, Date.now() - startedAt, latestReportedTokens),
-      }],
-      details: { running: true, model: options.model, thinking: options.thinking },
-    });
+    if (stopping || !options.onUpdate) return;
+    try {
+      options.onUpdate({
+        content: [{
+          type: "text",
+          text: formatProgress(options.model, options.thinking, Date.now() - startedAt, latestReportedTokens),
+        }],
+        details: { running: true, model: options.model, thinking: options.thinking },
+      });
+    } catch {
+      // An unobservable investigation must stop, but callback errors must not
+      // escape stream/timer handlers or bypass process-group cleanup.
+      progressFailed = true;
+      requestStop("progress");
+    }
   };
 
   const collector = new ChildJsonCollector(
@@ -564,36 +582,40 @@ export async function runChild(options: {
     },
     () => requestStop("protocol"),
   );
-  if (options.onUpdate) {
-    emitProgress();
-    progressTimer = setInterval(emitProgress, 1_000);
-    progressTimer.unref?.();
-  }
-
-  child.stdout.on("data", (chunk: Buffer) => collector.push(chunk));
-  child.stderr.resume();
-
   const onAbort = () => requestStop("aborted");
-  options.signal?.addEventListener("abort", onAbort, { once: true });
-  const timeout = setTimeout(() => requestStop("timeout"), Math.max(0, hardDeadline - Date.now()));
-  timeout.unref?.();
-
-  child.stdin.on("error", () => undefined);
-  child.stdin.end(buildChildPrompt(options.task, options.policy));
-
+  let timeout: ReturnType<typeof setTimeout> | undefined;
   let exitCode = 1;
   let exitSignal: NodeJS.Signals | undefined;
   let waitError: unknown;
-  try {
-    exitCode = await new Promise<number>((resolveExit, reject) => {
-      child.once("error", reject);
-      child.once("close", (code, signal) => {
-        exitSignal = signal ?? undefined;
-        resolveExit(code ?? 1);
-      });
+  // Register completion before initialization can call user code or request a stop.
+  const exited = new Promise<number>((resolveExit, reject) => {
+    child.once("error", reject);
+    child.once("close", (code, signal) => {
+      exitSignal = signal ?? undefined;
+      resolveExit(code ?? 1);
     });
+  });
+  try {
+    parentLivenessPipe.on("error", () => undefined);
+    child.stdout.on("data", (chunk: Buffer) => collector.push(chunk));
+    child.stderr.resume();
+    child.stdin.on("error", () => undefined);
+    options.signal?.addEventListener("abort", onAbort, { once: true });
+    timeout = setTimeout(() => requestStop("timeout"), Math.max(0, hardDeadline - Date.now()));
+    timeout.unref?.();
+    if (options.signal?.aborted) onAbort();
+    if (!stopping) emitProgress();
+    if (!stopping && options.onUpdate) {
+      progressTimer = setInterval(emitProgress, 1_000);
+      progressTimer.unref?.();
+    }
+    // Do not deliver the investigation when its first progress update failed.
+    if (!stopping) child.stdin.end(buildChildPrompt(options.task, options.policy));
+    exitCode = await exited;
   } catch (error) {
     waitError = error;
+    requestStop("setup");
+    await exited.catch(() => undefined);
   } finally {
     clearTimeout(timeout);
     if (progressTimer) clearInterval(progressTimer);
@@ -606,6 +628,12 @@ export async function runChild(options: {
   const completedAt = Date.now();
   const snapshot = collector.snapshot();
 
+  if (progressFailed) throw childFailure(
+    "Subagent stopped because progress reporting failed",
+    "progress",
+    snapshot,
+    startedAt,
+  );
   if (aborted) throw childFailure("Subagent invocation was cancelled", "cancelled", snapshot, startedAt);
   if (timedOut) throw childFailure(
     effectiveTimeoutMs === CHILD_TIMEOUT_MS
@@ -620,8 +648,10 @@ export async function runChild(options: {
   if (exitCode !== 0) {
     // Readiness is an observation, not a diagnosis of why startup failed.
     const guardReady = await assertChildReady(options.readyFile).then(() => true, () => false);
+    const guardFailure = Object.entries(CHILD_GUARD_EXIT_CODES).find(([, code]) => code === exitCode)?.[0];
     throw childFailure(
-      exitSignal ? `Subagent exited with signal ${exitSignal}` : `Subagent exited with code ${exitCode}`,
+      exitSignal ? `Subagent exited with signal ${exitSignal}`
+        : guardFailure ? `Subagent guard failed: ${guardFailure}` : `Subagent exited with code ${exitCode}`,
       "process",
       snapshot,
       startedAt,

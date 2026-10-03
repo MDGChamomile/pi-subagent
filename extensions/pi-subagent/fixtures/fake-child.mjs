@@ -3,6 +3,7 @@ import { once } from "node:events";
 import { readFileSync, writeFileSync } from "node:fs";
 import { join } from "node:path";
 import { cleanupPrivateRuntimeFiles, installParentLivenessMonitor } from "../parent-liveness.ts";
+import { CHILD_GUARD_EXIT_CODES } from "../shared.ts";
 
 installParentLivenessMonitor(() => cleanupPrivateRuntimeFiles(
   process.env.PI_SUBAGENT_POLICY_FILE,
@@ -17,12 +18,22 @@ const budgetTelemetryPath = process.env.PI_SUBAGENT_BUDGET_TELEMETRY_FILE;
 if (!readyPath || !budgetTelemetryPath) process.exit(2);
 if (process.env.PI_OFFLINE !== "1") process.exit(5);
 
+if (scenario === "progress-before-input") {
+  // Bound this fixture even if a regression abandons the child before stdin closes.
+  setTimeout(() => process.exit(8), 5_000);
+}
 let input = "";
 for await (const chunk of process.stdin) input += chunk;
+if (scenario === "progress-before-input") writeFileSync(join(process.cwd(), "input-received"), input);
 if (!input.includes("Objective") || !input.includes("Authorized local scope")) process.exit(3);
 if (scenario === "startup-error") {
   process.stderr.write("private startup stderr must not reach the parent\n");
   process.exit(1);
+}
+if (scenario.startsWith("guard-")) {
+  if (scenario === "guard-runtime") writeFileSync(readyPath, READY_MARKER, { mode: 0o600, flag: "wx" });
+  process.stderr.write("private initialization detail must not reach the parent\n");
+  process.exit(CHILD_GUARD_EXIT_CODES[scenario.slice("guard-".length)] ?? 9);
 }
 if (scenario === "startup-signal") process.kill(process.pid, "SIGKILL");
 writeFileSync(readyPath, scenario === "invalid-ready-error" ? "invalid\n" : READY_MARKER, { encoding: "utf8", mode: 0o600, flag: "wx" });
@@ -82,7 +93,7 @@ if (scenario === "success") {
   });
 } else if (scenario === "scoped-grep") {
   // Exercise Pi's real rg invocation, not a mock of its search arguments.
-  // Import just the native tool, without the SDK barrel's optional server dependencies.
+  // Import the native tool module directly; Pi 1.0.0's SDK barrel would also work.
   const grepModule = new URL("./core/tools/grep.js", import.meta.resolve("@earendil-works/pi-coding-agent"));
   const { createGrepTool } = await import(grepModule.href);
   const { authorizeReadPath } = await import("../shared.ts");
@@ -93,6 +104,10 @@ if (scenario === "success") {
     pattern: "SYNTHETIC_SCOPE_MARKER",
   });
   emit({ role: "assistant", content: result.content, usage, stopReason: "stop" });
+} else if (scenario === "cooperative-abort") {
+  process.on("SIGTERM", () => process.exit(0));
+  writeFileSync(join(process.cwd(), "child-pid"), String(process.pid));
+  setInterval(() => {}, 1_000);
 } else if (scenario.startsWith("orphan-")) {
   // The descendant shares the process group but none of the leader's stdio.
   const descendant = spawn(process.execPath, [
@@ -107,6 +122,9 @@ if (scenario === "success") {
     process.exit(0);
   });
   if (scenario === "orphan-protocol") process.stdout.write("malformed JSON\n");
+  if (scenario === "orphan-progress-output") {
+    emit({ role: "assistant", content: [{ type: "text", text: "Synthetic investigation progress." }], usage, stopReason: "toolUse" });
+  }
   setInterval(() => {}, 1_000);
 } else if (scenario === "empty-output") {
   emit({

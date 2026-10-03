@@ -4,7 +4,7 @@ import { join } from "node:path";
 import type { ExtensionAPI } from "@earendil-works/pi-coding-agent";
 import { StringEnum } from "@earendil-works/pi-ai";
 import { Text, TruncatedText, truncateToWidth } from "@earendil-works/pi-tui";
-import { Type, type Static } from "typebox";
+import { Type } from "typebox";
 import {
   boundedParentError,
   buildChildPolicy,
@@ -13,7 +13,6 @@ import {
   makeCanonicalTempDirectory,
   MAX_SUBAGENT_CALLS,
   ModelInvocationGate,
-  normalizePreset,
   PRESET_NAMES,
   resolveWebExtensionPath,
   sanitizeDisplayText,
@@ -65,18 +64,6 @@ export default function piSubagentExtension(
     executionMode: "parallel",
     description: "Run one bounded investigation in an isolated child context. Use one by default and up to three parallel calls only for distinct, independent research tracks; use the parent for simple lookups, implementation, or tests.",
     parameters: Parameters,
-    prepareArguments(args) {
-      let prepared = args;
-      if (args && typeof args === "object") {
-        const input = args as Record<string, unknown>;
-        const preset = normalizePreset(input.preset, input.profile);
-        if (preset) {
-          const { profile: _profile, thinking: _thinking, preset: _preset, ...rest } = input;
-          prepared = { ...rest, preset };
-        }
-      }
-      return prepared as Static<typeof Parameters>;
-    },
     async execute(toolCallId, params, signal, onUpdate, ctx) {
       try {
         const currentSource = currentOwnSource();
