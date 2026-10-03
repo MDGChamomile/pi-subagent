@@ -6,14 +6,6 @@ The companion [skill](../../skills/pi-subagent/README.md) guides the parent in d
 
 [Install](#requirements-and-installation) · [Runtime contract](#runtime-contract) · [Security](#security-boundary) · [Evaluation](#evaluation) · [Verification](#verification)
 
-## Highlights
-
-- Keeps intermediate child turns and tool results out of the parent context.
-- Restricts local runs to explicit read-only paths and keeps local and web capabilities separate.
-- Bounds runtime, tool calls, web requests, and returned output.
-- Reports live progress, completion status, usage, and estimated injected context in the TUI.
-- Handles partial results, cancellation, timeouts, and parent termination explicitly.
-
 ## In action
 
 An illustrated CLI walkthrough shows Pi Subagent investigating a retry bug in **Parcel Client**, a synthetic shipping client. Dialogue, timing, and usage figures are illustrative rather than a recording of a live model session.
@@ -110,13 +102,7 @@ One child call is the default. Up to three distinct, independent calls may run i
 
 ### Presets
 
-Each standard preset selects a child model without changing the main model's thinking level. The default settings are:
-
-| Preset | Provider/model ID | Thinking | Use for |
-| --- | --- | --- | --- |
-| `lookup-standard` | `openai-codex/gpt-6-luna` | `medium` | Bounded fact-finding |
-| `analysis-standard` | `openai-codex/gpt-6.1-sol` | `medium` | Synthesis and causal comparison |
-| `review-standard` | `openai-codex/gpt-6.1-sol` | `high` | Adversarial review |
+Each standard preset selects a child model without changing the main model's thinking level. The default provider/model and thinking for each preset are listed in the [README](../../README.md#presets).
 
 Run **`/pi-subagent-settings`** in TUI mode to configure persistent user defaults. Select a preset, provider, model, and supported thinking level in searchable, height-bounded lists. Type to filter by ID or display name; use arrow keys to scroll. The current setting is marked; Escape goes back a selection step (or exits the first) and Ctrl+C cancels. Review the before/after values and confirm to save; cancelling leaves the file unchanged. Providers and models are filtered using Pi's local authentication metadata, which does not guarantee account access or child availability. Other registered models can still be configured in the settings file; RPC and non-interactive clients should use that file too. This is a user command, not a model-callable tool; it never changes the parent model or thinking level or makes a provider request.
 
