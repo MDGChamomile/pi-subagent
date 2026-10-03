@@ -2,7 +2,8 @@
 
 This repository uses Pullfrog only as a GitHub reviewer. Owner-approved
 automatic reviews and re-reviews may dispatch the workflow under the configured
-model and usage authorization; manual reviews, setup tests, and additional paid
+model and usage authorization, and the owner may request a review with an
+`@pullfrog` mention. Other manual reviews, setup tests, and additional paid
 runs require separate authorization.
 
 ## Apply before any run
@@ -14,8 +15,13 @@ file does not apply settings automatically:
   allowlist. Keep non-collaborator triggers disabled.
 - Enable **Review PRs** and **Re-review when new commits are pushed** only
   under the owner's explicit model and usage authorization.
-- Keep Mentions, addressing reviews, CI fixes, merge-conflict fixes, approvals,
+- Keep addressing reviews, CI fixes, merge-conflict fixes, approvals,
   auto-merge, and all issue automations OFF. Do not use Fix all or Fix thumbs-up.
+- Mentions are enabled. The owner can request a review by commenting
+  `@pullfrog <request>` on a PR; `--model=<provider/model>` and
+  `--effort=<level>` in that comment apply to that run only. Each mention
+  starts a paid run, and the owner's own mention is its authorization. Code
+  pushes stay disabled, so a mention cannot make Pullfrog change the branch.
 - Exclude draft, bot, external-contributor, and Pullfrog's own PRs.
 - Enable **Limit reviews to target branches** and set it to `updates` only.
   This filter is not a push restriction or an implementation branch setting.
