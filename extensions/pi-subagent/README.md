@@ -130,8 +130,6 @@ Use exact model IDs present in your Pi registry and authenticate through Pi's us
 
 Selecting a provider changes where delegated inputs are sent and may incur its charges. Review those settings and your provider permissions before delegating. There is no automatic provider fallback or per-call approval UI. The settings command confirms only the saved defaults, not future provider usage.
 
-Older stored calls with separate `profile` and `thinking` arguments, or with the former balanced/deep/exhaustive preset names, are translated to the matching standard preset before schema validation.
-
 ### Result and lifecycle
 
 The runtime applies these per-child limits:

@@ -23,3 +23,7 @@ For an existing kit checkout/symlink installation:
 5. If resource loading fails, restore the previous pair and reload. Do not remove the old checkout until the transition is verified.
 
 These instructions do not automatically change an installed environment. A repository move also does not remove the old kit sources or transfer npm publisher settings by itself.
+
+## Legacy preset arguments
+
+Calls must use the current `preset` names: `lookup-standard`, `analysis-standard`, or `review-standard`. The runtime no longer translates the former separate `profile`/`thinking` arguments or the balanced/deep/exhaustive preset names; such calls, including ones replayed from older stored sessions, now fail schema validation instead of running.

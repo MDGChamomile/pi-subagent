@@ -24,7 +24,6 @@ import {
   MIN_WEB_EXTENSION_VERSION,
   ModelInvocationGate,
   normalizeInputPath,
-  normalizePreset,
   PRESET_NAMES,
   resolveWebExtensionPath,
   SUBAGENT_PRESETS,
@@ -413,13 +412,6 @@ describe("pi-subagent public contract", () => {
     };
     assert.deepEqual(SUBAGENT_PRESETS, expectedPresets);
     assert.deepEqual(PRESET_NAMES, Object.keys(expectedPresets));
-    assert.equal(normalizePreset(undefined, "lookup"), "lookup-standard");
-    assert.equal(normalizePreset(undefined, "analysis"), "analysis-standard");
-    assert.equal(normalizePreset(undefined, "review"), "review-standard");
-    assert.equal(normalizePreset("lookup-balanced", undefined), "lookup-standard");
-    assert.equal(normalizePreset("analysis-deep", undefined), "analysis-standard");
-    assert.equal(normalizePreset("review-exhaustive", undefined), "review-standard");
-    assert.equal(normalizePreset("unknown", "analysis"), undefined);
   });
 
   test("result envelopes cap escaped bytes and preserve Unicode at boundary positions", () => {
