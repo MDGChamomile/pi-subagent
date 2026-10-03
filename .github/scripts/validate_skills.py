@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""Check skill frontmatter boundaries, required text, and relative Markdown links.
+"""Check skill frontmatter and maintained Markdown relative links.
 
 This is a lightweight repository check, not a general YAML schema validator.
 """
@@ -48,22 +48,37 @@ def has_required_frontmatter(text: str) -> bool:
     return True
 
 
-def validate_skills(root: Path) -> list[str]:
+def validate_relative_links(documents: list[Path]) -> list[str]:
     failures = []
-    for skill in sorted(root.glob("**/SKILL.md")):
-        text = skill.read_text(encoding="utf-8")
-        if not has_required_frontmatter(text):
-            failures.append(f"invalid frontmatter: {skill}")
+    for document in documents:
+        text = document.read_text(encoding="utf-8")
         for target in re.findall(r"\[[^]]*\]\(([^)]+)\)", text):
             if "://" in target or target.startswith("#"):
                 continue
-            path = (skill.parent / target.split("#", 1)[0]).resolve()
+            path = (document.parent / target.split("#", 1)[0]).resolve()
             if not path.exists():
-                failures.append(f"broken link: {skill} -> {target}")
+                failures.append(f"broken link: {document} -> {target}")
     return failures
 
 
+def validate_skills(root: Path) -> list[str]:
+    failures = []
+    skills = sorted(root.glob("**/SKILL.md"))
+    for skill in skills:
+        text = skill.read_text(encoding="utf-8")
+        if not has_required_frontmatter(text):
+            failures.append(f"invalid frontmatter: {skill}")
+    return failures + validate_relative_links(skills)
+
+
 if __name__ == "__main__":
-    failures = validate_skills(Path(__file__).resolve().parents[2] / "skills")
+    root = Path(".")
+    failures = validate_skills(root / "skills")
+    failures += validate_relative_links(
+        [root / name for name in (
+            "README.md", "AGENTS.md", "MIGRATION.md", "CONTRIBUTING.md", "PRINCIPLE.md",
+            "packaging/pi-subagent/DEVELOPMENT.md",
+        )]
+    )
     if failures:
         raise SystemExit("\n".join(failures))

@@ -4,7 +4,7 @@ import tempfile
 import unittest
 from pathlib import Path
 
-from validate_skills import has_required_frontmatter, validate_skills
+from validate_skills import has_required_frontmatter, validate_relative_links, validate_skills
 
 
 class SkillValidationTests(unittest.TestCase):
@@ -68,6 +68,24 @@ class SkillValidationTests(unittest.TestCase):
             self.assertEqual(validate_skills(root), [])
             skill.write_text(text + '[missing](missing.md)\n', encoding='utf-8')
             self.assertEqual(validate_skills(root), [f'broken link: {skill} -> missing.md'])
+
+    def test_checks_relative_links_in_root_documents(self):
+        with tempfile.TemporaryDirectory() as temp:
+            root = Path(temp)
+            document = root / 'README.md'
+            linked = root / 'MIGRATION.md'
+            linked.write_text('# Migration\n', encoding='utf-8')
+            document.write_text(
+                '[migration](MIGRATION.md#migration) [local](#start) '
+                '[remote](https://example.test/reference)\n',
+                encoding='utf-8',
+            )
+            self.assertEqual(validate_relative_links([document]), [])
+            document.write_text('[missing](missing.md)\n', encoding='utf-8')
+            self.assertEqual(
+                validate_relative_links([document]),
+                [f'broken link: {document} -> missing.md'],
+            )
 
 
 if __name__ == '__main__':
