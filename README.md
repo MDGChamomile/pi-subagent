@@ -35,7 +35,7 @@ Investigations can fill the main conversation with file reads, searches, fetched
 Requirements:
 
 - Linux, including Ubuntu on WSL; native Windows is not officially supported or tested;
-- Pi 0.99.1 or later;
+- Pi 1.0.0 or later;
 - authentication for the configured child provider and access to its model (`openai-codex` by default; see [Presets](#presets));
 - `rg` for local `grep`, and `fd` or `fdfind` for local `find`.
 
