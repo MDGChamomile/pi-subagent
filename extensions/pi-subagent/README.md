@@ -6,14 +6,6 @@ The companion [skill](../../skills/pi-subagent/README.md) guides the parent in d
 
 [Install](#requirements-and-installation) · [Runtime contract](#runtime-contract) · [Security](#security-boundary) · [Evaluation](#evaluation) · [Verification](#verification)
 
-## Highlights
-
-- Keeps intermediate child turns and tool results out of the parent context.
-- Restricts local runs to explicit read-only paths and keeps local and web capabilities separate.
-- Bounds runtime, tool calls, web requests, and returned output.
-- Reports live progress, completion status, usage, and estimated injected context in the TUI.
-- Handles partial results, cancellation, timeouts, and parent termination explicitly.
-
 ## In action
 
 An illustrated CLI walkthrough shows Pi Subagent investigating a retry bug in **Parcel Client**, a synthetic shipping client. Dialogue, timing, and usage figures are illustrative rather than a recording of a live model session.
@@ -110,13 +102,7 @@ One child call is the default. Up to three distinct, independent calls may run i
 
 ### Presets
 
-Each standard preset selects a child model without changing the main model's thinking level. The default settings are:
-
-| Preset | Provider/model ID | Thinking | Use for |
-| --- | --- | --- | --- |
-| `lookup-standard` | `openai-codex/gpt-6-luna` | `medium` | Bounded fact-finding |
-| `analysis-standard` | `openai-codex/gpt-6.1-sol` | `medium` | Synthesis and causal comparison |
-| `review-standard` | `openai-codex/gpt-6.1-sol` | `high` | Adversarial review |
+Each standard preset selects a child model without changing the main model's thinking level. The default provider/model and thinking for each preset are listed in the [README](../../README.md#presets).
 
 Run **`/pi-subagent-settings`** in TUI mode to configure persistent user defaults. Select a preset, provider, model, and supported thinking level in searchable, height-bounded lists. Type to filter by ID or display name; use arrow keys to scroll. The current setting is marked; Escape goes back a selection step (or exits the first) and Ctrl+C cancels. Review the before/after values and confirm to save; cancelling leaves the file unchanged. Providers and models are filtered using Pi's local authentication metadata, which does not guarantee account access or child availability. Other registered models can still be configured in the settings file; RPC and non-interactive clients should use that file too. This is a user command, not a model-callable tool; it never changes the parent model or thinking level or makes a provider request.
 
@@ -143,8 +129,6 @@ Omitted presets and fields retain their defaults. To change a model, specify bot
 Use exact model IDs present in your Pi registry and authenticate through Pi's usual login/environment configuration. Examples do not guarantee account access. Pi 0.99.1's bundled catalog includes the default `gpt-6-luna` and `gpt-6.1-sol` models, but you still need access to the selected model; configure another available model if necessary. This package does not install models, store credentials, or change the parent model/thinking. Built-in providers such as Anthropic and OpenRouter and user `models.json` configurations are supported; providers requiring parent-only extensions are not, because child extension discovery stays disabled. The child verifies its effective provider/model and thinking before each provider request; disagreement with the selected settings fails closed before transmission.
 
 Selecting a provider changes where delegated inputs are sent and may incur its charges. Review those settings and your provider permissions before delegating. There is no automatic provider fallback or per-call approval UI. The settings command confirms only the saved defaults, not future provider usage.
-
-Older stored calls with separate `profile` and `thinking` arguments, or with the former balanced/deep/exhaustive preset names, are translated to the matching standard preset before schema validation.
 
 ### Result and lifecycle
 
@@ -225,11 +209,7 @@ python3 extensions/pi-subagent/scripts/context_isolation_eval.py \
 
 The command compares direct and delegated investigation against three fixed synthetic fixtures. Outcomes are not deterministic; use it as a bounded sanity check rather than durable performance evidence. If both `PI_PROVIDER` and `PI_MODEL` are set, the script can derive the parent model when `--main-model` is omitted, but explicit arguments are preferred for reproducibility.
 
-The source-only evaluator documented in `benchmark-v2/OFFLINE_SCORING.md` checks citations, gold-evidence overlap, and lexical rules without model calls; it does not assess semantic validity or overall answer quality.
-
-A separate [12-task production-preset exploratory pilot](https://github.com/MDGChamomile/pi-agent-kit/blob/6770d67511ab19727164b1ea8d565c9bed2a6609/live/extensions/pi-subagent/benchmark-v2/pilots/2026-09-01-production-12-task/REPORT.md) used Sol/high parents in both arms and found substantially lower parent-context growth and investigative tool output with delegation. Total reported tokens fell only modestly, wall time increased, and the provisional quality measure favored direct investigation, so the pilot does not establish quality non-inferiority. See the report for the measurements, methodology, and limitations; these are calibration results from one local codebase, not universal performance claims.
-
-The source-only `benchmark-v2/pilots/2026-09-05-astra-routing/REPORT.md` records a 46-child Astra/low-thinking routing pilot. It recommended retaining the then-current Luna/Terra/Sol medium mappings and identified two provisional Luna-low lookup use cases. Ambiguous scoring and concurrent source changes limit this pilot; the original records and separate audits are preserved, and its frozen protocol intentionally refuses changed source hashes. The opt-in runner is `scripts/model_selection_eval.py`; it makes no model calls without `--execute`.
+Earlier benchmark material is kept in the [repository history](https://github.com/MDGChamomile/pi-subagent/tree/3cf3ece9dcedd7c686d42c37ca91eabd7b9ecb9f/extensions/pi-subagent/benchmark-v2), not in the current source: the unexecuted confirmatory [benchmark design](https://github.com/MDGChamomile/pi-subagent/blob/3cf3ece9dcedd7c686d42c37ca91eabd7b9ecb9f/extensions/pi-subagent/benchmark-v2/README.md) and its [offline evidence evaluator](https://github.com/MDGChamomile/pi-subagent/blob/3cf3ece9dcedd7c686d42c37ca91eabd7b9ecb9f/extensions/pi-subagent/benchmark-v2/OFFLINE_SCORING.md), a [12-task production-preset exploratory pilot](https://github.com/MDGChamomile/pi-agent-kit/blob/6770d67511ab19727164b1ea8d565c9bed2a6609/live/extensions/pi-subagent/benchmark-v2/pilots/2026-09-01-production-12-task/REPORT.md), and a [46-child Astra routing pilot](https://github.com/MDGChamomile/pi-subagent/blob/3cf3ece9dcedd7c686d42c37ca91eabd7b9ecb9f/extensions/pi-subagent/benchmark-v2/pilots/2026-09-05-astra-routing/REPORT.md) with its frozen-protocol runner, [`scripts/model_selection_eval.py`](https://github.com/MDGChamomile/pi-subagent/blob/3cf3ece9dcedd7c686d42c37ca91eabd7b9ecb9f/extensions/pi-subagent/scripts/model_selection_eval.py). The 12-task pilot found substantially lower parent-context growth with delegation, but wall time increased and the provisional quality measure favored direct investigation, so it does not establish quality non-inferiority. The routing pilot recommended retaining the then-current Luna/Terra/Sol medium mappings. Both are calibration results from one local codebase, not universal performance claims.
 
 ## Verification
 

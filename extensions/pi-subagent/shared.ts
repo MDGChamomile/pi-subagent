@@ -71,23 +71,6 @@ export const SUBAGENT_PRESETS = {
 export type Preset = keyof typeof SUBAGENT_PRESETS;
 export const PRESET_NAMES = Object.keys(SUBAGENT_PRESETS) as Preset[];
 
-const LEGACY_PRESETS: Readonly<Record<string, Preset>> = {
-  "lookup-standard": "lookup-standard",
-  "lookup-balanced": "lookup-standard",
-  "lookup-deep": "lookup-standard",
-  "analysis-standard": "analysis-standard",
-  "analysis-deep": "analysis-standard",
-  "analysis-exhaustive": "analysis-standard",
-  "review-standard": "review-standard",
-  "review-deep": "review-standard",
-  "review-exhaustive": "review-standard",
-};
-
-export function normalizePreset(preset: unknown, profile: unknown): Preset | undefined {
-  if (preset !== undefined) return typeof preset === "string" ? LEGACY_PRESETS[preset] : undefined;
-  return typeof profile === "string" ? LEGACY_PRESETS[`${profile}-standard`] : undefined;
-}
-
 export type Capability = "local" | "web";
 export type ResultStatus = "complete" | "partial";
 export type PartialReason = "tool_budget" | "time_limit" | "model_length";

@@ -33,7 +33,7 @@ The development lockfile and CI pin Pi 0.99.1; the weekly canary tests current u
 
 For documentation changes, review relative links and commands; for runtime changes, add regression coverage and run all three runtime/package checks. The skill validator covers metadata and relative links in `SKILL.md`, not every README or semantic compatibility.
 
-Retain source-only evaluation and verification records. Historical frozen protocols and hashes describe earlier code; do not rewrite them to imply validation of current code. Live smoke/evaluation commands consume provider usage, can disclose inputs, and require separate authorization. The web smoke uses a checked-in parent helper and requires an explicit `--web-extension` path to a separately installed, reviewed `pi-web-access` entry file. See the [extension guide](extensions/pi-subagent/README.md#verification).
+Keep superseded evaluation material in repository history and link it by commit instead of retaining it in the current tree. Historical protocols and hashes describe earlier code; do not rewrite them to imply validation of current code. Live smoke/evaluation commands consume provider usage, can disclose inputs, and require separate authorization. The web smoke uses a checked-in parent helper and requires an explicit `--web-extension` path to a separately installed, reviewed `pi-web-access` entry file. See the [extension guide](extensions/pi-subagent/README.md#verification).
 
 Repository changes do not authorize copying, linking, or installing into an active Pi environment. Never commit credentials, private session content, generated dependencies, or local machine configuration.
 
