@@ -272,6 +272,19 @@ describe("child JSON stream collector", () => {
     assert.doesNotMatch(result.finalOutput, /private/);
   });
 
+  test("clears stale provider errors on each subsequent assistant message", () => {
+    for (const stopReason of ["error", "aborted", "stop"]) {
+      for (const errorMessage of [undefined, null, 42]) {
+        const collector = new ChildJsonCollector();
+        collector.push(`${assistantEvent("", { stopReason: "error", errorMessage: "old provider failure" })}\n`);
+        collector.push(`${assistantEvent("next", { stopReason, errorMessage })}\n`);
+        collector.finish();
+        assert.equal(collector.snapshot().stopReason, stopReason);
+        assert.equal(collector.snapshot().errorMessage, undefined);
+      }
+    }
+  });
+
   test("preserves terminal error metadata for the parent runner", () => {
     const collector = new ChildJsonCollector();
     collector.push(`${assistantEvent("partial", { stopReason: "error", errorMessage: "provider failed" })}\n`);
