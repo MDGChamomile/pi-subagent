@@ -111,9 +111,11 @@ export type ObservedChildEvent = (typeof OBSERVED_CHILD_EVENTS)[number];
 export const MAX_OBSERVATION_COUNT = 1_000_000;
 export type ChildFailureObservations = {
   counts: Record<ObservedChildEvent, number>;
+  receipts: Record<ObservedChildEvent, number>;
   lastEvent?: ObservedChildEvent;
   lastEventAgeMs?: number;
-  toolBalance: number;
+  lastEventValidated: boolean;
+  toolBalance: number | null;
   incomplete: boolean;
 };
 
@@ -457,9 +459,11 @@ function safeObservations(value: ChildFailureObservations): ChildFailureObservat
     Number.isFinite(n) ? Math.min(max, Math.max(0, Math.trunc(n))) : 0;
   return {
     counts: Object.fromEntries(OBSERVED_CHILD_EVENTS.map((key) => [key, bounded(value.counts[key])])) as Record<ObservedChildEvent, number>,
+    receipts: Object.fromEntries(OBSERVED_CHILD_EVENTS.map((key) => [key, bounded(value.receipts[key])])) as Record<ObservedChildEvent, number>,
     ...(OBSERVED_CHILD_EVENTS.includes(value.lastEvent!) ? { lastEvent: value.lastEvent } : {}),
     ...(Number.isFinite(value.lastEventAgeMs) ? { lastEventAgeMs: bounded(value.lastEventAgeMs!, 2_147_483_647) } : {}),
-    toolBalance: bounded(value.toolBalance),
+    lastEventValidated: value.lastEventValidated === true,
+    toolBalance: value.incomplete || value.toolBalance === null ? null : bounded(value.toolBalance),
     incomplete: value.incomplete === true,
   };
 }

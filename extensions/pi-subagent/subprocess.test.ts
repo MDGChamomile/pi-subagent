@@ -100,7 +100,8 @@ describe("child JSON stream collector", () => {
       assert.equal(collector.snapshot().observations.incomplete, true);
       assert.equal(collector.snapshot().protocolError, undefined);
       assert.equal(collector.snapshot().finalOutput, "safe final answer");
-      assert.ok(JSON.stringify(collector.snapshot().observations).length < 500);
+      assert.equal(collector.snapshot().observations.toolBalance, null);
+      assert.ok(JSON.stringify(collector.snapshot().observations).length < 800);
     }
     const collector = new ChildJsonCollector();
     collector.push('{"type":"turn_start"}\n');
@@ -108,6 +109,35 @@ describe("child JSON stream collector", () => {
     collector.push('{"type":"turn_start"}\n');
     assert.equal(collector.snapshot().observations.counts.turn_start, 1);
     assert.equal(collector.snapshot().observations.incomplete, true);
+  });
+
+  test("large real-shaped streaming and tool results retain unvalidated receipt signals", (t) => {
+    let now = 100;
+    t.mock.method(performance, "now", () => now);
+    const collector = new ChildJsonCollector();
+    collector.push(JSON.stringify({ type: "tool_execution_start", toolName: "read", toolCallId: "id", args: {} }) + "\n");
+    const partial = { role: "assistant", content: [{ type: "thinking", thinking: "private-sentinel".repeat(1_000) }] };
+    for (const event of [
+      { type: "tool_execution_end", toolName: "read", toolCallId: "id", result: { content: [{ type: "text", text: "private-result".repeat(1_000) }] }, isError: false },
+      { type: "message_update", assistantMessageEvent: { type: "thinking_delta", delta: "x", partial }, message: partial },
+    ]) {
+      now += 100;
+      const line = JSON.stringify(event) + "\n";
+      for (let offset = 0; offset < line.length; offset += 512) collector.push(line.slice(offset, offset + 512));
+      now += 50;
+      const observations = collector.snapshot().observations;
+      assert.equal(observations.receipts[event.type as "tool_execution_end" | "message_update"], 1);
+      assert.equal(observations.counts[event.type as "tool_execution_end" | "message_update"], 0);
+      assert.equal(observations.lastEvent, event.type);
+      assert.equal(observations.lastEventAgeMs, 50);
+      assert.equal(observations.lastEventValidated, false);
+      assert.equal(observations.incomplete, true);
+      assert.equal(observations.toolBalance, null);
+      assert.doesNotMatch(JSON.stringify(observations), /private-sentinel|private-result/);
+    }
+    collector.push('{"type":"turn_start","type":"tool_execution_end"}\n');
+    assert.equal(collector.snapshot().observations.counts.turn_start, 0);
+    assert.equal(collector.snapshot().observations.counts.tool_execution_end, 0);
   });
 
   test("observation counters saturate and failure suffixes remain bounded", () => {

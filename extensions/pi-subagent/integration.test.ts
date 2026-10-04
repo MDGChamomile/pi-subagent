@@ -132,7 +132,7 @@ describe("pi-subagent spawned-child integration", () => {
         assert.equal(diagnostics.observations.counts.tool_execution_start, 1);
         assert.equal(diagnostics.observations.counts.tool_execution_end, scenario === "tool" ? 0 : 1);
         assert.equal(diagnostics.observations.counts.message_update, scenario === "tool" ? 0 : 1);
-        assert.equal(diagnostics.observations.toolBalance, scenario === "tool" ? 1 : 0);
+        assert.equal(diagnostics.observations.toolBalance, scenario === "protocol" ? null : scenario === "tool" ? 1 : 0);
         assert.equal(diagnostics.observations.incomplete, scenario === "protocol");
         assert.ok(diagnostics.observations.lastEventAgeMs >= 0);
         assert.ok(Buffer.byteLength(error.message) <= MAX_PARENT_ERROR_BYTES);

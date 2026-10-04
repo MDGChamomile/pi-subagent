@@ -201,8 +201,11 @@ export class ChildJsonCollector {
   private lineBytes = 0;
   private disposition: "unknown" | "capture" | "observe" | "discard" = "unknown";
   private readonly eventCounts = Object.fromEntries(OBSERVED_CHILD_EVENTS.map((key) => [key, 0])) as Record<ObservedChildEvent, number>;
+  private readonly eventReceipts = Object.fromEntries(OBSERVED_CHILD_EVENTS.map((key) => [key, 0])) as Record<ObservedChildEvent, number>;
+  private pendingObservedType: ObservedChildEvent | undefined;
   private lastEvent: ObservedChildEvent | undefined;
   private lastEventAt: number | undefined;
+  private lastEventValidated = false;
   private observationsIncomplete = false;
   private finalOutput = "";
   private finalOutputReceivedAt: number | undefined;
@@ -255,9 +258,12 @@ export class ChildJsonCollector {
       protocolError: this.protocolError,
       observations: {
         counts: { ...this.eventCounts },
+        receipts: { ...this.eventReceipts },
         lastEvent: this.lastEvent,
         lastEventAgeMs: this.lastEventAt === undefined ? undefined : Math.max(0, performance.now() - this.lastEventAt),
-        toolBalance: Math.max(0, this.eventCounts.tool_execution_start - this.eventCounts.tool_execution_end),
+        lastEventValidated: this.lastEventValidated,
+        toolBalance: this.observationsIncomplete || this.protocolError ? null
+          : Math.max(0, this.eventCounts.tool_execution_start - this.eventCounts.tool_execution_end),
         incomplete: this.observationsIncomplete || this.protocolError !== undefined,
       },
       usage: this.usage,
@@ -322,6 +328,8 @@ export class ChildJsonCollector {
       this.disposition = "capture";
     } else if (OBSERVED_CHILD_EVENTS.includes(match[1] as ObservedChildEvent)) {
       this.disposition = "observe";
+      this.pendingObservedType = match[1] as ObservedChildEvent;
+      this.observeReceipt(this.pendingObservedType);
       if (this.lineBytes > 4096) {
         this.observationsIncomplete = true;
         this.disposition = "discard";
@@ -348,7 +356,12 @@ export class ChildJsonCollector {
     }
     if (!event || typeof event !== "object") return;
     const record = event as { type?: unknown; message?: unknown };
+    if (this.pendingObservedType && record.type !== this.pendingObservedType) {
+      this.observationsIncomplete = true;
+      return;
+    }
     if (OBSERVED_CHILD_EVENTS.includes(record.type as ObservedChildEvent)) {
+      if (!this.pendingObservedType) this.observeReceipt(record.type as ObservedChildEvent);
       if (Buffer.byteLength(line) <= 4096) this.observe(event as Record<string, unknown>);
       else this.observationsIncomplete = true;
       return;
@@ -388,6 +401,16 @@ export class ChildJsonCollector {
     this.onAssistantMessage?.(this.usage);
   }
 
+  private observeReceipt(type: ObservedChildEvent): void {
+    // A recognized prefix is evidence of bytes arriving, not of valid JSON or
+    // actual execution. Keep these counts separate from validated events.
+    if (this.eventReceipts[type] === MAX_OBSERVATION_COUNT) this.observationsIncomplete = true;
+    else this.eventReceipts[type]++;
+    this.lastEvent = type;
+    this.lastEventAt = performance.now();
+    this.lastEventValidated = false;
+  }
+
   private observe(event: Record<string, unknown>): void {
     const type = event.type as ObservedChildEvent;
     const object = (value: unknown): value is Record<string, unknown> =>
@@ -410,6 +433,7 @@ export class ChildJsonCollector {
     if (this.eventCounts.tool_execution_end > this.eventCounts.tool_execution_start) this.observationsIncomplete = true;
     this.lastEvent = type;
     this.lastEventAt = performance.now();
+    this.lastEventValidated = true;
   }
 
   private fail(message: string): void {
@@ -422,6 +446,7 @@ export class ChildJsonCollector {
     this.lineBuffer = "";
     this.lineBytes = 0;
     this.disposition = "unknown";
+    this.pendingObservedType = undefined;
   }
 }
 
