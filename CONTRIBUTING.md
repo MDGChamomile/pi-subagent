@@ -14,6 +14,10 @@ requests from `updates` to `main` only when preparing a release. If you
 accidentally target `main`, the base can be changed to `updates`; the resulting
 diff and checks should then be reviewed again.
 
+Before merging, configured required checks must pass, and all review
+conversations must be addressed and closed according to repository policy.
+A successful check run is not review approval.
+
 ## Source and checks
 
 Edit `extensions/pi-subagent/`, `skills/pi-subagent/`, or the maintained files in `packaging/pi-subagent/`, not generated `packaging/pi-subagent/dist/`.
