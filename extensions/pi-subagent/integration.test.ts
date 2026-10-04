@@ -112,6 +112,41 @@ describe("pi-subagent spawned-child integration", () => {
     });
   });
 
+  test("failure observations survive cleanup and distinguish tool balance from streaming", async () => {
+    for (const scenario of ["tool", "after-tool", "process", "protocol", "cancel", "progress"]) {
+      const controller = new AbortController();
+      let updates = 0;
+      await assert.rejects(() => withFixture(`observations-${scenario}`, (options) => runChild({
+        ...options, timeoutMs: 1_000, signal: controller.signal,
+        onUpdate() {
+          if (++updates !== 2) return;
+          if (scenario === "cancel") controller.abort();
+          if (scenario === "progress") throw new Error("private-callback");
+        },
+      })), (error: unknown) => {
+        assert.ok(error instanceof ChildRunError);
+        const diagnostics = JSON.parse(error.message.split("[Subagent diagnostics ")[1]!.slice(0, -1));
+        const expectedPhase = scenario === "cancel" ? "cancelled"
+          : ["process", "protocol", "progress"].includes(scenario) ? scenario : "timeout";
+        assert.equal(diagnostics.phase, expectedPhase);
+        assert.equal(diagnostics.observations.counts.tool_execution_start, 1);
+        assert.equal(diagnostics.observations.counts.tool_execution_end, scenario === "tool" ? 0 : 1);
+        assert.equal(diagnostics.observations.counts.message_update, scenario === "tool" ? 0 : 1);
+        assert.equal(diagnostics.observations.toolBalance, scenario === "protocol" ? null : scenario === "tool" ? 1 : 0);
+        assert.equal(diagnostics.observations.incomplete, scenario === "protocol");
+        assert.ok(diagnostics.observations.lastEventAgeMs >= 0);
+        assert.ok(Buffer.byteLength(error.message) <= MAX_PARENT_ERROR_BYTES);
+        assert.doesNotMatch(error.message, /private-|https?:|Objective/);
+        return true;
+      });
+    }
+    for (const scenario of ["success", "partial"]) {
+      const result = await withFixture(`observations-${scenario}`, (options) => runChild(options));
+      assert.equal(result.status, scenario === "success" ? "complete" : "partial");
+      assert.doesNotMatch(JSON.stringify(result), /observations|private-/);
+    }
+  });
+
   test("returns only the final assistant answer from a real child process", async () => {
     const result = await withFixture("success", (options) => runChild(options));
     assert.equal(JSON.parse(result.output).answer, "Only this final assistant answer may reach the parent.");

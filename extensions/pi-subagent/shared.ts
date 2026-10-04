@@ -102,6 +102,23 @@ export type SubagentFailurePhase =
   | "output"
   | "cleanup";
 
+// Fixed allowlist and saturating counters: never copy child keys or content.
+export const OBSERVED_CHILD_EVENTS = [
+  "turn_start", "message_update", "tool_execution_start", "tool_execution_end",
+  "auto_retry_start", "auto_retry_end",
+] as const;
+export type ObservedChildEvent = (typeof OBSERVED_CHILD_EVENTS)[number];
+export const MAX_OBSERVATION_COUNT = 1_000_000;
+export type ChildFailureObservations = {
+  counts: Record<ObservedChildEvent, number>;
+  receipts: Record<ObservedChildEvent, number>;
+  lastEvent?: ObservedChildEvent;
+  lastEventAgeMs?: number;
+  lastEventValidated: boolean;
+  toolBalance: number | null;
+  incomplete: boolean;
+};
+
 export type SubagentFailureDiagnostics = {
   phase: SubagentFailurePhase;
   exitCode?: number;
@@ -113,6 +130,7 @@ export type SubagentFailureDiagnostics = {
   lastAssistantMode?: "none" | "empty" | "text" | "tool" | "mixed";
   toolErrors?: number;
   lastToolError?: string;
+  observations?: ChildFailureObservations;
 };
 
 export function toolsForCapability(capability: Capability): string[] {
@@ -436,6 +454,20 @@ function safeDiagnosticText(value: string): string {
   return sanitizeDisplayText(value).replace(/\s+/g, " ").slice(0, 80);
 }
 
+function safeObservations(value: ChildFailureObservations): ChildFailureObservations {
+  const bounded = (n: number, max = MAX_OBSERVATION_COUNT) =>
+    Number.isFinite(n) ? Math.min(max, Math.max(0, Math.trunc(n))) : 0;
+  return {
+    counts: Object.fromEntries(OBSERVED_CHILD_EVENTS.map((key) => [key, bounded(value.counts[key])])) as Record<ObservedChildEvent, number>,
+    receipts: Object.fromEntries(OBSERVED_CHILD_EVENTS.map((key) => [key, bounded(value.receipts[key])])) as Record<ObservedChildEvent, number>,
+    ...(OBSERVED_CHILD_EVENTS.includes(value.lastEvent!) ? { lastEvent: value.lastEvent } : {}),
+    ...(Number.isFinite(value.lastEventAgeMs) ? { lastEventAgeMs: bounded(value.lastEventAgeMs!, 2_147_483_647) } : {}),
+    lastEventValidated: value.lastEventValidated === true,
+    toolBalance: value.incomplete || value.toolBalance === null ? null : bounded(value.toolBalance),
+    incomplete: value.incomplete === true,
+  };
+}
+
 function failureDiagnosticSuffix(diagnostics: SubagentFailureDiagnostics): string {
   const safe = {
     phase: diagnostics.phase,
@@ -448,6 +480,7 @@ function failureDiagnosticSuffix(diagnostics: SubagentFailureDiagnostics): strin
     ...(diagnostics.lastAssistantMode ? { lastAssistantMode: diagnostics.lastAssistantMode } : {}),
     ...(Number.isInteger(diagnostics.toolErrors) ? { toolErrors: diagnostics.toolErrors } : {}),
     ...(diagnostics.lastToolError ? { lastToolError: safeDiagnosticText(diagnostics.lastToolError) } : {}),
+    ...(diagnostics.observations ? { observations: safeObservations(diagnostics.observations) } : {}),
   };
   return `\n\n[Subagent diagnostics ${JSON.stringify(safe)}]`;
 }

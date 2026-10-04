@@ -61,7 +61,24 @@ const usage = {
 };
 const emit = (message) => process.stdout.write(`${JSON.stringify({ type: "message_end", message })}\n`);
 
-if (scenario === "success") {
+if (scenario.startsWith("observations-")) {
+  const event = (value) => process.stdout.write(`${JSON.stringify(value)}\n`);
+  event({ type: "tool_execution_start", toolCallId: "private-id", toolName: "read", args: { path: "/private-sentinel" } });
+  if (scenario !== "observations-tool") {
+    event({ type: "tool_execution_end", toolCallId: "private-id", toolName: "read", result: { content: "private-result" }, isError: false });
+    event({ type: "message_update", message: { role: "assistant", content: "private-thinking" }, assistantMessageEvent: { type: "text_delta", delta: "private-text" } });
+  }
+  emit({ role: "assistant", content: [], usage, stopReason: "toolUse" });
+  if (scenario === "observations-process") process.exitCode = 7;
+  else if (scenario === "observations-protocol") process.stdout.write('not JSON\n');
+  else if (scenario === "observations-success" || scenario === "observations-partial") {
+    emit({ role: "assistant", content: [{ type: "text", text: "Final answer." }], usage,
+      stopReason: scenario === "observations-partial" ? "length" : "stop" });
+  } else {
+    process.on("SIGTERM", () => {});
+    setInterval(() => {}, 1_000);
+  }
+} else if (scenario === "success") {
   emit({
     role: "assistant",
     content: [
