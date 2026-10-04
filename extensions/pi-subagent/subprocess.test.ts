@@ -6,6 +6,7 @@ import { describe, test } from "node:test";
 import {
   assertChildReady,
   ChildJsonCollector,
+  emptyUsage,
   estimateContextTokens,
   formatElapsed,
   formatProgress,
@@ -64,7 +65,7 @@ describe("child JSON stream collector", () => {
       { type: "turn_start", timestamp: -999 },
       { type: "tool_execution_start", toolName: "private-tool", toolCallId: "private-id", args: { query: "private-query", url: "https://private.invalid" } },
       { type: "tool_execution_end", toolName: "private-tool", toolCallId: "private-id", result: { text: "private-result" }, isError: false },
-      { type: "message_update", message: { role: "assistant", content: "private-thinking" }, assistantMessageEvent: { type: "text_delta", delta: "private-delta" } },
+      { type: "message_update", usage: { input: 1 }, assistantMessageEvent: { type: "text_delta", contentIndex: 0, delta: "private-delta" } },
       { type: "auto_retry_start", attempt: 1, maxAttempts: 2, delayMs: 5, errorMessage: "private-error" },
       { type: "auto_retry_end", attempt: 1, success: true },
     ];
@@ -84,12 +85,46 @@ describe("child JSON stream collector", () => {
     assert.equal(collector.snapshot().observations.counts.turn_start, 1, "snapshots must not alias collector counters");
   });
 
+  test("Pi's JSON-mode message_update serialization yields validated observations", async () => {
+    // toJsonEvent is internal to Pi; load the installed serializer by path so the
+    // latest-Pi canary fails if the wire shape or its location changes.
+    const { toJsonEvent } = await import(new URL(
+      "./node_modules/@earendil-works/pi-coding-agent/dist/modes/json-event.js", import.meta.url,
+    ).href) as { toJsonEvent: (event: unknown) => Record<string, unknown> };
+    const partial = {
+      role: "assistant",
+      content: [{ type: "text", text: "private-text" }, { type: "toolCall", id: "private-id", name: "read", arguments: {} }],
+      usage: emptyUsage(),
+      stopReason: "toolUse",
+    };
+    const updates = [
+      { type: "start", partial },
+      { type: "text_start", contentIndex: 0, partial },
+      { type: "text_delta", contentIndex: 0, delta: "private-delta", partial },
+      { type: "text_end", contentIndex: 0, content: "private-text", partial },
+      { type: "toolcall_start", contentIndex: 1, partial },
+    ];
+    const collector = new ChildJsonCollector();
+    for (const assistantMessageEvent of updates) {
+      const wire = toJsonEvent({ type: "message_update", message: partial, assistantMessageEvent });
+      assert.equal("message" in wire, false, "the CLI serializer must stay delta-only");
+      collector.push(`${JSON.stringify(wire)}\n`);
+    }
+    const observations = collector.snapshot().observations;
+    assert.equal(observations.counts.message_update, updates.length);
+    assert.equal(observations.lastEventValidated, true);
+    assert.equal(observations.incomplete, false);
+    assert.equal(observations.toolBalance, 0);
+    assert.doesNotMatch(JSON.stringify(observations), /private/);
+  });
+
   test("invalid, oversized and unbalanced observations are explicitly incomplete", () => {
     for (const line of [
       '{"type":"tool_execution_start","toolName":"private"}',
       '{"type":"auto_retry_start",broken}',
-      JSON.stringify({ type: "message_update", message: { role: "user" }, assistantMessageEvent: { type: "text_delta" } }),
-      JSON.stringify({ type: "message_update", message: { role: "assistant" }, assistantMessageEvent: { type: { toString: null } } }),
+      JSON.stringify({ type: "message_update", usage: {} }),
+      JSON.stringify({ type: "message_update", assistantMessageEvent: { type: "done" } }),
+      JSON.stringify({ type: "message_update", assistantMessageEvent: { type: { toString: null } } }),
       JSON.stringify({ type: "tool_execution_end", toolName: "read", toolCallId: "id", result: {}, isError: false }),
       `{"type":"message_update","content":"${"x".repeat(MAX_JSON_LINE_BYTES + 1)}"}`,
     ]) {
@@ -116,10 +151,9 @@ describe("child JSON stream collector", () => {
     t.mock.method(performance, "now", () => now);
     const collector = new ChildJsonCollector();
     collector.push(JSON.stringify({ type: "tool_execution_start", toolName: "read", toolCallId: "id", args: {} }) + "\n");
-    const partial = { role: "assistant", content: [{ type: "thinking", thinking: "private-sentinel".repeat(1_000) }] };
     for (const event of [
       { type: "tool_execution_end", toolName: "read", toolCallId: "id", result: { content: [{ type: "text", text: "private-result".repeat(1_000) }] }, isError: false },
-      { type: "message_update", assistantMessageEvent: { type: "thinking_delta", delta: "x", partial }, message: partial },
+      { type: "message_update", assistantMessageEvent: { type: "thinking_end", contentIndex: 0, content: "private-sentinel".repeat(1_000) } },
     ]) {
       now += 100;
       const line = JSON.stringify(event) + "\n";
