@@ -419,8 +419,8 @@ export class ChildJsonCollector {
     const valid = type === "turn_start"
       || (type === "tool_execution_start" && typeof event.toolCallId === "string" && typeof event.toolName === "string" && object(event.args))
       || (type === "tool_execution_end" && typeof event.toolCallId === "string" && typeof event.toolName === "string" && object(event.result) && typeof event.isError === "boolean")
-      || (type === "message_update" && object(event.message) && event.message.role === "assistant"
-        && object(event.assistantMessageEvent) && typeof event.assistantMessageEvent.type === "string"
+      // Pi's JSON mode emits delta-only updates without the SDK's cumulative message.
+      || (type === "message_update" && object(event.assistantMessageEvent) && typeof event.assistantMessageEvent.type === "string"
         && ["start", "text_start", "text_delta", "text_end", "thinking_start", "thinking_delta", "thinking_end", "toolcall_start", "toolcall_delta", "toolcall_end"].includes(event.assistantMessageEvent.type))
       || (type === "auto_retry_start" && positiveInteger(event.attempt) && positiveInteger(event.maxAttempts) && typeof event.delayMs === "number" && Number.isFinite(event.delayMs) && event.delayMs >= 0)
       || (type === "auto_retry_end" && positiveInteger(event.attempt) && typeof event.success === "boolean");

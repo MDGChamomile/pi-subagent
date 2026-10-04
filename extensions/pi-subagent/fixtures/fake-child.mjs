@@ -66,7 +66,7 @@ if (scenario.startsWith("observations-")) {
   event({ type: "tool_execution_start", toolCallId: "private-id", toolName: "read", args: { path: "/private-sentinel" } });
   if (scenario !== "observations-tool") {
     event({ type: "tool_execution_end", toolCallId: "private-id", toolName: "read", result: { content: "private-result" }, isError: false });
-    event({ type: "message_update", message: { role: "assistant", content: "private-thinking" }, assistantMessageEvent: { type: "text_delta", delta: "private-text" } });
+    event({ type: "message_update", usage, assistantMessageEvent: { type: "text_delta", contentIndex: 0, delta: "private-text" } });
   }
   emit({ role: "assistant", content: [], usage, stopReason: "toolUse" });
   if (scenario === "observations-process") process.exitCode = 7;
