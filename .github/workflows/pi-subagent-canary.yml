@@ -36,7 +36,9 @@ jobs:
         id: typecheck
         run: npm run typecheck
       - name: Test latest Pi
+        id: test
         if: ${{ !cancelled() && (success() || steps.typecheck.outcome == 'failure') }}
         run: npm test
       - name: Verify package with latest Pi
+        if: ${{ !cancelled() && (success() || steps.typecheck.outcome == 'failure' || steps.test.outcome == 'failure') }}
         run: npm run package:check

@@ -42,7 +42,7 @@ The workflow must exist on the default branch before this relationship is config
 ## Release
 
 1. Set the new immutable version in `manifest.json`. Assembly automatically pins the generated gallery image and README release URLs to the matching version tag; no manual URL version edits are needed. The matching tag must contain the referenced assets and guides before the package is published.
-2. Run all verification commands above.
+2. Run all verification commands above. Check whether the SHA-pinned actions in `npm-publish.yml` have newer releases than their commented versions, and update the SHA and comment together if so.
 3. Merge the release commit into `main` and wait for `validation` to pass.
 4. Push the matching `v<version>` tag. The tag triggers `npm-publish.yml`. All `v*` tags are reserved for package releases; a tag that does not exactly match the stable manifest version fails before installation or publishing. Use a non-`v*` tag name for non-package milestones; those tags do not trigger npm publishing.
 5. Wait for the publish workflow to pass, then confirm the registry metadata and Pi package manifest:
