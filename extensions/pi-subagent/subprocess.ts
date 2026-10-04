@@ -336,7 +336,7 @@ export class ChildJsonCollector {
     this.lastAssistantMode = assistantMode(message);
     addUsage(this.usage, message.usage);
     if (typeof message.stopReason === "string") this.stopReason = message.stopReason;
-    if (typeof message.errorMessage === "string") this.errorMessage = message.errorMessage;
+    this.errorMessage = typeof message.errorMessage === "string" ? message.errorMessage : undefined;
     // Keep length-limited text as evidence; runChild marks an unrecovered length stop as partial.
     const eligible = this.lastAssistantMode === "text"
       && message.stopReason !== "toolUse"
@@ -540,6 +540,9 @@ export async function runChild(options: {
     if (reason === "aborted") aborted = true;
     if (stopping) return;
     stopping = true;
+    // A failed spawn has no process group to clean up. Keep the conservative
+    // group probe unchanged for children that actually received a PID.
+    if (child.pid === undefined) return;
     killProcessGroup(child.pid, "SIGTERM");
     // The leader may close while descendants survive. Only confirmed group
     // disappearance can end cleanup early; uncertain probes retain escalation.

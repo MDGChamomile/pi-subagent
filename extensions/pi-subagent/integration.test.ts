@@ -92,6 +92,26 @@ async function waitForProcessExit(pid: number, timeoutMs = 3_000): Promise<void>
 }
 
 describe("pi-subagent spawned-child integration", () => {
+  test("spawn without a PID fails promptly rather than waiting for cleanup grace", async () => {
+    await withFixture("success", async (options) => {
+      const killGraceMs = 10_000;
+      const startedAt = performance.now();
+      await assert.rejects(() => runChild({
+        ...options,
+        invocationOverride: { command: join(options.policy.cwd, "nonexistent-executable"), args: [] },
+        timeoutMs: 30_000,
+        killGraceMs,
+      }), (error: unknown) => {
+        assert.ok(error instanceof ChildRunError);
+        assert.match(error.message, /"phase":"spawn"/);
+        assert.match(error.message, /ENOENT/);
+        return true;
+      });
+      assert.ok(performance.now() - startedAt < killGraceMs / 2,
+        "a child that never spawned must not wait for process-group cleanup");
+    });
+  });
+
   test("returns only the final assistant answer from a real child process", async () => {
     const result = await withFixture("success", (options) => runChild(options));
     assert.equal(JSON.parse(result.output).answer, "Only this final assistant answer may reach the parent.");
