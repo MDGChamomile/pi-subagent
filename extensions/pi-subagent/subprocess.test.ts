@@ -12,7 +12,7 @@ import {
   formatResultSummary,
   readBudgetTelemetry,
 } from "./subprocess.ts";
-import { MAX_JSON_LINE_BYTES, READY_MARKER, sanitizeDisplayText } from "./shared.ts";
+import { boundedParentError, MAX_JSON_LINE_BYTES, MAX_OBSERVATION_COUNT, MAX_PARENT_ERROR_BYTES, READY_MARKER, sanitizeDisplayText } from "./shared.ts";
 
 function assistantEvent(text: string, overrides: Record<string, unknown> = {}): string {
   return JSON.stringify({
@@ -55,6 +55,74 @@ describe("child JSON stream collector", () => {
       },
     });
   }
+
+  test("observations retain only allowlisted counts and parent receipt ages", (t) => {
+    let now = 100;
+    t.mock.method(performance, "now", () => now);
+    const collector = new ChildJsonCollector();
+    const events = [
+      { type: "turn_start", timestamp: -999 },
+      { type: "tool_execution_start", toolName: "private-tool", toolCallId: "private-id", args: { query: "private-query", url: "https://private.invalid" } },
+      { type: "tool_execution_end", toolName: "private-tool", toolCallId: "private-id", result: { text: "private-result" }, isError: false },
+      { type: "message_update", message: { role: "assistant", content: "private-thinking" }, assistantMessageEvent: { type: "text_delta", delta: "private-delta" } },
+      { type: "auto_retry_start", attempt: 1, maxAttempts: 2, delayMs: 5, errorMessage: "private-error" },
+      { type: "auto_retry_end", attempt: 1, success: true },
+    ];
+    for (const event of events) {
+      const line = `${JSON.stringify(event)}\n`;
+      for (let offset = 0; offset < line.length; offset += 7) collector.push(line.slice(offset, offset + 7));
+    }
+    now = 150;
+    const observations = collector.snapshot().observations;
+    assert.deepEqual(Object.values(observations.counts), [1, 1, 1, 1, 1, 1]);
+    assert.equal(observations.lastEvent, "auto_retry_end");
+    assert.equal(observations.lastEventAgeMs, 50);
+    assert.equal(observations.incomplete, false);
+    assert.equal(observations.toolBalance, 0);
+    assert.doesNotMatch(JSON.stringify(observations), /private|timestamp/);
+    observations.counts.turn_start = 999;
+    assert.equal(collector.snapshot().observations.counts.turn_start, 1, "snapshots must not alias collector counters");
+  });
+
+  test("invalid, oversized and unbalanced observations are explicitly incomplete", () => {
+    for (const line of [
+      '{"type":"tool_execution_start","toolName":"private"}',
+      '{"type":"auto_retry_start",broken}',
+      JSON.stringify({ type: "message_update", message: { role: "user" }, assistantMessageEvent: { type: "text_delta" } }),
+      JSON.stringify({ type: "message_update", message: { role: "assistant" }, assistantMessageEvent: { type: { toString: null } } }),
+      JSON.stringify({ type: "tool_execution_end", toolName: "read", toolCallId: "id", result: {}, isError: false }),
+      `{"type":"message_update","content":"${"x".repeat(MAX_JSON_LINE_BYTES + 1)}"}`,
+    ]) {
+      const collector = new ChildJsonCollector();
+      for (let offset = 0; offset < line.length; offset += 256) collector.push(line.slice(offset, offset + 256));
+      collector.push("\n");
+      collector.push(`${assistantEvent("safe final answer")}\n`);
+      assert.equal(collector.snapshot().observations.incomplete, true);
+      assert.equal(collector.snapshot().protocolError, undefined);
+      assert.equal(collector.snapshot().finalOutput, "safe final answer");
+      assert.ok(JSON.stringify(collector.snapshot().observations).length < 500);
+    }
+    const collector = new ChildJsonCollector();
+    collector.push('{"type":"turn_start"}\n');
+    collector.push('malformed JSON\n');
+    collector.push('{"type":"turn_start"}\n');
+    assert.equal(collector.snapshot().observations.counts.turn_start, 1);
+    assert.equal(collector.snapshot().observations.incomplete, true);
+  });
+
+  test("observation counters saturate and failure suffixes remain bounded", () => {
+    const collector = new ChildJsonCollector();
+    const batch = '{"type":"turn_start"}\n'.repeat(10_000);
+    for (let i = 0; i <= MAX_OBSERVATION_COUNT / 10_000; i++) collector.push(batch);
+    collector.finish();
+    assert.equal(collector.snapshot().observations.counts.turn_start, MAX_OBSERVATION_COUNT);
+    assert.equal(collector.snapshot().observations.incomplete, true);
+    const error = boundedParentError("x".repeat(MAX_PARENT_ERROR_BYTES * 2), {
+      phase: "timeout", observations: collector.snapshot().observations,
+    });
+    assert.ok(Buffer.byteLength(error) <= MAX_PARENT_ERROR_BYTES);
+    assert.match(error, /"observations"/);
+  });
 
   test("handles fragmented records and retains only the final assistant answer", () => {
     let updates = 0;

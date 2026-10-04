@@ -20,6 +20,10 @@ import {
   MAX_FETCH_URLS_PER_CALL,
   MAX_FINAL_BYTES,
   MAX_JSON_LINE_BYTES,
+  MAX_OBSERVATION_COUNT,
+  OBSERVED_CHILD_EVENTS,
+  type ObservedChildEvent,
+  type ChildFailureObservations,
   MAX_WEB_QUERIES_PER_CALL,
   MAX_WEB_RESULTS_PER_QUERY,
   POLICY_ENV,
@@ -182,6 +186,7 @@ export type ChildJsonSnapshot = {
   stopReason?: string;
   errorMessage?: string;
   protocolError?: string;
+  observations: ChildFailureObservations;
   usage: Usage;
 };
 
@@ -194,7 +199,11 @@ export class ChildJsonCollector {
   private readonly decoder = new StringDecoder("utf8");
   private lineBuffer = "";
   private lineBytes = 0;
-  private disposition: "unknown" | "capture" | "discard" = "unknown";
+  private disposition: "unknown" | "capture" | "observe" | "discard" = "unknown";
+  private readonly eventCounts = Object.fromEntries(OBSERVED_CHILD_EVENTS.map((key) => [key, 0])) as Record<ObservedChildEvent, number>;
+  private lastEvent: ObservedChildEvent | undefined;
+  private lastEventAt: number | undefined;
+  private observationsIncomplete = false;
   private finalOutput = "";
   private finalOutputReceivedAt: number | undefined;
   private toolErrorCount = 0;
@@ -244,6 +253,13 @@ export class ChildJsonCollector {
       stopReason: this.stopReason,
       errorMessage: this.errorMessage,
       protocolError: this.protocolError,
+      observations: {
+        counts: { ...this.eventCounts },
+        lastEvent: this.lastEvent,
+        lastEventAgeMs: this.lastEventAt === undefined ? undefined : Math.max(0, performance.now() - this.lastEventAt),
+        toolBalance: Math.max(0, this.eventCounts.tool_execution_start - this.eventCounts.tool_execution_end),
+        incomplete: this.observationsIncomplete || this.protocolError !== undefined,
+      },
       usage: this.usage,
     };
   }
@@ -284,16 +300,34 @@ export class ChildJsonCollector {
 
   private append(value: string): void {
     if (!value) return;
+    // Observations never need a full streaming message or tool payload. Drop
+    // selected records above 4 KiB rather than growing the capture buffer.
+    const bytes = Buffer.byteLength(value);
+    if (this.disposition === "observe" && this.lineBytes + bytes > 4096) {
+      this.observationsIncomplete = true;
+      this.disposition = "discard";
+      this.lineBuffer = "";
+      this.lineBytes = 0;
+      return;
+    }
     this.lineBuffer += value;
-    this.lineBytes += Buffer.byteLength(value);
+    this.lineBytes += bytes;
   }
 
-  private classifyLine(): "unknown" | "capture" | "discard" {
+  private classifyLine(): "unknown" | "capture" | "observe" | "discard" {
     if (this.disposition !== "unknown") return this.disposition;
     const match = /^\s*\{\s*"type"\s*:\s*"([^"\\]+)"/.exec(this.lineBuffer);
     if (!match) return this.disposition;
     if (match[1] === "message_end") {
       this.disposition = "capture";
+    } else if (OBSERVED_CHILD_EVENTS.includes(match[1] as ObservedChildEvent)) {
+      this.disposition = "observe";
+      if (this.lineBytes > 4096) {
+        this.observationsIncomplete = true;
+        this.disposition = "discard";
+        this.lineBuffer = "";
+        this.lineBytes = 0;
+      }
     } else {
       this.disposition = "discard";
       this.lineBuffer = "";
@@ -308,11 +342,17 @@ export class ChildJsonCollector {
     try {
       event = JSON.parse(line);
     } catch {
-      this.fail("Subagent emitted malformed JSON");
+      if (this.disposition === "observe") this.observationsIncomplete = true;
+      else this.fail("Subagent emitted malformed JSON");
       return;
     }
     if (!event || typeof event !== "object") return;
     const record = event as { type?: unknown; message?: unknown };
+    if (OBSERVED_CHILD_EVENTS.includes(record.type as ObservedChildEvent)) {
+      if (Buffer.byteLength(line) <= 4096) this.observe(event as Record<string, unknown>);
+      else this.observationsIncomplete = true;
+      return;
+    }
     if (record.type !== "message_end" || !record.message || typeof record.message !== "object") return;
     const message = record.message as {
       role?: unknown;
@@ -348,6 +388,30 @@ export class ChildJsonCollector {
     this.onAssistantMessage?.(this.usage);
   }
 
+  private observe(event: Record<string, unknown>): void {
+    const type = event.type as ObservedChildEvent;
+    const object = (value: unknown): value is Record<string, unknown> =>
+      value !== null && typeof value === "object" && !Array.isArray(value);
+    const positiveInteger = (value: unknown) => Number.isSafeInteger(value) && (value as number) > 0;
+    const valid = type === "turn_start"
+      || (type === "tool_execution_start" && typeof event.toolCallId === "string" && typeof event.toolName === "string" && object(event.args))
+      || (type === "tool_execution_end" && typeof event.toolCallId === "string" && typeof event.toolName === "string" && object(event.result) && typeof event.isError === "boolean")
+      || (type === "message_update" && object(event.message) && event.message.role === "assistant"
+        && object(event.assistantMessageEvent) && typeof event.assistantMessageEvent.type === "string"
+        && ["start", "text_start", "text_delta", "text_end", "thinking_start", "thinking_delta", "thinking_end", "toolcall_start", "toolcall_delta", "toolcall_end"].includes(event.assistantMessageEvent.type))
+      || (type === "auto_retry_start" && positiveInteger(event.attempt) && positiveInteger(event.maxAttempts) && typeof event.delayMs === "number" && Number.isFinite(event.delayMs) && event.delayMs >= 0)
+      || (type === "auto_retry_end" && positiveInteger(event.attempt) && typeof event.success === "boolean");
+    if (!valid) {
+      this.observationsIncomplete = true;
+      return;
+    }
+    if (this.eventCounts[type] === MAX_OBSERVATION_COUNT) this.observationsIncomplete = true;
+    else this.eventCounts[type]++;
+    if (this.eventCounts.tool_execution_end > this.eventCounts.tool_execution_start) this.observationsIncomplete = true;
+    this.lastEvent = type;
+    this.lastEventAt = performance.now();
+  }
+
   private fail(message: string): void {
     if (this.protocolError) return;
     this.protocolError = message;
@@ -379,6 +443,7 @@ function childFailure(
     lastAssistantMode: snapshot.lastAssistantMode,
     toolErrors: snapshot.toolErrorCount,
     lastToolError: snapshot.lastToolError,
+    observations: snapshot.observations,
   };
   return new ChildRunError(boundedParentError(error, diagnostics), snapshot.usage);
 }
