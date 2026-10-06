@@ -33,7 +33,7 @@ python3 -B -m unittest discover -s .github/scripts -p 'test_*.py' -v
 python3 -B .github/scripts/validate_skills.py
 ```
 
-The development lockfile and CI pin Pi 1.0.0, the declared minimum; the weekly canary tests current upstream packages separately. Dependency installation can access registries. The checks do not call models. Package validation rebuilds ignored `dist/`, verifies the exact npm file set and documentation links, and runs isolated offline resource discovery plus negative controls.
+The development lockfile and CI pin Pi 1.0.0, the declared minimum; the weekly canary tests current upstream packages separately. `npm test` preloads `scripts/pi-sdk-test-loader.mjs` to select Pi's bundled SDK when available. When running a TypeScript test directly from `extensions/pi-subagent`, keep that preload, for example `node --import ./scripts/pi-sdk-test-loader.mjs --experimental-strip-types --test child-retry.test.ts`. The provider/selection fixtures receive the same preload from their spawning tests; package discovery chooses its SDK independently. Dependency installation can access registries. The checks do not call models. Package validation rebuilds ignored `dist/`, verifies the exact npm file set and documentation links, and runs isolated offline resource discovery plus negative controls.
 
 For documentation changes, review relative links and commands; for runtime changes, add regression coverage and run all three runtime/package checks. The skill validator covers metadata and relative links in `SKILL.md` and the maintained root documents (`README.md`, `AGENTS.md`, `MIGRATION.md`, `CONTRIBUTING.md`, `PRINCIPLE.md`) plus `packaging/pi-subagent/DEVELOPMENT.md`; it does not check semantic compatibility.
 

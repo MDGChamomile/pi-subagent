@@ -1,5 +1,4 @@
 import assert from "node:assert/strict";
-import { existsSync } from "node:fs";
 import { mkdtemp, mkdir, rm, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
@@ -8,11 +7,8 @@ import { test } from "node:test";
 import type { AgentSession } from "@earendil-works/pi-coding-agent";
 import { ALLOWED_WEB_TOOLS, resolveWebExtensionPath, TOOL_NAME } from "./shared.ts";
 
-// Same bundled-SDK compatibility path as the existing real-session regressions.
-const sdkEntry = import.meta.resolve("@earendil-works/pi-coding-agent");
-const bundledEntry = new URL("./bundle/index.js", sdkEntry);
-const { createAgentSession, DefaultResourceLoader, ModelRuntime, SessionManager, SettingsManager } =
-  await import(existsSync(bundledEntry) ? bundledEntry.href : sdkEntry) as typeof import("@earendil-works/pi-coding-agent");
+// The configured test loader selects the bundled SDK when available.
+import { createAgentSession, DefaultResourceLoader, ModelRuntime, SessionManager, SettingsManager } from "@earendil-works/pi-coding-agent";
 
 for (const filtered of [false, true]) {
   test(`real Pi web smoke registry: CLI allowlist=${filtered}`, { timeout: 15_000 }, async () => {

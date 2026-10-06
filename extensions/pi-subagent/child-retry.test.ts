@@ -1,5 +1,4 @@
 import assert from "node:assert/strict";
-import { existsSync } from "node:fs";
 import { mkdtemp, readFile, rm, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
@@ -10,11 +9,8 @@ import childGuard from "./child-guard.ts";
 import { emptyUsage } from "./subprocess.ts";
 import { ALLOWED_FILE_TOOLS, BUDGET_TELEMETRY_ENV, buildChildPolicy, POLICY_ENV, READY_ENV, SOFT_DEADLINE_ENV } from "./shared.ts";
 
-// Match package-discovery.mjs: prefer the bundled SDK when available.
-const sdkEntry = import.meta.resolve("@earendil-works/pi-coding-agent");
-const bundledEntry = new URL("./bundle/index.js", sdkEntry);
-const { createAgentSession, DefaultResourceLoader, ModelRuntime, SessionManager, SettingsManager } =
-  await import(existsSync(bundledEntry) ? bundledEntry.href : sdkEntry) as typeof import("@earendil-works/pi-coding-agent");
+// The configured test loader selects the bundled SDK when available.
+import { createAgentSession, DefaultResourceLoader, ModelRuntime, SessionManager, SettingsManager } from "@earendil-works/pi-coding-agent";
 
 const model: Model<"openai-completions"> = {
   id: "offline-retry", name: "Offline Retry", provider: "offline-test", api: "openai-completions",
