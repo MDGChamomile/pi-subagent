@@ -31,6 +31,15 @@ def observations(selection=None, web=False):
     return rows
 
 
+def envelope(answer, **overrides):
+    return json.dumps({"status": "complete", "partialReason": None, "outputTruncated": False,
+                       "answer": answer, **overrides}, ensure_ascii=False)
+
+
+def set_answer(messages, answer):
+    messages[1]["content"][0]["text"] = envelope(answer)
+
+
 def smoke_messages(capability="local", preset=PRESET, selection=None):
     selection = selection or SELECTION
     return [
@@ -38,8 +47,8 @@ def smoke_messages(capability="local", preset=PRESET, selection=None):
             "capability": capability, "preset": preset, "scope": ["fixture.txt"] if capability == "local" else [],
         }}]},
         {"role": "toolResult", "toolName": "pi_subagent", "isError": False,
-         "content": [{"type": "text", "text": "plain-final-answer (fixture.txt:1)" if capability == "local"
-                      else f"{evaluator.SMOKE_WEB_PURPOSE}; {evaluator.SMOKE_WEB_QUOTE} — {evaluator.SMOKE_WEB_URL}"}],
+         "content": [{"type": "text", "text": envelope("plain-final-answer (fixture.txt:1)" if capability == "local"
+                      else f"{evaluator.SMOKE_WEB_PURPOSE}; {evaluator.SMOKE_WEB_QUOTE} — {evaluator.SMOKE_WEB_URL}")}],
          "details": {"capability": capability, "preset": preset, **selection, "status": "complete",
                      "outputTruncated": False, "usage": {"totalTokens": 42}, "durationMs": 10}},
     ]
@@ -84,6 +93,78 @@ class RuntimeObservationTests(unittest.TestCase):
         rows = observations()
         rows.append({**rows[0], "wireThinking": "low"})
         self.assertEqual(check(observed=rows)["status"], "fail")
+
+
+class ResultEnvelopeTests(unittest.TestCase):
+    def test_rejects_old_output_and_malformed_envelopes(self):
+        valid = json.loads(smoke_messages()[1]["content"][0]["text"])
+        bodies = ["plain-final-answer (fixture.txt:1)", "{", "[]", "null"]
+        for key in valid:
+            changed = dict(valid)
+            del changed[key]
+            bodies.append(json.dumps(changed))
+        for key, value in [("status", "unknown"), ("partialReason", "unknown"),
+                           ("outputTruncated", 0), ("answer", []), ("unexpected", True)]:
+            bodies.append(json.dumps({**valid, key: value}))
+        for body in bodies:
+            with self.subTest(body=body):
+                messages = smoke_messages()
+                messages[1]["content"][0]["text"] = body
+                self.assertEqual(check(messages)["status"], "fail")
+
+    def test_checks_status_reason_and_metadata_agreement(self):
+        for reason in ("tool_budget", "time_limit", "model_length"):
+            messages = smoke_messages()
+            body = envelope("plain-final-answer (fixture.txt:1)", status="partial", partialReason=reason)
+            self.assertIsNone(evaluator.parse_result_envelope(body, messages[1]["details"]))
+            messages[1]["details"].update(status="partial", partialReason=reason)
+            self.assertIsNotNone(evaluator.parse_result_envelope(body, messages[1]["details"]))
+            messages[1]["content"][0]["text"] = body
+            self.assertEqual(check(messages)["status"], "fail", "smoke requires complete output")
+        for status, reason in [("complete", "tool_budget"), ("partial", None)]:
+            self.assertIsNone(evaluator.parse_result_envelope(envelope("answer", status=status, partialReason=reason),
+                             {"status": status, "partialReason": reason, "outputTruncated": False}))
+        messages = smoke_messages()
+        messages[1]["content"][0]["text"] = envelope("plain-final-answer (fixture.txt:1)", outputTruncated=True)
+        self.assertEqual(check(messages)["status"], "fail")
+
+    def test_decodes_tool_syntax_after_json_escaping(self):
+        for prefix in ("", "\n", "\t", " "):
+            for syntax in ("to=functions.read", "functions.read"):
+                messages = smoke_messages()
+                set_answer(messages, f"{prefix}{syntax}\nplain-final-answer (fixture.txt:1)")
+                self.assertFalse(check(messages)["checks"]["no_raw_tool_syntax"])
+
+    def test_bounds_serialized_envelope_not_only_answer(self):
+        messages = smoke_messages()
+        answer = 'plain-final-answer (fixture.txt:1) ' + '"' * 6200
+        self.assertLess(len(answer.encode("utf-8")), 12 * 1024)
+        set_answer(messages, answer)
+        self.assertFalse(check(messages)["checks"]["within_12_kib"])
+
+    def test_context_scores_only_decoded_child_answer_and_never_parent_fallback(self):
+        case = evaluator.EvalCase("fixture", "lookup", "Synthetic task", (("complete",),))
+        messages = smoke_messages()
+        set_answer(messages, "Evidence fixture/incident.log:1\nto=functions.read")
+        with patch.object(evaluator, "load_presets", return_value={PRESET: SELECTION}), \
+                patch.object(evaluator, "observe_run", return_value=(
+                    SimpleNamespace(stdout=wire(messages), stderr="", returncode=0), observations())):
+            row = evaluator.run_pi(cwd=Path("."), main_model="offline/parent", main_thinking="off",
+                                   case=case, arm="subagent", timeout_seconds=1)
+        self.assertTrue(row["result_contract_verified"])
+        self.assertEqual(row["expected_facts_matched"], 0, "envelope status must not count as an answer fact")
+        self.assertTrue(row["has_evidence_location"])
+        self.assertTrue(row["has_raw_tool_syntax"])
+        messages[1]["content"][0]["text"] = "old-format answer"
+        messages.append({"role": "assistant", "content": [{"type": "text", "text": "complete fixture/incident.log:1"}]})
+        with patch.object(evaluator, "load_presets", return_value={PRESET: SELECTION}), \
+                patch.object(evaluator, "observe_run", return_value=(
+                    SimpleNamespace(stdout=wire(messages), stderr="", returncode=0), observations())):
+            row = evaluator.run_pi(cwd=Path("."), main_model="offline/parent", main_thinking="off",
+                                   case=case, arm="subagent", timeout_seconds=1)
+        self.assertFalse(row["result_contract_verified"])
+        self.assertEqual(row["expected_facts_matched"], 0)
+        self.assertFalse(row["has_evidence_location"])
 
 
 class PortableWebSmokeTests(unittest.TestCase):
@@ -148,14 +229,14 @@ class SmokeContractTests(unittest.TestCase):
 
     def test_web_title_alone_is_not_sufficient(self):
         messages = smoke_messages("web")
-        messages[1]["content"][0]["text"] = f"Example Domains — {evaluator.SMOKE_WEB_URL}"
+        set_answer(messages, f"Example Domains — {evaluator.SMOKE_WEB_URL}")
         self.assertEqual(check(messages, capability="web")["status"], "fail")
 
     def test_web_body_evidence_does_not_require_an_extractor_heading(self):
         messages = smoke_messages("web")
         self.assertNotIn("Example Domains", messages[1]["content"][0]["text"])
         self.assertEqual(check(messages, capability="web")["status"], "pass")
-        messages[1]["content"][0]["text"] = f"{evaluator.SMOKE_WEB_QUOTE} — {evaluator.SMOKE_WEB_URL}"
+        set_answer(messages, f"{evaluator.SMOKE_WEB_QUOTE} — {evaluator.SMOKE_WEB_URL}")
         self.assertEqual(check(messages, capability="web")["status"], "fail")
 
     def test_rejects_missing_or_wrong_result_metadata(self):
@@ -194,17 +275,17 @@ class SmokeContractTests(unittest.TestCase):
         self.assertEqual(check(messages)["status"], "fail")
         for answer in ("", "plain-final-answer", "functions.read fixture.txt:1 plain-final-answer", "한" * 5000):
             messages = smoke_messages()
-            messages[1]["content"][0]["text"] = answer
+            set_answer(messages, answer)
             self.assertEqual(check(messages)["status"], "fail")
 
     @patch.object(evaluator, "load_presets", return_value={PRESET: SELECTION, "future-preset": SELECTION})
     def test_all_presets_are_run_in_fresh_parents(self, _presets):
         seen = []
-        def run(_command, *, cwd, prompt, timeout, **selection):
+        def run(_command, *, cwd, prompt, timeout):
             self.assertEqual(_command[:2], ["--mode", "json"])
             preset = PRESET if f"preset={PRESET}." in prompt else "future-preset"
             seen.append((preset, str(cwd)))
-            return SimpleNamespace(stdout=wire(smoke_messages(preset=preset, selection=selection)), returncode=0), observations(selection)
+            return SimpleNamespace(stdout=wire(smoke_messages(preset=preset)), returncode=0), observations()
         args = argparse.Namespace(capability="local", preset="all", main_model="openai-codex/gpt-6-astra",
                                   main_thinking="medium", timeout_seconds=60)
         with patch.object(evaluator, "observe_run", side_effect=run), \
