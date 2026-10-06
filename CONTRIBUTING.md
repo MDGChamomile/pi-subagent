@@ -4,19 +4,93 @@ Keep changes focused and consistent with the [canonical harness principles](http
 
 ## Pull requests
 
-Create your contribution branch from the latest `updates` branch, and select
-`updates` as the base branch when opening a pull request. GitHub may suggest
-`main` because it is the repository's default branch; please change the base
-to `updates` before submitting.
+Task pull requests target `updates`, not the default branch `main`. If a PR
+accidentally targets `main`, change its base to `updates` and review the resulting
+diff and checks again. Use **Summary / Verification / Risk** in the description:
+explain the change, checks actually run and their limitations, and affected
+contracts or rollback considerations. Follow [Source and checks](#source-and-checks)
+for the changed area.
 
-Contributions are reviewed and merged into `updates`. Maintainers open pull
-requests from `updates` to `main` only when preparing a release. If you
-accidentally target `main`, the base can be changed to `updates`; the resulting
-diff and checks should then be reviewed again.
+Preserve `main` and `updates`: do not push directly to them, delete them, or
+rewrite their history. The repository currently merges PRs with merge commits.
+For `updates`, the required checks are `skills` and `subagent`, and review
+conversations must be addressed and resolved before merging. A successful check
+or bot run is not review approval; the current rules do not enforce a minimum
+approval count. The actual [GitHub rules](https://github.com/MDGChamomile/pi-subagent/rules)
+and repository merge settings are authoritative, not this description.
 
-Before merging, configured required checks must pass, and all review
-conversations must be addressed and closed according to repository policy.
-A successful check run is not review approval.
+When configured automatic review applies, PR content and repository context are
+sent to an external review service. See the [review-only policy](.github/PULLFROG.md).
+Do not include credentials or private session content; do not manually trigger
+paid reviews without explicit authorization.
+
+### External contributors
+
+Fork the repository, then clone your fork (`origin` is your fork) and add the
+original repository as `upstream`. Replace `YOUR-USER` and the task branch name:
+
+```bash
+git clone https://github.com/YOUR-USER/pi-subagent.git
+cd pi-subagent
+git remote add upstream https://github.com/MDGChamomile/pi-subagent.git
+git fetch upstream updates
+git switch --no-track -c task/short-description upstream/updates
+# Make focused changes, verify them, and commit the intended files.
+git push -u origin task/short-description
+```
+
+Open a PR from your fork's task branch to **MDGChamomile/pi-subagent:updates**.
+External contributors are not responsible for merging `main` or synchronizing
+release history; maintainers handle that separately.
+
+### Maintainer development
+
+Start each task from the latest remote `updates`, work on a local task branch,
+and push only that branch when authorized:
+
+```bash
+git fetch origin updates
+git switch --no-track -c task/short-description origin/updates
+# Make focused changes, verify them, and commit the intended files.
+git push -u origin task/short-description
+```
+
+Open and review an `updates` PR, address findings, verify the latest head and
+applicable checks, then merge when authorized. After merging:
+
+```bash
+git fetch origin updates
+git switch updates
+git merge --ff-only origin/updates
+```
+
+Local `updates` tracks merged remote work; it is not a place to accumulate
+unmerged task commits. Preserve unrelated changes or existing unmerged work on
+a separate branch before switching or synchronizing; do not reset or force-push
+to resolve divergence. These procedures do not themselves authorize commits,
+pushes, merges, or branch deletion. Delete task branches only with explicit
+authorization, after verifying they are merged and not in use by a worktree.
+
+A release PR from `updates` to `main` requires a separate explicit release request
+and uses a merge commit. Afterwards, a code-free release merge record existing
+only on `main` is normal; making the two branch SHAs equal is not the goal.
+Before carrying such history back, fetch both branches and inspect it:
+
+```bash
+git fetch origin main updates
+git log --oneline origin/updates..origin/main
+git diff --exit-code "$(git merge-base origin/main origin/updates)" origin/main
+```
+
+Verify that the main-only commits really are completed `updates` → `main`
+release merge records and that `main` has the same file tree as the common
+ancestor; the empty diff alone does not establish their provenance. With explicit
+authorization, merge the verified release history normally into the next
+maintainer task branch and include it in that task's existing `updates` PR.
+Unexpected code changes or conflicts need separate confirmation. Consider a
+standalone history PR only when needed, such as an explicit request for immediate
+synchronization; do not create an empty or duplicate PR if `main` is already an
+ancestor of `updates`.
 
 ## Source and checks
 
