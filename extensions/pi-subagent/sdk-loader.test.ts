@@ -10,7 +10,8 @@ const inspect = (preload: boolean) => {
     'import { existsSync } from "node:fs"; const entry = import.meta.resolve("@earendil-works/pi-coding-agent"); '
       + 'const bundled = new URL("./bundle/index.js", entry); '
       + 'console.log(JSON.stringify({entry, bundled: bundled.href, hasBundle: existsSync(bundled)}));',
-  ], { encoding: "utf8", timeout: 15_000, env: { PATH: process.env.PATH, PI_OFFLINE: "1" } });
+  ], { encoding: "utf8", timeout: 15_000, cwd: fileURLToPath(new URL(".", import.meta.url)),
+    env: { PATH: process.env.PATH, PI_OFFLINE: "1" } });
   assert.ifError(result.error);
   assert.equal(result.status, 0, result.stderr);
   return JSON.parse(result.stdout) as { entry: string; bundled: string; hasBundle: boolean };
