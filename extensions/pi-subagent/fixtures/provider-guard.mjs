@@ -1,6 +1,6 @@
 // Isolated offline contract: real SDK -> built-in Codex SSE API -> onPayload -> guard.
 import assert from "node:assert/strict";
-import { existsSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from "node:fs";
+import { mkdtempSync, readFileSync, rmSync, writeFileSync } from "node:fs";
 import { syncBuiltinESMExports } from "node:module";
 import net from "node:net";
 import tls from "node:tls";
@@ -50,10 +50,10 @@ globalThis.fetch = async (_url, options) => {
 // Import only after the isolated environment and network tripwires exist.
 const { default: childGuard } = await import("../child-guard.ts");
 const { ALLOWED_FILE_TOOLS, BUDGET_TELEMETRY_ENV, MODEL_SELECTION_ENV, POLICY_ENV, READY_ENV, READY_MARKER } = await import("../shared.ts");
-const sdkEntry = import.meta.resolve("@earendil-works/pi-coding-agent");
-const bundled = new URL("./bundle/index.js", sdkEntry);
+// The spawning test preloads the SDK mapper; retain this dynamic import after
+// the isolated environment and network tripwires have been installed.
 const { createAgentSession, DefaultResourceLoader, ModelRuntime, SessionManager, SettingsManager } =
-  await import(existsSync(bundled) ? bundled.href : sdkEntry);
+  await import("@earendil-works/pi-coding-agent");
 readyFile = join(root, "guard.ready");
 marker = READY_MARKER;
 Object.assign(process.env, {
