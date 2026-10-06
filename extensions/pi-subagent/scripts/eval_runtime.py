@@ -56,29 +56,24 @@ def observed_cli(root: Path) -> list[str]:
     return ["node", str(wrapper)]
 
 
-def observation_env(trace: Path, model: str | None = None, thinking: str | None = None,
-                    fetch_url: str | None = None) -> dict[str, str]:
+def observation_env(trace: Path, fetch_url: str | None = None) -> dict[str, str]:
     env = {**os.environ, "PI_OFFLINE": "1", "PI_TELEMETRY": "0", "PI_SKIP_VERSION_CHECK": "1",
            "PI_SUBAGENT_EVAL_TRACE_FILE": str(trace)}
     for key in ("PI_SUBAGENT_EVAL_EXPECT_MODEL", "PI_SUBAGENT_EVAL_EXPECT_THINKING", "PI_SUBAGENT_EVAL_FETCH_URL"):
         env.pop(key, None)
-    if model is not None:
-        env["PI_SUBAGENT_EVAL_EXPECT_MODEL"] = model
-    if thinking is not None:
-        env["PI_SUBAGENT_EVAL_EXPECT_THINKING"] = thinking
     if fetch_url is not None:
         env["PI_SUBAGENT_EVAL_FETCH_URL"] = fetch_url
     return env
 
 
 def observe_run(args: list[str], *, cwd: Path, prompt: str, timeout: int,
-                model: str | None = None, thinking: str | None = None, fetch_url: str | None = None):
+                fetch_url: str | None = None):
     with tempfile.TemporaryDirectory(prefix="pi-subagent-observe-") as directory:
         root = Path(directory)
         trace = root / "runtime.jsonl"
         completed = subprocess.run(
             [*observed_cli(root), *args], cwd=cwd, input=prompt, text=True, capture_output=True,
-            timeout=timeout, check=False, env=observation_env(trace, model, thinking, fetch_url),
+            timeout=timeout, check=False, env=observation_env(trace, fetch_url),
         )
         observations = list(json_events(trace.read_text(encoding="utf-8"))) if trace.exists() else []
     return completed, observations
