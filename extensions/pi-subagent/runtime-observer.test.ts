@@ -12,7 +12,8 @@ async function harness(actor: "child" | "parent", run: (emit: (name: string, eve
   rows: () => Promise<any[]>) => Promise<void>) {
   const root = await mkdtemp(join(tmpdir(), "pi-subagent-observer-test-"));
   const trace = join(root, "trace.jsonl");
-  const keys = ["PI_SUBAGENT_EVAL_TRACE_FILE", "PI_SUBAGENT_EVAL_FETCH_URL", "PI_SUBAGENT_POLICY_FILE"];
+  const keys = ["PI_SUBAGENT_EVAL_TRACE_FILE", "PI_SUBAGENT_EVAL_FETCH_URL", "PI_SUBAGENT_POLICY_FILE",
+    "PI_SUBAGENT_EVAL_EXPECT_MODEL", "PI_SUBAGENT_EVAL_EXPECT_THINKING"];
   const previous = keys.map((key) => process.env[key]);
   try {
     process.env.PI_SUBAGENT_EVAL_TRACE_FILE = trace;
@@ -46,9 +47,13 @@ function fetch(emit: (name: string, event: any) => void, id: string, args: any, 
 
 test("provider observer records mismatches without claiming to block transmission", async () => {
   await harness("child", async (emit, rows) => {
-    emit("before_provider_request", {
+    // Exercise the old throwing branch as well: inherited expectations must not
+    // turn an observation hook into a purported transmission blocker.
+    process.env.PI_SUBAGENT_EVAL_EXPECT_MODEL = "offline/expected";
+    process.env.PI_SUBAGENT_EVAL_EXPECT_THINKING = "high";
+    assert.doesNotThrow(() => emit("before_provider_request", {
       payload: { model: "wire-other", reasoning: { effort: "low" }, privateInput: PRIVATE },
-    }, { model: { provider: "offline", id: "expected" }, thinkingLevel: "high" });
+    }, { model: { provider: "offline", id: "expected" }, thinkingLevel: "high" }));
     assert.deepEqual(await rows(), [{ actor: "child", kind: "request", model: "offline/expected",
       thinking: "high", wireModel: "wire-other", wireThinking: "low" }]);
     assert.equal(JSON.stringify(await rows()).includes(PRIVATE), false);
