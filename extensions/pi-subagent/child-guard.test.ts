@@ -1,8 +1,10 @@
 import assert from "node:assert/strict";
+import fs from "node:fs";
+import { syncBuiltinESMExports } from "node:module";
 import { mkdtemp, mkdir, readFile, rm, symlink, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
-import { describe, test } from "node:test";
+import { describe, test, type TestContext } from "node:test";
 import childGuard, { prepareWebCall } from "./child-guard.ts";
 import {
   ALLOWED_FILE_TOOLS,
@@ -50,6 +52,7 @@ async function createHarness(
 
   const handlers = new Map<string, Handler[]>();
   const sentUserMessages: Array<{ content: string; options: unknown }> = [];
+  const lifecycle: string[] = [];
   let messageError: Error | undefined;
   let activeTools: string[] = [];
   const tools = [
@@ -64,9 +67,11 @@ async function createHarness(
       return tools;
     },
     setActiveTools(names: string[]) {
+      lifecycle.push(names.length ? "activateTools" : "disableTools");
       activeTools = names;
     },
     sendUserMessage(content: string, options: unknown) {
+      lifecycle.push("sendUserMessage");
       if (messageError) throw messageError;
       sentUserMessages.push({ content, options });
     },
@@ -102,6 +107,7 @@ async function createHarness(
     callTool,
     rejectBeforeGuard,
     getActiveTools: () => activeTools,
+    getLifecycle: () => lifecycle,
     getSentUserMessages: () => sentUserMessages,
     failUserMessages: () => { messageError = new Error("synthetic notice failure"); },
     getBudgetTelemetry: async () => JSON.parse(await readFile(budgetTelemetryFile, "utf8")) as Record<string, unknown>,
@@ -122,7 +128,109 @@ async function createHarness(
   };
 }
 
+function trackBudgetWrites(t: TestContext) {
+  const writes: Array<Record<string, unknown>> = [];
+  const original = fs.writeFileSync;
+  let failNext = false;
+  t.mock.method(fs, "writeFileSync", (...args: Parameters<typeof fs.writeFileSync>) => {
+    const telemetry = String(args[0]).endsWith("budget-telemetry.json");
+    if (telemetry && failNext) { failNext = false; throw new Error("synthetic telemetry write failure"); }
+    original(...args);
+    if (telemetry) writes.push(JSON.parse(String(args[1])));
+  });
+  syncBuiltinESMExports();
+  return { writes, failNext() { failNext = true; }, restore() { t.mock.restoreAll(); syncBuiltinESMExports(); } };
+}
+
 describe("pi-subagent child guard", () => {
+  test("skips unchanged local snapshots but persists web reservations before execution", async (t) => {
+    const tracked = trackBudgetWrites(t);
+    try {
+      for (const capability of ["local", "web"] as const) {
+        tracked.writes.length = 0;
+        const harness = await createHarness(capability === "local" ? ["allowed"] : [], capability);
+        try {
+          await harness.emit("session_start");
+          assert.equal(tracked.writes.length, 1, "startup still publishes initial telemetry");
+          const event = { toolName: capability === "local" ? "read" : "source_check", toolCallId: "snapshot-call",
+            input: capability === "local" ? { path: "allowed/inside.txt" }
+              : { claim: "synthetic", numResults: 1, fetchContent: true } };
+          await harness.emit("tool_execution_start", { ...event, args: event.input });
+          assert.equal(tracked.writes.length, 2);
+          assert.equal(await harness.emit("tool_call", event), undefined);
+          assert.equal(tracked.writes.length, capability === "local" ? 2 : 3);
+          const admitted = await harness.getBudgetTelemetry();
+          assert.equal(admitted.queryCount, capability === "web" ? 1 : 0);
+          assert.equal(admitted.fetchTargetCount, capability === "web" ? 1 : 0);
+          assert.equal(admitted.toolCallsExecuted, 0, "web reservation is recorded before execution");
+          await harness.emit("tool_result", event);
+          assert.deepEqual(tracked.writes.at(-1), await harness.getBudgetTelemetry());
+          assert.equal(tracked.writes.at(-1)!.toolCallsExecuted, 1);
+          const settledCount = tracked.writes.length;
+          await harness.emit("tool_execution_end", { ...event, result: {}, isError: false });
+          await harness.emit("session_shutdown");
+          assert.equal(tracked.writes.length, settledCount, "unchanged completion and shutdown do not rewrite");
+        } finally { await harness.cleanup(); }
+      }
+    } finally { tracked.restore(); }
+  });
+
+  test("writes each changed soft/hard-limit snapshot once and preserves final budget state", async (t) => {
+    const tracked = trackBudgetWrites(t);
+    const harness = await createHarness(["allowed"]);
+    try {
+      await harness.emit("session_start");
+      const limits = LIFETIME_TOOL_CALL_LIMITS.local;
+      for (let attempt = 1; attempt <= limits.hard + 1; attempt++) {
+        const previous = tracked.writes.length;
+        await harness.emit("tool_execution_start", { toolCallId: `snapshot-${attempt}`, toolName: "read", args: {} });
+        assert.equal(tracked.writes.length, previous + 1, `attempt ${attempt} should write once`);
+        assert.deepEqual(tracked.writes.at(-1), await harness.getBudgetTelemetry());
+        if (attempt === limits.soft) assert.equal(tracked.writes.at(-1)!.softLimitReached, true);
+      }
+      assert.equal(tracked.writes.at(-1)!.hardLimitReached, true);
+      assert.equal(tracked.writes.at(-1)!.partialReason, "tool_budget");
+      assert.deepEqual(harness.getActiveTools(), []);
+      assert.equal(harness.getSentUserMessages().length, 2);
+    } finally {
+      try { await harness.cleanup(); } finally { tracked.restore(); }
+    }
+  });
+
+  test("retries a changed telemetry snapshot after a failed write", async (t) => {
+    const tracked = trackBudgetWrites(t);
+    const harness = await createHarness(["allowed"]);
+    try {
+      await harness.emit("session_start");
+      tracked.failNext();
+      await assert.rejects(harness.emit("tool_execution_start", {
+        toolCallId: "write-failure", toolName: "read", args: {},
+      }), /synthetic telemetry write failure/);
+      assert.equal(tracked.writes.length, 1);
+      await harness.emit("session_shutdown");
+      assert.equal(tracked.writes.length, 2, "a failed write must not mark the changed snapshot as persisted");
+      assert.equal((await harness.getBudgetTelemetry()).toolCallsAttempted, 1);
+    } finally {
+      try { await harness.cleanup(); } finally { tracked.restore(); }
+    }
+  });
+
+  test("failed final-answer delivery disables tools before delivery and invalidates the policy", async () => {
+    const harness = await createHarness(["allowed"]);
+    try {
+      await harness.emit("session_start");
+      harness.failUserMessages();
+      await harness.emit("agent_end", { messages: [] });
+      assert.deepEqual(harness.getLifecycle(), ["activateTools", "disableTools", "sendUserMessage"]);
+      assert.deepEqual(harness.getActiveTools(), []);
+      const blocked = await harness.callTool({ toolName: "read", toolCallId: "failed-delivery",
+        input: { path: "allowed/inside.txt" } });
+      assert.equal(blocked.block, true);
+      assert.equal(blocked.terminate, true);
+      assert.match(blocked.reason, /policy is unavailable.*could not request the final answer/);
+    } finally { await harness.cleanup(); }
+  });
+
   test("prepares normalized web inputs and costs without mutating caller arguments", () => {
     const cases = [
       { tool: "web_search", input: { query: '["one","two"]', workflow: "summary-review" }, cost: { queries: 2, fetchTargets: 0 } },
