@@ -299,9 +299,23 @@ export default function childGuard(
     hardLimitReached: false,
   };
 
+  const invalidatePolicy = (message: string) => {
+    policy = undefined;
+    policyError = message;
+  };
+  const failClosed = (message: string) => {
+    invalidatePolicy(message);
+    pi.setActiveTools([]);
+  };
+  let lastPersistedBudget: string | undefined;
   const persistBudget = () => {
     if (!budgetTelemetryPath) return;
-    writeFileSync(budgetTelemetryPath, JSON.stringify(budget), { encoding: "utf8", mode: 0o600 });
+    const snapshot = JSON.stringify(budget);
+    if (snapshot === lastPersistedBudget) return;
+    writeFileSync(budgetTelemetryPath, snapshot, { encoding: "utf8", mode: 0o600 });
+    // Record only successful writes; changed reservations and terminal state must
+    // still be persisted synchronously at their existing event boundaries.
+    lastPersistedBudget = snapshot;
   };
   const timeLimitReached = () => softDeadline !== undefined && Date.now() >= softDeadline;
   const requestFinalAnswer = (content: string, deliverAs: "steer" | "followUp") => {
@@ -311,8 +325,8 @@ export default function childGuard(
     try {
       pi.sendUserMessage(`${content}\n\nDo not call tools. Return the concise final answer as ordinary assistant text.`, { deliverAs });
     } catch (error) {
-      policy = undefined;
-      policyError = `could not request the final answer: ${error instanceof Error ? error.message : String(error)}`;
+      // Tools were disabled before delivery; retain that ordering on failure.
+      invalidatePolicy(`could not request the final answer: ${error instanceof Error ? error.message : String(error)}`);
     }
   };
   const requestPartialAnswer = () => {
@@ -335,9 +349,7 @@ export default function childGuard(
     try {
       pi.sendUserMessage(content, { deliverAs: "steer" });
     } catch (error) {
-      policy = undefined;
-      policyError = `could not send the tool budget warning: ${error instanceof Error ? error.message : String(error)}`;
-      pi.setActiveTools([]);
+      failClosed(`could not send the tool budget warning: ${error instanceof Error ? error.message : String(error)}`);
     }
   };
 
@@ -432,9 +444,7 @@ export default function childGuard(
       for (const name of ALLOWED_FILE_TOOLS) {
         const tool = tools.find((candidate) => candidate.name === name);
         if (!tool || tool.sourceInfo?.source !== "builtin") {
-          policy = undefined;
-          policyError = `${name} is not owned by Pi's built-in tool set`;
-          pi.setActiveTools([]);
+          failClosed(`${name} is not owned by Pi's built-in tool set`);
           return;
         }
       }
@@ -444,21 +454,19 @@ export default function childGuard(
         const tool = tools.find((candidate) => candidate.name === name);
         const sourcePath = canonicalSourcePath(tool?.sourceInfo?.path);
         if (!tool || sourcePath !== webExtensionPath) {
-          policy = undefined;
-          policyError = `${name} is not owned by the explicitly loaded web extension`;
-          pi.setActiveTools([]);
+          failClosed(`${name} is not owned by the explicitly loaded web extension`);
           return;
         }
       }
     }
     startupExitCode = CHILD_GUARD_EXIT_CODES.readiness;
     try {
-      writeFileSync(budgetTelemetryPath!, JSON.stringify(budget), { encoding: "utf8", mode: 0o600, flag: "wx" });
+      const snapshot = JSON.stringify(budget);
+      writeFileSync(budgetTelemetryPath!, snapshot, { encoding: "utf8", mode: 0o600, flag: "wx" });
+      lastPersistedBudget = snapshot;
       writeFileSync(readyPath, READY_MARKER, { encoding: "utf8", mode: 0o600, flag: "wx" });
     } catch (error) {
-      policy = undefined;
-      policyError = `could not publish guard readiness: ${error instanceof Error ? error.message : String(error)}`;
-      pi.setActiveTools([]);
+      failClosed(`could not publish guard readiness: ${error instanceof Error ? error.message : String(error)}`);
       return;
     }
     pi.setActiveTools(activeTools);
