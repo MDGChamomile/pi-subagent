@@ -14,6 +14,13 @@ const record = (value: unknown): value is Record<string, unknown> =>
 const keysAllowed = (value: Record<string, unknown>, keys: readonly string[]) =>
   Object.keys(value).every((key) => keys.includes(key));
 
+/** Settings syntax for a provider and model ID; registry availability is checked separately. */
+export function isValidProviderModel(provider: unknown, model: unknown): boolean {
+  return typeof provider === "string" && /^[a-zA-Z0-9][a-zA-Z0-9._-]{0,127}$/.test(provider) &&
+    typeof model === "string" && model.length > 0 && model.trim() === model && model.length <= 256 &&
+    !/[\u0000-\u001f\u007f-\u009f]/.test(model);
+}
+
 export function parsePresetSettings(value: unknown): PresetSelections {
   if (!record(value) || !keysAllowed(value, ["presets"]) ||
     (value.presets !== undefined && (!record(value.presets) || !keysAllowed(value.presets, PRESET_NAMES)))) {
@@ -27,9 +34,7 @@ export function parsePresetSettings(value: unknown): PresetSelections {
       throw new Error(`Invalid subagent preset settings. ${HELP}`);
     }
     if (override.provider !== undefined || override.model !== undefined) {
-      if (typeof override.provider !== "string" || !/^[a-zA-Z0-9][a-zA-Z0-9._-]{0,127}$/.test(override.provider) ||
-        typeof override.model !== "string" || override.model.length === 0 || override.model.trim() !== override.model || override.model.length > 256 ||
-        /[\u0000-\u001f\u007f-\u009f]/.test(override.model)) {
+      if (!isValidProviderModel(override.provider, override.model)) {
         throw new Error(`Invalid subagent provider/model settings. ${HELP}`);
       }
       selections[name].model = `${override.provider}/${override.model}`;

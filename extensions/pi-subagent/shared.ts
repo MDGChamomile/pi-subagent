@@ -303,8 +303,7 @@ async function verifyWebPackageEntrypoint(canonical: string): Promise<boolean> {
         if (typeof entry !== "string") continue;
         const declared = await webEntryFile(resolve(directory, entry));
         if (!declared) continue;
-        const rel = relative(packageRoot, declared);
-        if (rel !== ".." && !rel.startsWith(`..${sep}`) && !isAbsolute(rel) && declared === canonical) return true;
+        if (declared === canonical && isWithin(packageRoot, declared)) return true;
       }
       return false;
     } catch (error) {
