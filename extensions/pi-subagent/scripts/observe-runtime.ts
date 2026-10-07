@@ -12,13 +12,10 @@ export default function observeRuntime(pi: ExtensionAPI): void {
   pi.on("before_provider_request", (event, ctx) => {
     const payload = event.payload as { model?: unknown; reasoning?: { effort?: unknown } };
     const model = `${ctx.model?.provider}/${ctx.model?.id}`;
-    const expectedModel = process.env.PI_SUBAGENT_EVAL_EXPECT_MODEL;
-    const expectedThinking = process.env.PI_SUBAGENT_EVAL_EXPECT_THINKING;
+    // Observation only: Pi can swallow provider-hook exceptions. The Python
+    // runtime_checks verdict validates every request after the run; the production
+    // guard separately enforces effective model/thinking before transmission.
     record({ kind: "request", model, thinking: ctx.thinkingLevel, wireModel: payload.model, wireThinking: payload.reasoning?.effort });
-    if (actor === "child" && (
-      (expectedModel && (model !== expectedModel || payload.model !== expectedModel.split("/").slice(1).join("/")))
-      || (expectedThinking && (ctx.thinkingLevel !== expectedThinking || payload.reasoning?.effort !== expectedThinking))
-    )) throw new Error("Evaluation child model/thinking mismatch; refusing the request");
   });
   // Keep only a target-match bit while the call runs. Never persist its input,
   // URL, result text, response ID, or error. End events include final isError

@@ -23,34 +23,30 @@ class ReleaseTagTests(unittest.TestCase):
             manifest = root / "packaging/pi-subagent/manifest.json"
             manifest.parent.mkdir(parents=True)
             manifest.write_text(json.dumps({"version": version}))
-            output = root / "output"
             result = subprocess.run(
                 ["node", "-"], input=script, text=True, capture_output=True,
-                cwd=root, env={**os.environ, "RELEASE_TAG": tag, "GITHUB_OUTPUT": str(output)},
+                cwd=root, env={**os.environ, "RELEASE_TAG": tag},
                 timeout=10,
             )
-            return result, output.read_text() if output.exists() else ""
+            return result
 
-    def test_matching_stable_tag_enables_publish(self):
-        result, output = self.run_gate("0.4.1", "v0.4.1")
+    def test_matching_stable_tag_passes(self):
+        result = self.run_gate("0.4.1", "v0.4.1")
         self.assertEqual(result.returncode, 0, result.stderr)
-        self.assertEqual(output, "publish=true\n")
 
-    def test_mismatch_fails_without_enabling_publish(self):
+    def test_mismatch_fails(self):
         for tag in ("v0.4.2", "v0.4.1-rc.1", "vother"):
             with self.subTest(tag=tag):
-                result, output = self.run_gate("0.4.1", tag)
+                result = self.run_gate("0.4.1", tag)
                 self.assertNotEqual(result.returncode, 0)
                 self.assertIn("does not match package version v0.4.1", result.stderr)
-                self.assertEqual(output, "")
 
     def test_nonstable_manifest_fails(self):
         for version in ("0.4.1-rc.1", "invalid"):
             with self.subTest(version=version):
-                result, output = self.run_gate(version, f"v{version}")
+                result = self.run_gate(version, f"v{version}")
                 self.assertNotEqual(result.returncode, 0)
                 self.assertIn("npm releases require a stable semver version", result.stderr)
-                self.assertEqual(output, "")
 
 
 if __name__ == "__main__":

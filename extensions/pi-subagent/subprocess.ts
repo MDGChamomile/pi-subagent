@@ -190,6 +190,8 @@ export type ChildJsonSnapshot = {
   usage: Usage;
 };
 
+const MAX_OBSERVED_RECORD_BYTES = 4096;
+
 /**
  * Consumes Pi's LF-delimited JSON stream while retaining only the last eligible
  * assistant answer. Intermediate assistant turns and ordinary child tool output are
@@ -309,7 +311,7 @@ export class ChildJsonCollector {
     // Observations never need a full streaming message or tool payload. Drop
     // selected records above 4 KiB rather than growing the capture buffer.
     const bytes = Buffer.byteLength(value);
-    if (this.disposition === "observe" && this.lineBytes + bytes > 4096) {
+    if (this.disposition === "observe" && this.lineBytes + bytes > MAX_OBSERVED_RECORD_BYTES) {
       this.observationsIncomplete = true;
       this.disposition = "discard";
       this.lineBuffer = "";
@@ -330,7 +332,7 @@ export class ChildJsonCollector {
       this.disposition = "observe";
       this.pendingObservedType = match[1] as ObservedChildEvent;
       this.observeReceipt(this.pendingObservedType);
-      if (this.lineBytes > 4096) {
+      if (this.lineBytes > MAX_OBSERVED_RECORD_BYTES) {
         this.observationsIncomplete = true;
         this.disposition = "discard";
         this.lineBuffer = "";
@@ -362,7 +364,7 @@ export class ChildJsonCollector {
     }
     if (OBSERVED_CHILD_EVENTS.includes(record.type as ObservedChildEvent)) {
       if (!this.pendingObservedType) this.observeReceipt(record.type as ObservedChildEvent);
-      if (Buffer.byteLength(line) <= 4096) this.observe(event as Record<string, unknown>);
+      if (Buffer.byteLength(line) <= MAX_OBSERVED_RECORD_BYTES) this.observe(event as Record<string, unknown>);
       else this.observationsIncomplete = true;
       return;
     }
@@ -419,8 +421,8 @@ export class ChildJsonCollector {
     const valid = type === "turn_start"
       || (type === "tool_execution_start" && typeof event.toolCallId === "string" && typeof event.toolName === "string" && object(event.args))
       || (type === "tool_execution_end" && typeof event.toolCallId === "string" && typeof event.toolName === "string" && object(event.result) && typeof event.isError === "boolean")
-      || (type === "message_update" && object(event.message) && event.message.role === "assistant"
-        && object(event.assistantMessageEvent) && typeof event.assistantMessageEvent.type === "string"
+      // Pi's JSON mode emits delta-only updates without the SDK's cumulative message.
+      || (type === "message_update" && object(event.assistantMessageEvent) && typeof event.assistantMessageEvent.type === "string"
         && ["start", "text_start", "text_delta", "text_end", "thinking_start", "thinking_delta", "thinking_end", "toolcall_start", "toolcall_delta", "toolcall_end"].includes(event.assistantMessageEvent.type))
       || (type === "auto_retry_start" && positiveInteger(event.attempt) && positiveInteger(event.maxAttempts) && typeof event.delayMs === "number" && Number.isFinite(event.delayMs) && event.delayMs >= 0)
       || (type === "auto_retry_end" && positiveInteger(event.attempt) && typeof event.success === "boolean");

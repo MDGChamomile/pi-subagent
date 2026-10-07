@@ -16,7 +16,7 @@ npm --prefix extensions/pi-subagent run package:check
 
 `manifest.json` supplies the authoritative package version. The repository-root `README.md` is the only maintained top-level README body; there is no separate packaging README to edit. During assembly, `build.mjs` generates `dist/README.md`, converting relative image links to version-matched raw GitHub URLs and relative document links to GitHub blob URLs while preserving the full text and anchors. Repository-only documentation links remain available as absolute links. External URLs and local anchors are preserved, except this repository's already-versioned GitHub/raw GitHub URLs are rebased to the manifest version, as is `pi.image`. Maintained files are never changed by the build. The bundled extension guide also gets version-matched raw GitHub asset links, including the architecture image's enclosing link; its document links remain local. Package validation exercises version-only changes and body-only edits to both README sources in a disposable fixture.
 
-The model-invoked walkthrough (`pi-subagent-automatic.gif`) and architecture PNG remain in the source repository but are not included in the npm package. The generated README images and `pi.image` load these assets from the matching release tag, so viewing images requires network access; investigation functionality does not depend on these images. This illustrated demo is not a live model recording; users can also invoke the same bounded investigation manually with `/skill:pi-subagent`.
+The cover image (`pi-subagent-cover.png`, also used as the `pi.image` gallery thumbnail), the model-invoked walkthrough (`pi-subagent-automatic.gif`), and the architecture PNG remain in the source repository but are not included in the npm package. The generated README images and `pi.image` load these assets from the matching release tag, so viewing images requires network access; investigation functionality does not depend on these images. This illustrated demo is not a live model recording; users can also invoke the same bounded investigation manually with `/skill:pi-subagent`.
 
 Before publishing, inspect the generated manifest and dry-run report:
 
@@ -42,7 +42,7 @@ The workflow must exist on the default branch before this relationship is config
 ## Release
 
 1. Set the new immutable version in `manifest.json`. Assembly automatically pins the generated gallery image and README release URLs to the matching version tag; no manual URL version edits are needed. The matching tag must contain the referenced assets and guides before the package is published.
-2. Run all verification commands above.
+2. Run all verification commands above. Check whether the SHA-pinned actions in `npm-publish.yml` have newer releases than their commented versions, and update the SHA and comment together if so.
 3. Merge the release commit into `main` and wait for `validation` to pass.
 4. Push the matching `v<version>` tag. The tag triggers `npm-publish.yml`. All `v*` tags are reserved for package releases; a tag that does not exactly match the stable manifest version fails before installation or publishing. Use a non-`v*` tag name for non-package milestones; those tags do not trigger npm publishing.
 5. Wait for the publish workflow to pass, then confirm the registry metadata and Pi package manifest:

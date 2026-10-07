@@ -1,6 +1,6 @@
 {
   "name": "@mdgchamomile/pi-subagent",
-  "version": "0.8.1",
+  "version": "0.8.2",
   "description": "Run bounded, read-only Pi subagents without filling the parent context with intermediate investigation output",
   "type": "module",
   "license": "MIT",
@@ -35,6 +35,6 @@
     "skills": [
       "./skills/pi-subagent"
     ],
-    "image": "https://raw.githubusercontent.com/MDGChamomile/pi-subagent/v0.6.1/extensions/pi-subagent/assets/pi-subagent-automatic.gif"
+    "image": "https://raw.githubusercontent.com/MDGChamomile/pi-subagent/v0.6.1/extensions/pi-subagent/assets/pi-subagent-cover.png"
   }
 }

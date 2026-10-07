@@ -4,7 +4,7 @@ import { dirname } from "node:path";
 import { getSupportedThinkingLevels } from "@earendil-works/pi-ai";
 import type { ExtensionAPI, ExtensionCommandContext } from "@earendil-works/pi-coding-agent";
 import {
-  parsePresetSettings, readPresetSettingsSnapshot, THINKING_LEVELS, validatePresetSelection,
+  isValidProviderModel, parsePresetSettings, readPresetSettingsSnapshot, THINKING_LEVELS, validatePresetSelection,
   type PresetSettings, type SettingsSnapshot,
 } from "./config.ts";
 import { PRESET_NAMES, type Preset, type Thinking } from "./shared.ts";
@@ -63,12 +63,9 @@ export async function configureSubagentSettings(ctx: ExtensionCommandContext): P
     const snapshot = await readPresetSettingsSnapshot();
     const current = parsePresetSettings(snapshot.settings);
     // Availability is Pi's local authentication view, not a live access probe.
-    const models = ctx.modelRegistry.getAvailable().filter((model) => {
-      try {
-        parsePresetSettings({ presets: { "lookup-standard": { provider: model.provider, model: model.id } } });
-        return true;
-      } catch { return false; }
-    }).sort((a, b) => `${a.provider}/${a.id}`.localeCompare(`${b.provider}/${b.id}`));
+    const models = ctx.modelRegistry.getAvailable()
+      .filter((model) => isValidProviderModel(model.provider, model.id))
+      .sort((a, b) => `${a.provider}/${a.id}`.localeCompare(`${b.provider}/${b.id}`));
     if (!models.length) {
       ctx.ui.notify("No available models. Authenticate a provider in Pi or edit pi-subagent.json for a registered model.", "warning");
       return;

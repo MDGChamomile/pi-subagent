@@ -1,5 +1,24 @@
 # Migration
 
+## v0.8.2
+
+### Failure diagnostics
+
+Pi's JSON mode emits delta-only `message_update` records without the
+cumulative assistant message. The failure-observation collector now validates
+these records by their `assistantMessageEvent`, so streaming updates count as
+validated observations instead of marking observations incomplete and leaving
+`toolBalance` null. Successful and partial result envelopes, limits, and
+settings are unchanged.
+
+### Maintenance
+
+Guard failure handling is centralized, and unchanged budget snapshots are no
+longer rewritten; fail-closed ordering is unchanged. The README adds a cover
+image, which is also the Pi gallery image, and a redrawn architecture diagram.
+No user action is required. The minimum Pi version and preset arguments remain
+unchanged from v0.8.0.
+
 ## v0.8.1
 
 ### Failure diagnostics and cleanup

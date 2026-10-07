@@ -128,6 +128,28 @@ def text_content(content: Any) -> str:
     )
 
 
+def parse_result_envelope(body: str, details: dict[str, Any]) -> dict[str, Any] | None:
+    """Validate the model-visible result independently, then compare host metadata."""
+    try:
+        envelope = json.loads(body)
+    except json.JSONDecodeError:
+        return None
+    if not isinstance(envelope, dict) or set(envelope) != {"status", "partialReason", "outputTruncated", "answer"}:
+        return None
+    status, reason = envelope["status"], envelope["partialReason"]
+    if (status not in ("complete", "partial")
+            or reason not in (None, "tool_budget", "time_limit", "model_length")
+            or (status == "complete") != (reason is None)
+            or not isinstance(envelope["outputTruncated"], bool)
+            or not isinstance(envelope["answer"], str)
+            or len(body.encode("utf-8")) > 12 * 1024):
+        return None
+    if (details.get("status") != status or details.get("partialReason") != reason
+            or details.get("outputTruncated") is not envelope["outputTruncated"]):
+        return None
+    return envelope
+
+
 def base_command(main_model: str, main_thinking: str) -> list[str]:
     return [
         "--mode", "json",
@@ -177,8 +199,6 @@ def run_pi(
     selection = load_presets()[child_preset]
     completed, observations = observe_run(
         command, cwd=cwd, prompt=prompt, timeout=timeout_seconds,
-        model=selection["model"] if arm == "subagent" else None,
-        thinking=selection["thinking"] if arm == "subagent" else None,
     )
     duration_ms = round((time.monotonic() - started) * 1000)
     if completed.returncode != 0:
@@ -227,10 +247,12 @@ def run_pi(
                 subagent_finished = True
                 if not message.get("isError"):
                     result_text = body
-                    child_details = message.get("details") or {}
+                    child_details = message.get("details") if isinstance(message.get("details"), dict) else {}
 
     observed_checks = runtime_checks(observations, **selection) if arm == "subagent" else {}
-    quality_text = result_text if arm == "subagent" and result_text else final_text
+    envelope = parse_result_envelope(result_text, child_details) if arm == "subagent" else None
+    # Never substitute a parent answer for a missing or malformed delegated result.
+    quality_text = (envelope["answer"] if envelope is not None else "") if arm == "subagent" else final_text
     normalize = lambda value: " ".join(re.sub(r"[^0-9a-z가-힣]+", " ", value.casefold()).split())
     normalized_quality = normalize(quality_text)
     matched = sum(any(normalize(candidate) in normalized_quality for candidate in group) for group in case.expected_groups)
@@ -244,6 +266,7 @@ def run_pi(
         "child_status": child_details.get("status"),
         "child_usage": child_details.get("usage"),
         "runtime_checks": observed_checks,
+        "result_contract_verified": arm == "direct" or envelope is not None,
         "runtime_configuration_verified": arm == "direct" or (
             all(observed_checks.values()) and child_details.get("model") == selection["model"]
             and child_details.get("thinking") == selection["thinking"]
@@ -293,7 +316,9 @@ def evaluate_smoke(output: str, observations: list[dict[str, Any]], *, capabilit
                 answers.append(body)
                 details = message.get("details") if isinstance(message.get("details"), dict) else {}
 
-    answer = answers[0] if len(answers) == 1 else ""
+    result_text = answers[0] if len(answers) == 1 else ""
+    envelope = parse_result_envelope(result_text, details)
+    answer = envelope["answer"] if envelope is not None else ""
     scope = ["fixture.txt"] if capability == "local" else []
     usage = details.get("usage") if isinstance(details.get("usage"), dict) else {}
     reported_tokens = usage.get("totalTokens")
@@ -303,8 +328,9 @@ def evaluate_smoke(output: str, observations: list[dict[str, Any]], *, capabilit
             and calls[0].get("capability") == capability and calls[0].get("scope") == scope,
         "exactly_one_result": len(answers) == 1,
         "no_tool_error": not errors,
+        "valid_result_envelope": envelope is not None,
         "non_empty_answer": bool(answer.strip()),
-        "within_12_kib": bool(answer) and len(answer.encode("utf-8")) <= 12 * 1024,
+        "within_12_kib": bool(result_text) and len(result_text.encode("utf-8")) <= 12 * 1024,
         "no_raw_tool_syntax": bool(answer) and not bool(TOOL_SYNTAX_RE.search(answer)),
         "expected_fact": (capability == "local" and "plain-final-answer" in answer)
             or (capability == "web" and SMOKE_WEB_PURPOSE in answer.casefold() and SMOKE_WEB_QUOTE in answer.casefold()),
@@ -319,14 +345,15 @@ def evaluate_smoke(output: str, observations: list[dict[str, Any]], *, capabilit
         "reported_model": details.get("model") == selection["model"],
         "reported_thinking": details.get("thinking") == selection["thinking"],
         "reported_capability": details.get("capability") == capability,
-        "complete_untruncated_result": details.get("status") == "complete" and details.get("outputTruncated") is False,
+        "complete_untruncated_result": envelope is not None and envelope["status"] == "complete"
+            and envelope["outputTruncated"] is False,
         "reported_usage": isinstance(reported_tokens, (int, float)) and not isinstance(reported_tokens, bool) and reported_tokens > 0,
         **runtime_checks(observations, **selection),
     }
     return {
         "capability": capability, "preset": preset, "expected": selection,
         "status": "pass" if all(checks.values()) else "fail", "checks": checks,
-        "result_bytes": len(answer.encode("utf-8")), "errors": errors,
+        "result_bytes": len(result_text.encode("utf-8")), "errors": errors,
         "parent_other_calls": parent_other_calls, "child_usage": usage,
         "child_duration_ms": details.get("durationMs"),
         # Fixed synthetic/public smoke targets only; retain bounded final text to diagnose failures.
@@ -377,7 +404,7 @@ def run_smoke(args: argparse.Namespace) -> int:
             try:
                 completed, observations = observe_run(
                     command, cwd=cwd, prompt=prompt, timeout=args.timeout_seconds,
-                    **selection, **({"fetch_url": SMOKE_WEB_URL} if args.capability == "web" else {}),
+                    **({"fetch_url": SMOKE_WEB_URL} if args.capability == "web" else {}),
                 )
                 result = evaluate_smoke(completed.stdout, observations, capability=args.capability, preset=preset, selection=selection)
                 result["exit_code"] = completed.returncode
@@ -490,7 +517,7 @@ def main() -> int:
         "cases": [case.name for case in selected],
         "repetitions": args.repetitions,
     }, "summary": summarize(results), "results": results}, ensure_ascii=False, indent=2))
-    return 0 if all(row["runtime_configuration_verified"] for row in results) else 1
+    return 0 if all(row["runtime_configuration_verified"] and row["result_contract_verified"] for row in results) else 1
 
 
 if __name__ == "__main__":
