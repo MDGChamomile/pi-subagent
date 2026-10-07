@@ -84,7 +84,7 @@ The command loads delegation guidance for the parent, which then calls the `pi_s
 4. The parent-side collector discards intermediate child turns and tool results. After the child exits, the parent verifies readiness before accepting the last valid non-tool assistant answer, sanitizing control characters, and limiting its size.
 5. The TUI reports per-call progress and, when settled, the elapsed time and estimated context injected into the parent.
 
-[![Parent Pi delegates a scoped task to a read-only subagent, which investigates local files or the web and returns a bounded result while intermediate reads stay out of the parent context](assets/pi-subagent-architecture.png)](assets/pi-subagent-architecture.png)
+[![Pi Subagent: the parent chooses a task, scope, capability, and preset; an ephemeral read-only subagent investigates either authorized local files or the web and returns at most 12 KiB of runtime-owned status fields and an untrusted answer, while intermediate tool output and child turns stay out of the parent context](assets/pi-subagent-architecture.png)](assets/pi-subagent-architecture.png)
 
 Collection, control-character sanitization, and result assembly run in the parent extension. Complete/partial calls return bounded answer text and separate host-only metadata; failures return bounded error text. Sanitization does not redact source quotations from the final answer. `--no-session` disables persisted Pi sessions, not in-memory context or private runtime files.
 

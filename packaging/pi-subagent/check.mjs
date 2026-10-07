@@ -19,8 +19,8 @@ const futureVersion = "99.12.34";
 const rawRoot = "https://raw.githubusercontent.com/MDGChamomile/pi-subagent";
 assert.equal(
   releaseUrls(maintainedManifest.pi.image, futureVersion),
-  `${rawRoot}/v${futureVersion}/extensions/pi-subagent/assets/pi-subagent-automatic.gif`,
-  "gallery must use the model-invoked demo at the selected version",
+  `${rawRoot}/v${futureVersion}/extensions/pi-subagent/assets/pi-subagent-cover.png`,
+  "gallery must use the cover image at the selected version",
 );
 const futureReadme = renderPackageReadme(sourceReadme, futureVersion);
 const maintainedUrls = renderPackageReadme(sourceReadme, maintainedManifest.version).match(/https:\/\/[^\s)]+\/v\d+\.\d+\.\d+\/[^\s)]+/g) ?? [];
@@ -54,7 +54,7 @@ assert.equal(manifest.name, "@mdgchamomile/pi-subagent");
 assert.equal(manifest.private, undefined);
 assert.deepEqual(manifest.pi.extensions, ["./index.ts"], "load only the root entrypoint");
 assert.deepEqual(manifest.keywords.includes("pi-package"), true);
-assert.equal(manifest.pi.image, `${rawRoot}/v${manifest.version}/extensions/pi-subagent/assets/pi-subagent-automatic.gif`);
+assert.equal(manifest.pi.image, `${rawRoot}/v${manifest.version}/extensions/pi-subagent/assets/pi-subagent-cover.png`);
 
 const topLevelReadme = await readFile(join(stagingDirectory, "README.md"), "utf8");
 assert.equal(topLevelReadme, renderPackageReadme(sourceReadme, manifest.version));
@@ -78,6 +78,8 @@ for (const asset of ["pi-subagent-automatic.gif", "pi-subagent-architecture.png"
     "repository assets must remain available for tagged URLs");
   assert.ok(bundledExtensionReadme.includes(`${rawRoot}/v${manifest.version}/extensions/pi-subagent/assets/${asset}`));
 }
+assert.equal((await stat(join(sourceRoot, "extensions/pi-subagent/assets/pi-subagent-cover.png"))).isFile(), true,
+  "the README cover and gallery image must remain available for tagged URLs");
 
 // Documentation must state the runtime's web minimum, not a separately maintained copy.
 const webMinimum = MIN_WEB_EXTENSION_VERSION.replaceAll(".", "\\.");
@@ -134,12 +136,12 @@ const topLevelLinks = new Map(
 );
 const releaseRoot = `https://github.com/MDGChamomile/pi-subagent/blob/v${manifest.version}`;
 assert.equal(
-  topLevelLinks.get("extension guide"),
+  topLevelLinks.get("Extension guide"),
   `${releaseRoot}/extensions/pi-subagent/README.md`,
   "top-level extension guide must use the version-matched absolute GitHub URL",
 );
 assert.equal(
-  topLevelLinks.get("skill guide"),
+  topLevelLinks.get("Skill guide"),
   `${releaseRoot}/skills/pi-subagent/README.md`,
   "top-level skill guide must use the version-matched absolute GitHub URL",
 );
@@ -206,7 +208,7 @@ try {
   assert.equal(built.status, 0, built.stderr);
   const futureManifest = JSON.parse(await readFile(join(fixturePackage, "dist/package.json"), "utf8"));
   assert.equal(futureManifest.version, futureVersion);
-  assert.equal(futureManifest.pi.image, `${rawRoot}/v${futureVersion}/extensions/pi-subagent/assets/pi-subagent-automatic.gif`);
+  assert.equal(futureManifest.pi.image, `${rawRoot}/v${futureVersion}/extensions/pi-subagent/assets/pi-subagent-cover.png`);
   assert.equal(await readFile(join(fixturePackage, "dist/README.md"), "utf8"), futureReadme);
   assert.equal(await readFile(join(fixturePackage, "dist", extensionReadmePath), "utf8"), futureExtensionReadme);
   assert.equal(await readFile(join(fixtureRoot, "README.md"), "utf8"), sourceReadme);
