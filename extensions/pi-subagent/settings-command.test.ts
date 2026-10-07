@@ -169,6 +169,16 @@ test("provider filtering and back navigation retain a pending model without savi
   assert.equal((await loadPresetSettings())["lookup-standard"].model, "custom/second");
 });
 
+test("picker offers only models whose IDs settings can store", async () => {
+  await directory();
+  const padded = { ...model, id: " padded" };
+  const badProvider = { ...model, provider: "-bad" };
+  const harness = context({ models: [model, padded, badProvider], cancelAt: 3 });
+  await configureSubagentSettings(harness.ctx);
+  assert.deepEqual(harness.choices[1].options, ["custom"]);
+  assert.deepEqual(harness.choices[2].options, ["custom/@cf/example/model"]);
+});
+
 test("RPC and non-terminal modes do not open custom UI or write", async () => {
   for (const mode of ["rpc", "json", "print"]) {
     const dir = await directory();

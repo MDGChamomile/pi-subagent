@@ -5,7 +5,7 @@ import { tmpdir } from "node:os";
 import { dirname, join, resolve } from "node:path";
 import { fileURLToPath } from "node:url";
 import { buildPackage, packageFiles, releaseUrls, renderExtensionReadme, renderPackageReadme, stagingDirectory } from "./build.mjs";
-import { SUBAGENT_PRESETS } from "../../extensions/pi-subagent/shared.ts";
+import { MIN_WEB_EXTENSION_VERSION, SUBAGENT_PRESETS } from "../../extensions/pi-subagent/shared.ts";
 
 // A future version must update every generated release URL without source edits.
 const packageRoot = dirname(fileURLToPath(import.meta.url));
@@ -79,10 +79,12 @@ for (const asset of ["pi-subagent-automatic.gif", "pi-subagent-architecture.png"
   assert.ok(bundledExtensionReadme.includes(`${rawRoot}/v${manifest.version}/extensions/pi-subagent/assets/${asset}`));
 }
 
+// Documentation must state the runtime's web minimum, not a separately maintained copy.
+const webMinimum = MIN_WEB_EXTENSION_VERSION.replaceAll(".", "\\.");
 const sharedRequirementPatterns = [
   ["minimum Pi version", /Pi 1\.0\.0 or later/],
   ["provider authentication requirement", /authentication for the configured child provider/],
-  ["minimum web extension version", /pi-web-access` v0\.33\.0 or later/],
+  ["minimum web extension version", new RegExp(`pi-web-access\` v${webMinimum} or later`)],
   ["npm installation command", /pi install npm:@mdgchamomile\/pi-subagent/],
 ];
 for (const [description, pattern] of sharedRequirementPatterns) {
@@ -91,10 +93,8 @@ for (const [description, pattern] of sharedRequirementPatterns) {
 for (const path of ["extensions/pi-subagent/README.md", "skills/pi-subagent/README.md", "skills/pi-subagent/SKILL.md"]) {
   const guide = await readFile(join(sourceRoot, path), "utf8");
   assert.match(guide, /Pi 1\.0\.0 or later/, `${path} has an outdated Pi minimum`);
-  assert.match(guide, /pi-web-access(?:`)? v0\.33\.0 or later/, `${path} has an outdated web minimum`);
+  assert.match(guide, new RegExp(`pi-web-access(?:\`)? v${webMinimum} or later`), `${path} has an outdated web minimum`);
 }
-const sharedSource = await readFile(join(sourceRoot, "extensions/pi-subagent/shared.ts"), "utf8");
-assert.match(sharedSource, /MIN_WEB_EXTENSION_VERSION = "0\.33\.0"/, "runtime web minimum is out of sync");
 
 const presetRows = (markdown) => {
   const section = markdown.split("\n## Presets\n")[1]?.split(/\n## /)[0] ?? "";
