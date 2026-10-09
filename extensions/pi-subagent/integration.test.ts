@@ -29,7 +29,7 @@ async function withFixture<T>(scenario: string, run: (options: Parameters<typeof
       task: "Inspect the deterministic fixture and return the requested final answer.",
       model: "test/fake",
       thinking: "low",
-      invocationOverride: {
+      launcherOverride: {
         command: process.execPath,
         args: ["--experimental-strip-types", FAKE_CHILD, scenario],
       },
@@ -98,7 +98,7 @@ describe("pi-subagent spawned-child integration", () => {
       const startedAt = performance.now();
       await assert.rejects(() => runChild({
         ...options,
-        invocationOverride: { command: join(options.policy.cwd, "nonexistent-executable"), args: [] },
+        launcherOverride: { command: join(options.policy.cwd, "nonexistent-executable"), args: [] },
         timeoutMs: 30_000,
         killGraceMs,
       }), (error: unknown) => {
@@ -174,6 +174,42 @@ describe("pi-subagent spawned-child integration", () => {
       assert.equal(envelope.answer,
         '[Subagent partial: model_length]\n[Subagent output truncated]\n"},"status":"partial","outputTruncated":true,"answer":"가😀\\');
     }
+  });
+
+  test("the spawned child receives the restrictive Pi arguments once and no session or provider overrides", async () => {
+    const inherited = [
+      "PI_SESSION_ID", "PI_SESSION_FILE", "PI_PROVIDER", "PI_MODEL", "PI_REASONING_LEVEL",
+      "PI_ALLOW_BROWSER_COOKIES", "FEYNMAN_ALLOW_BROWSER_COOKIES",
+    ];
+    const previous = inherited.map((name) => process.env[name]);
+    let received: { piArgs: string[]; inheritedEnv: string[] };
+    try {
+      for (const name of inherited) process.env[name] = "synthetic-parent-value";
+      const result = await withFixture("argv-report", (options) => runChild(options));
+      received = JSON.parse(JSON.parse(result.output).answer);
+    } finally {
+      inherited.forEach((name, index) => {
+        if (previous[index] === undefined) delete process.env[name];
+        else process.env[name] = previous[index];
+      });
+    }
+    const { piArgs, inheritedEnv } = received;
+    const count = (flag: string) => piArgs.filter((arg) => arg === flag).length;
+    const value = (flag: string) => piArgs[piArgs.indexOf(flag) + 1];
+    for (const flag of [
+      "--mode", "--print", "--no-session", "--model", "--thinking", "--tools", "--no-extensions", "--extension",
+      "--no-skills", "--no-prompt-templates", "--no-themes", "--no-context-files", "--no-approve", "--system-prompt",
+    ]) {
+      assert.equal(count(flag), 1, `${flag} must be passed exactly once`);
+    }
+    assert.equal(value("--mode"), "json");
+    assert.equal(value("--model"), "test/fake");
+    assert.equal(value("--thinking"), "low");
+    assert.equal(value("--tools"), "read,grep,find,ls");
+    assert.match(value("--extension"), /[\\/]child-guard\.ts$/);
+    assert.ok(piArgs.indexOf("--no-extensions") < piArgs.indexOf("--extension"), "only the guard loads after --no-extensions");
+    assert.ok(value("--system-prompt").length > 0);
+    assert.deepEqual(inheritedEnv, []);
   });
 
   test("local grep ignores inherited rg config without changing the parent environment", {
@@ -503,10 +539,11 @@ describe("pi-subagent spawned-child integration", () => {
     await assert.rejects(
       () => withFixture("success", (options) => runChild({
         ...options,
-        invocationOverride: {
+        launcherOverride: {
           command: process.execPath,
           // No newline: the protocol error is discovered by finish() after close.
-          args: ["-e", 'process.stdout.write(\'{"type":"message_end",broken}\');'],
+          // "--" passes the appended Pi arguments to the script, not to Node.
+          args: ["-e", 'process.stdout.write(\'{"type":"message_end",broken}\');', "--"],
         },
       })),
       /"phase":"protocol"/,

@@ -475,15 +475,79 @@ function childFailure(
   return new ChildRunError(boundedParentError(error, diagnostics), snapshot.usage);
 }
 
-function getPiInvocation(args: string[]): { command: string; args: string[] } {
+/** Executable and script prefix that launches Pi; Pi CLI arguments are appended separately. */
+export type ChildLauncher = { command: string; args: string[] };
+
+function getPiLauncher(): ChildLauncher {
   const currentScript = process.argv[1];
   const isBunVirtualScript = currentScript?.startsWith("/$bunfs/root/");
   if (currentScript && !isBunVirtualScript && existsSync(currentScript)) {
-    return { command: process.execPath, args: [currentScript, ...args] };
+    return { command: process.execPath, args: [currentScript] };
   }
   const execName = basename(process.execPath).toLowerCase();
-  if (!/^(node|bun)(\.exe)?$/.test(execName)) return { command: process.execPath, args };
-  return { command: "pi", args };
+  if (!/^(node|bun)(\.exe)?$/.test(execName)) return { command: process.execPath, args: [] };
+  return { command: "pi", args: [] };
+}
+
+/** Child Pi command line and environment; spawning and lifecycle remain in runChild. */
+export function buildChildInvocation(
+  options: {
+    policy: ChildPolicy;
+    policyFile: string;
+    readyFile: string;
+    budgetTelemetryFile: string;
+    webExtensionPath?: string;
+    model: string;
+    thinking: Thinking;
+    softDeadline: number;
+  },
+  launcher: ChildLauncher = getPiLauncher(),
+  parentEnv: NodeJS.ProcessEnv = process.env,
+): { command: string; args: string[]; env: NodeJS.ProcessEnv } {
+  const childTools = toolsForCapability(options.policy.capability);
+  const args = [
+    "--mode", "json",
+    "--print",
+    "--no-session",
+    "--model", options.model,
+    "--thinking", options.thinking,
+    "--tools", childTools.join(","),
+    "--no-extensions",
+    ...(options.webExtensionPath ? ["--extension", options.webExtensionPath] : []),
+    "--extension", CHILD_GUARD_PATH,
+    "--no-skills",
+    "--no-prompt-templates",
+    "--no-themes",
+    "--no-context-files",
+    "--no-approve",
+    "--system-prompt", childSystemPrompt(options.policy),
+  ];
+  const env: NodeJS.ProcessEnv = {
+    ...parentEnv,
+    PI_OFFLINE: "1",
+    [MODEL_SELECTION_ENV]: JSON.stringify({ model: options.model, thinking: options.thinking }),
+    [PARENT_LIVENESS_ENV]: String(PARENT_LIVENESS_FD),
+    [POLICY_ENV]: options.policyFile,
+    [READY_ENV]: options.readyFile,
+    [BUDGET_TELEMETRY_ENV]: options.budgetTelemetryFile,
+    [SOFT_DEADLINE_ENV]: String(options.softDeadline),
+  };
+  // Pi's native grep inherits rg's config; --follow there can escape scoped roots.
+  if (options.policy.capability === "local") delete env.RIPGREP_CONFIG_PATH;
+  if (options.webExtensionPath) env[WEB_EXTENSION_ENV] = options.webExtensionPath;
+  else delete env[WEB_EXTENSION_ENV];
+  for (const name of [
+    "PI_SESSION_ID",
+    "PI_SESSION_FILE",
+    "PI_PROVIDER",
+    "PI_MODEL",
+    "PI_REASONING_LEVEL",
+    "PI_ALLOW_BROWSER_COOKIES",
+    "FEYNMAN_ALLOW_BROWSER_COOKIES",
+  ]) {
+    delete env[name];
+  }
+  return { command: launcher.command, args: [...launcher.args, ...args], env };
 }
 
 export async function assertChildReady(readyFile: string): Promise<void> {
@@ -541,69 +605,38 @@ export async function runChild(options: {
     content: Array<{ type: "text"; text: string }>;
     details: { running: true; model: string; thinking: Thinking };
   }) => void;
-  /** Deterministic subprocess integration tests only; never exposed through the parent tool schema. */
-  invocationOverride?: { command: string; args: string[] };
+  /**
+   * Deterministic subprocess integration tests only; never exposed through the parent tool schema.
+   * Replaces the Pi launcher prefix; the built Pi arguments are still appended once.
+   */
+  launcherOverride?: ChildLauncher;
   timeoutMs?: number;
   killGraceMs?: number;
 }): Promise<ChildResult> {
   if (options.signal?.aborted) {
     throw new Error(boundedParentError("Subagent invocation was cancelled before start", { phase: "cancelled" }));
   }
-  const childTools = toolsForCapability(options.policy.capability);
-  const args = [
-    "--mode", "json",
-    "--print",
-    "--no-session",
-    "--model", options.model,
-    "--thinking", options.thinking,
-    "--tools", childTools.join(","),
-    "--no-extensions",
-    ...(options.webExtensionPath ? ["--extension", options.webExtensionPath] : []),
-    "--extension", CHILD_GUARD_PATH,
-    "--no-skills",
-    "--no-prompt-templates",
-    "--no-themes",
-    "--no-context-files",
-    "--no-approve",
-    "--system-prompt", childSystemPrompt(options.policy),
-  ];
-  const invocation = options.invocationOverride ?? getPiInvocation(args);
   const effectiveTimeoutMs = options.timeoutMs ?? CHILD_TIMEOUT_MS;
   const finalizationGraceMs = Math.min(CHILD_FINALIZATION_GRACE_MS, Math.floor(effectiveTimeoutMs / 2));
   const startedAt = Date.now();
   const hardDeadline = startedAt + effectiveTimeoutMs;
   const softDeadline = hardDeadline - finalizationGraceMs;
-  const env: NodeJS.ProcessEnv = {
-    ...process.env,
-    PI_OFFLINE: "1",
-    [MODEL_SELECTION_ENV]: JSON.stringify({ model: options.model, thinking: options.thinking }),
-    [PARENT_LIVENESS_ENV]: String(PARENT_LIVENESS_FD),
-    [POLICY_ENV]: options.policyFile,
-    [READY_ENV]: options.readyFile,
-    [BUDGET_TELEMETRY_ENV]: options.budgetTelemetryFile,
-    [SOFT_DEADLINE_ENV]: String(softDeadline),
-  };
-  // Pi's native grep inherits rg's config; --follow there can escape scoped roots.
-  if (options.policy.capability === "local") delete env.RIPGREP_CONFIG_PATH;
-  if (options.webExtensionPath) env[WEB_EXTENSION_ENV] = options.webExtensionPath;
-  else delete env[WEB_EXTENSION_ENV];
-  for (const name of [
-    "PI_SESSION_ID",
-    "PI_SESSION_FILE",
-    "PI_PROVIDER",
-    "PI_MODEL",
-    "PI_REASONING_LEVEL",
-    "PI_ALLOW_BROWSER_COOKIES",
-    "FEYNMAN_ALLOW_BROWSER_COOKIES",
-  ]) {
-    delete env[name];
-  }
+  const invocation = buildChildInvocation({
+    policy: options.policy,
+    policyFile: options.policyFile,
+    readyFile: options.readyFile,
+    budgetTelemetryFile: options.budgetTelemetryFile,
+    webExtensionPath: options.webExtensionPath,
+    model: options.model,
+    thinking: options.thinking,
+    softDeadline,
+  }, options.launcherOverride);
 
   let child: ReturnType<typeof spawn>;
   try {
     child = spawn(invocation.command, invocation.args, {
       cwd: options.policy.cwd,
-      env,
+      env: invocation.env,
       detached: process.platform !== "win32",
       shell: false,
       stdio: ["pipe", "pipe", "pipe", "pipe"],

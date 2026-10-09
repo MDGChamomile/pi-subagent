@@ -143,6 +143,15 @@ if (scenario.startsWith("observations-")) {
     emit({ role: "assistant", content: [{ type: "text", text: "Synthetic investigation progress." }], usage, stopReason: "toolUse" });
   }
   setInterval(() => {}, 1_000);
+} else if (scenario === "argv-report") {
+  const received = {
+    piArgs: process.argv.slice(3),
+    inheritedEnv: [
+      "PI_SESSION_ID", "PI_SESSION_FILE", "PI_PROVIDER", "PI_MODEL", "PI_REASONING_LEVEL",
+      "PI_ALLOW_BROWSER_COOKIES", "FEYNMAN_ALLOW_BROWSER_COOKIES",
+    ].filter((name) => name in process.env),
+  };
+  emit({ role: "assistant", content: [{ type: "text", text: JSON.stringify(received) }], usage, stopReason: "stop" });
 } else if (scenario === "empty-output") {
   emit({
     role: "assistant",
