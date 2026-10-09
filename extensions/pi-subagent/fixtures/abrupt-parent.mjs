@@ -23,7 +23,7 @@ void runChild({
   task: "Wait for the deterministic parent-death fixture.",
   model: "test/fake",
   thinking: "low",
-  invocationOverride: {
+  launcherOverride: {
     command: process.execPath,
     args: ["--experimental-strip-types", FAKE_CHILD, "parent-death", pidFile],
   },

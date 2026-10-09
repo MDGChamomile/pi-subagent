@@ -3,8 +3,10 @@ import { mkdtemp, rm, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { describe, test } from "node:test";
+import { fileURLToPath } from "node:url";
 import {
   assertChildReady,
+  buildChildInvocation,
   ChildJsonCollector,
   emptyUsage,
   estimateContextTokens,
@@ -13,7 +15,7 @@ import {
   formatResultSummary,
   readBudgetTelemetry,
 } from "./subprocess.ts";
-import { boundedParentError, MAX_JSON_LINE_BYTES, MAX_OBSERVATION_COUNT, MAX_PARENT_ERROR_BYTES, READY_MARKER, sanitizeDisplayText } from "./shared.ts";
+import { boundedParentError, MAX_JSON_LINE_BYTES, MAX_OBSERVATION_COUNT, MAX_PARENT_ERROR_BYTES, READY_MARKER, sanitizeDisplayText, type ChildPolicy } from "./shared.ts";
 
 function assistantEvent(text: string, overrides: Record<string, unknown> = {}): string {
   return JSON.stringify({
@@ -503,5 +505,104 @@ describe("child completion boundary", () => {
 
   test("sanitizes terminal control and bidi characters while preserving layout", () => {
     assert.equal(sanitizeDisplayText("safe\n\t\u001b[31m\u202eevil"), "safe\n\t?[31m?evil");
+  });
+});
+
+describe("child invocation", () => {
+  const GUARD = fileURLToPath(new URL("./child-guard.ts", import.meta.url));
+  const launcher = { command: "/synthetic/node", args: ["/synthetic/pi.js"] };
+  const policy = (capability: "local" | "web"): ChildPolicy => ({
+    version: 1, cwd: "/synthetic/project", capability,
+    roots: capability === "local" ? [{ path: "/synthetic/project", kind: "directory" }] : [],
+  });
+  const build = (capability: "local" | "web", parentEnv: NodeJS.ProcessEnv) => buildChildInvocation({
+    policy: policy(capability),
+    policyFile: "/synthetic/run/policy.json",
+    readyFile: "/synthetic/run/guard.ready",
+    budgetTelemetryFile: "/synthetic/run/budget-telemetry.json",
+    webExtensionPath: capability === "web" ? "/synthetic/pi-web-access/index.ts" : undefined,
+    model: "provider/model",
+    thinking: "high",
+    softDeadline: 1_234,
+  }, launcher, parentEnv);
+  const inheritedOverrides = {
+    PI_SESSION_ID: "parent-session",
+    PI_SESSION_FILE: "/parent/session.jsonl",
+    PI_PROVIDER: "parent-provider",
+    PI_MODEL: "parent-model",
+    PI_REASONING_LEVEL: "low",
+    PI_ALLOW_BROWSER_COOKIES: "1",
+    FEYNMAN_ALLOW_BROWSER_COOKIES: "1",
+  };
+
+  test("keeps the launcher prefix separate and appends the restrictive Pi arguments once", () => {
+    for (const capability of ["local", "web"] as const) {
+      const { command, args } = build(capability, {});
+      assert.equal(command, "/synthetic/node");
+      assert.equal(args[0], "/synthetic/pi.js");
+      const piArgs = args.slice(1);
+      assert.equal(piArgs.includes("/synthetic/pi.js"), false);
+      for (const flag of [
+        "--print", "--no-session", "--no-extensions", "--no-skills", "--no-prompt-templates",
+        "--no-themes", "--no-context-files", "--no-approve",
+      ]) {
+        assert.equal(piArgs.filter((arg) => arg === flag).length, 1, `${capability}: ${flag}`);
+      }
+      const value = (flag: string) => piArgs[piArgs.indexOf(flag) + 1];
+      assert.equal(value("--mode"), "json");
+      assert.equal(value("--model"), "provider/model");
+      assert.equal(value("--thinking"), "high");
+      assert.ok(value("--system-prompt").length > 0);
+    }
+  });
+
+  test("selects capability tools and loads only the web extension and guard after --no-extensions", () => {
+    const local = build("local", {}).args;
+    assert.equal(local[local.indexOf("--tools") + 1], "read,grep,find,ls");
+    const localExtensions = local.flatMap((arg, index) => arg === "--extension" ? [local[index + 1]] : []);
+    assert.deepEqual(localExtensions, [GUARD]);
+    assert.ok(local.indexOf("--no-extensions") < local.indexOf("--extension"));
+
+    const web = build("web", {}).args;
+    assert.equal(web[web.indexOf("--tools") + 1], "web_search,source_check,fetch_content,get_search_content");
+    const webExtensions = web.flatMap((arg, index) => arg === "--extension" ? [web[index + 1]] : []);
+    assert.deepEqual(webExtensions, ["/synthetic/pi-web-access/index.ts", GUARD]);
+    assert.ok(web.indexOf("--no-extensions") < web.indexOf("--extension"));
+  });
+
+  test("removes inherited session, provider, and cookie overrides without changing the parent environment", () => {
+    for (const capability of ["local", "web"] as const) {
+      const parentEnv: NodeJS.ProcessEnv = {
+        ...inheritedOverrides,
+        PATH: "/synthetic/bin",
+        PI_OFFLINE: "0",
+        RIPGREP_CONFIG_PATH: "/synthetic/rg.conf",
+        PI_SUBAGENT_WEB_EXTENSION_PATH: "/stale/web.ts",
+      };
+      const before = { ...parentEnv };
+      const { env } = build(capability, parentEnv);
+      assert.deepEqual(parentEnv, before, "the parent environment object must not be mutated");
+      for (const name of Object.keys(inheritedOverrides)) assert.equal(name in env, false, `${capability}: ${name}`);
+      assert.equal(env.PATH, "/synthetic/bin");
+      assert.equal(env.PI_OFFLINE, "1");
+      assert.equal(env.PI_SUBAGENT_POLICY_FILE, "/synthetic/run/policy.json");
+      assert.equal(env.PI_SUBAGENT_READY_FILE, "/synthetic/run/guard.ready");
+      assert.equal(env.PI_SUBAGENT_BUDGET_TELEMETRY_FILE, "/synthetic/run/budget-telemetry.json");
+      assert.equal(env.PI_SUBAGENT_SOFT_DEADLINE_EPOCH_MS, "1234");
+      assert.equal(env.PI_SUBAGENT_PARENT_LIVENESS_FD, "3");
+      assert.deepEqual(JSON.parse(env.PI_SUBAGENT_MODEL_SELECTION!), { model: "provider/model", thinking: "high" });
+      // rg config is removed only for local children; web children keep the parent value.
+      assert.equal(env.RIPGREP_CONFIG_PATH, capability === "local" ? undefined : "/synthetic/rg.conf");
+      assert.equal(env.PI_SUBAGENT_WEB_EXTENSION_PATH, capability === "web" ? "/synthetic/pi-web-access/index.ts" : undefined);
+    }
+  });
+
+  test("defaults to the current process environment without mutating it", () => {
+    const before = { ...process.env };
+    buildChildInvocation({
+      policy: policy("local"), policyFile: "p", readyFile: "r", budgetTelemetryFile: "b",
+      model: "provider/model", thinking: "off", softDeadline: 1,
+    });
+    assert.deepEqual({ ...process.env }, before);
   });
 });
