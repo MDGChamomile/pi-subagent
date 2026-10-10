@@ -39,7 +39,7 @@ try {
   const settingsPath = local ? join(cwd, ".pi/settings.json") : join(agentDir, "settings.json");
   const packages = JSON.parse(readFileSync(settingsPath, "utf8")).packages;
   assert.equal(packages.length, 1);
-  assert.match(run("list", "--approve"), /pi-subagent/);
+  assert.ok(run("list", "--approve").includes(checkout), "installed checkout must be listed");
   if (local) {
     const untrusted = await discover(false);
     assert.equal(untrusted.getExtensions().extensions.length, 0);
@@ -57,7 +57,7 @@ try {
   assert.equal(existsSync(join(root, ".pi/agent/settings.json")), false);
   run("remove", ...(local ? ["-l", "--approve"] : []), checkout);
   assert.equal((JSON.parse(readFileSync(settingsPath, "utf8")).packages ?? []).length, 0);
-  assert.doesNotMatch(run("list", "--approve"), /pi-subagent/);
+  assert.ok(!run("list", "--approve").includes(checkout), "removed checkout must not be listed");
   const removed = await discover(local);
   assert.equal(removed.getExtensions().extensions.length, 0);
   assert.equal(removed.getSkills().skills.length, 0);
