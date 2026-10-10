@@ -45,9 +45,11 @@ The child cannot write files, run Bash or tests, persist a session, or recursive
 
 Requirements:
 
-- Linux, including Ubuntu on WSL; native Windows is not officially supported or tested;
+- Linux, including Ubuntu on WSL, or macOS 15 on Apple Silicon (arm64); native Windows is not officially supported or tested;
 - Pi 1.0.0 or later;
 - authentication for the configured child provider and access to its model (`openai-codex` by default; see [Presets](#presets)).
+
+macOS validation targets the Node.js Pi installation on macOS 15/arm64. Other macOS versions and Intel Macs are not covered by CI; no live provider compatibility is implied.
 
 Capability-specific requirements:
 

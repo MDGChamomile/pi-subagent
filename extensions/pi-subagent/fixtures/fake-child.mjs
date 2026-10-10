@@ -133,11 +133,15 @@ if (scenario.startsWith("observations-")) {
   ], { stdio: ["ignore", "ignore", "ignore", "ipc"] });
   await once(descendant, "message");
   descendant.disconnect();
-  writeFileSync(join(process.cwd(), "pids.json"), JSON.stringify({ childPid: process.pid, descendantPid: descendant.pid }));
   process.on("SIGTERM", () => {
     writeFileSync(join(process.cwd(), "leader-stopped"), String(Date.now()));
     process.exit(0);
   });
+  // Publish readiness only after both processes can handle cancellation.
+  writeFileSync(join(process.cwd(), "pids.json"), JSON.stringify({
+    childPid: process.pid, descendantPid: descendant.pid,
+    leaderReady: process.listenerCount("SIGTERM") > 0,
+  }));
   if (scenario === "orphan-protocol") process.stdout.write("malformed JSON\n");
   if (scenario === "orphan-progress-output") {
     emit({ role: "assistant", content: [{ type: "text", text: "Synthetic investigation progress." }], usage, stopReason: "toolUse" });

@@ -1,5 +1,5 @@
 import assert from "node:assert/strict";
-import { mkdtemp, readFile, rm, writeFile } from "node:fs/promises";
+import { mkdtemp, readFile, realpath, rm, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { test } from "node:test";
@@ -21,7 +21,7 @@ const model: Model<"openai-completions"> = {
 // Exercise Pi's real post-agent retry/continuation handling, not a copied event loop.
 for (const scenario of ["retry", "length"] as const) {
   test(`real Pi session preserves guard lifecycle across ${scenario}`, { timeout: 15_000 }, async () => {
-    const root = await mkdtemp(join(tmpdir(), "pi-subagent-retry-"));
+    const root = await realpath(await mkdtemp(join(tmpdir(), "pi-subagent-retry-")));
     const env = {
       [POLICY_ENV]: join(root, "policy.json"),
       [READY_ENV]: join(root, "guard.ready"),

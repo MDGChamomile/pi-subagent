@@ -594,7 +594,7 @@ describe("pi-subagent spawned-child integration", () => {
       await withFixture(`orphan-${reason}`, async (options) => {
         const controller = new AbortController();
         const killGraceMs = 150;
-        let pids: { childPid: number; descendantPid: number } | undefined;
+        let pids: { childPid: number; descendantPid: number; leaderReady: boolean } | undefined;
         let updates = 0;
         const running = runChild({
           ...options,
@@ -617,6 +617,7 @@ describe("pi-subagent spawned-child integration", () => {
             }
           }
           assert.ok(pids, "descendant must install its SIGTERM handler before stopping");
+          assert.equal(pids.leaderReady, true, "leader must install its SIGTERM handler before publishing readiness");
           if (reason === "abort") controller.abort();
           const error = await running;
           assert.ok(error instanceof ChildRunError);

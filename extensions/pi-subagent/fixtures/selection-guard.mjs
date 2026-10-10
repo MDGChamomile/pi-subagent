@@ -1,5 +1,5 @@
 // Isolated process: exercise Pi's actual hook exception handling without a provider request.
-import { mkdtempSync, readFileSync, rmSync, writeFileSync } from "node:fs";
+import { mkdtempSync, readFileSync, realpathSync, rmSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import childGuard from "../child-guard.ts";
@@ -11,7 +11,7 @@ import {
 // The spawning test preloads the SDK mapper.
 const { ExtensionRunner } = await import("@earendil-works/pi-coding-agent");
 const scenario = process.argv[2];
-const root = mkdtempSync(join(tmpdir(), "pi-subagent-request-guard-"));
+const root = realpathSync(mkdtempSync(join(tmpdir(), "pi-subagent-request-guard-")));
 let requests = 0;
 let activeTools = [];
 process.on("exit", () => {

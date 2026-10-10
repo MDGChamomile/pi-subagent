@@ -1,6 +1,6 @@
 import assert from "node:assert/strict";
 import { spawnSync } from "node:child_process";
-import { cp, mkdir, mkdtemp, readFile, rm, stat, writeFile } from "node:fs/promises";
+import { cp, mkdir, mkdtemp, readFile, realpath, rm, stat, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { dirname, join, resolve } from "node:path";
 import { fileURLToPath } from "node:url";
@@ -196,7 +196,7 @@ for (const [markdownPath, root] of [
   }
 }
 
-const temporaryConfig = await mkdtemp(join(tmpdir(), "pi-subagent-package-check-"));
+const temporaryConfig = await realpath(await mkdtemp(join(tmpdir(), "pi-subagent-package-check-")));
 try {
   // Exercise a version-only change through the real builder in a disposable tree.
   const fixtureRoot = join(temporaryConfig, "version-only");
