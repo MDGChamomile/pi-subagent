@@ -8,7 +8,6 @@ import { fileURLToPath } from "node:url";
 import type { Usage as PiUsage } from "@earendil-works/pi-ai";
 import { isProcessGroupGone, killProcessGroup, PARENT_LIVENESS_ENV, PARENT_LIVENESS_FD } from "./parent-liveness.ts";
 import {
-  boundedParentError,
   BUDGET_TELEMETRY_ENV,
   CHILD_GUARD_EXIT_CODES,
   buildChildPrompt,
@@ -30,7 +29,6 @@ import {
   MODEL_SELECTION_ENV,
   READY_ENV,
   READY_MARKER,
-  formatChildOutput,
   SOFT_DEADLINE_ENV,
   toolsForCapability,
   WEB_EXTENSION_ENV,
@@ -43,6 +41,8 @@ import {
   type SubagentFailurePhase,
   type Thinking,
 } from "./shared.ts";
+import { formatChildOutput } from "./envelope.ts";
+import { boundedParentError } from "./diagnostics.ts";
 
 const CHILD_GUARD_PATH = fileURLToPath(new URL("./child-guard.ts", import.meta.url));
 function childSystemPrompt(policy: ChildPolicy): string {

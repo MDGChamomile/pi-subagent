@@ -7,28 +7,26 @@ import { fileURLToPath } from "node:url";
 import {
   ALLOWED_WEB_TOOLS,
   authorizeReadPath,
-  boundedParentError,
   buildChildPolicy,
   buildChildPrompt,
   CHILD_FINALIZATION_GRACE_MS,
   CHILD_GUARD_EXIT_CODES,
   CHILD_TIMEOUT_MS,
-  formatChildOutput,
   MAX_FINAL_BYTES,
-  invocationLimitBlock,
   LIFETIME_TOOL_CALL_LIMITS,
   LIFETIME_WEB_FETCH_TARGET_LIMIT,
   LIFETIME_WEB_QUERY_LIMIT,
   makeCanonicalTempDirectory,
   MAX_PARENT_ERROR_BYTES,
-  MAX_SUBAGENT_CALLS,
   MIN_WEB_EXTENSION_VERSION,
-  ModelInvocationGate,
   normalizeInputPath,
   PRESET_NAMES,
   resolveWebExtensionPath,
   SUBAGENT_PRESETS,
 } from "./shared.ts";
+import { invocationLimitBlock, MAX_SUBAGENT_CALLS, ModelInvocationGate } from "./invocation-gate.ts";
+import { formatChildOutput } from "./envelope.ts";
+import { boundedParentError } from "./diagnostics.ts";
 
 describe("pi-subagent scope policy", () => {
   test("canonicalizes, deduplicates, and authorizes explicit roots", async () => {

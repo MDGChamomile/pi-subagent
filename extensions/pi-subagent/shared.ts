@@ -29,7 +29,6 @@ export const LIFETIME_WEB_FETCH_TARGET_SOFT_LIMIT = 38;
 export const LIFETIME_WEB_FETCH_TARGET_LIMIT = 50;
 export const MIN_WEB_EXTENSION_VERSION = "0.33.0";
 export const MAX_SCOPE_ROOTS = 8;
-export const MAX_SUBAGENT_CALLS = 3;
 export const MAX_FINAL_BYTES = 12 * 1024;
 export const MAX_PARENT_ERROR_BYTES = 4 * 1024;
 // Pi's native read can emit 4.5 MiB of base64 image data in one toolResult.
@@ -51,13 +50,6 @@ export const CHILD_GUARD_EXIT_CODES = {
 export const BUDGET_TELEMETRY_ENV = "PI_SUBAGENT_BUDGET_TELEMETRY_FILE";
 export const WEB_EXTENSION_ENV = "PI_SUBAGENT_WEB_EXTENSION_PATH";
 export const SOFT_DEADLINE_ENV = "PI_SUBAGENT_SOFT_DEADLINE_EPOCH_MS";
-
-export function invocationLimitBlock(): { block: true; reason: string } {
-  return {
-    block: true,
-    reason: `pi_subagent allows at most ${MAX_SUBAGENT_CALLS} started calls per parent agent run, plus one corrected retry after preflight validation failure. Do not retry; continue with successful sibling results or investigate in the parent`,
-  };
-}
 
 export const MODEL_SELECTION_ENV = "PI_SUBAGENT_MODEL_SELECTION";
 export const THINKING_LEVELS = ["off", "minimal", "low", "medium", "high", "xhigh", "max"] as const;
@@ -333,164 +325,6 @@ export async function resolveWebExtensionPath(tools: readonly ToolSourceDescript
   throw new Error(`Web tools must come from the installed pi-web-access >=${MIN_WEB_EXTENSION_VERSION} (stable releases only) package entry point`);
 }
 
-export class ModelInvocationGate {
-  private runOpen = false;
-  private startedCalls = 0;
-  private preflightFailures = 0;
-  private preflightReplacementPending = false;
-  private replacementToolCallId: string | undefined;
-  private readonly authorizedToolCallIds = new Map<string, "authorized" | "preflight">();
-
-  startRun(): void {
-    if (this.runOpen) return;
-    this.runOpen = true;
-  }
-
-  endRun(): void {
-    this.runOpen = false;
-    this.startedCalls = 0;
-    this.preflightFailures = 0;
-    this.preflightReplacementPending = false;
-    this.replacementToolCallId = undefined;
-    this.authorizedToolCallIds.clear();
-  }
-
-  authorize(toolCallId: string): boolean {
-    if (
-      !this.runOpen
-      || this.preflightFailures > 1
-      || (this.preflightReplacementPending && this.replacementToolCallId !== undefined)
-      || this.authorizedToolCallIds.has(toolCallId)
-      || this.startedCalls + this.authorizedToolCallIds.size >= MAX_SUBAGENT_CALLS
-    ) return false;
-    this.authorizedToolCallIds.set(toolCallId, "authorized");
-    if (this.preflightReplacementPending) this.replacementToolCallId = toolCallId;
-    return true;
-  }
-
-  // Claim execution once, while retaining the reservation until preflight settles.
-  beginPreflight(toolCallId: string): boolean {
-    if (this.authorizedToolCallIds.get(toolCallId) !== "authorized") return false;
-    this.authorizedToolCallIds.set(toolCallId, "preflight");
-    return true;
-  }
-
-  commit(toolCallId: string): boolean {
-    if (this.authorizedToolCallIds.get(toolCallId) !== "preflight") return false;
-    this.authorizedToolCallIds.delete(toolCallId);
-    this.startedCalls += 1;
-    if (this.replacementToolCallId === toolCallId) {
-      this.preflightReplacementPending = false;
-      this.replacementToolCallId = undefined;
-    }
-    return true;
-  }
-
-  rejectPreflight(toolCallId: string): boolean {
-    if (this.authorizedToolCallIds.get(toolCallId) !== "preflight") return false;
-    this.authorizedToolCallIds.delete(toolCallId);
-    this.preflightFailures += 1;
-    if (this.preflightFailures === 1) this.preflightReplacementPending = true;
-    if (this.replacementToolCallId === toolCallId) this.replacementToolCallId = undefined;
-    return true;
-  }
-
-  releaseUnstarted(toolCallId: string): boolean {
-    if (!this.authorizedToolCallIds.delete(toolCallId)) return false;
-    if (this.replacementToolCallId === toolCallId) this.replacementToolCallId = undefined;
-    return true;
-  }
-}
-
 export function sanitizeDisplayText(text: string): string {
   return text.replace(/[\u0000-\u0008\u000b-\u001f\u007f-\u009f\u202a-\u202e\u2066-\u2069]/g, "?");
-}
-
-function truncateUtf8WithMarker(
-  text: string,
-  maxBytes: number,
-  markerText: string,
-): { text: string; truncated: boolean } {
-  const source = Buffer.from(text, "utf8");
-  if (source.length <= maxBytes) return { text, truncated: false };
-  const marker = Buffer.from(markerText, "utf8");
-  const budget = Math.max(0, maxBytes - marker.length);
-  let end = budget;
-  while (end > 0 && (source[end]! & 0xc0) === 0x80) end--;
-  return { text: Buffer.concat([source.subarray(0, end), marker]).toString("utf8"), truncated: true };
-}
-
-/** Runtime-owned fields stay outside the JSON-escaped, untrusted child answer. */
-export function formatChildOutput(answer: string, partialReason?: PartialReason): { text: string; truncated: boolean } {
-  const clean = sanitizeDisplayText(answer);
-  const serialize = (body: string, outputTruncated: boolean) => JSON.stringify({
-    status: partialReason ? "partial" : "complete",
-    partialReason: partialReason ?? null,
-    outputTruncated,
-    answer: body,
-  });
-  const full = serialize(clean, false);
-  if (Buffer.byteLength(full, "utf8") <= MAX_FINAL_BYTES) return { text: full, truncated: false };
-
-  // Cap the serialized envelope, not just its body: JSON escaping also costs bytes.
-  const source = Buffer.from(clean, "utf8");
-  const prefix = (bytes: number) => {
-    let end = bytes;
-    while (end > 0 && (source[end]! & 0xc0) === 0x80) end--;
-    return source.subarray(0, end).toString("utf8");
-  };
-  let low = 0;
-  let high = Math.min(source.length, MAX_FINAL_BYTES);
-  while (low < high) {
-    const mid = Math.ceil((low + high) / 2);
-    if (Buffer.byteLength(serialize(prefix(mid), true), "utf8") <= MAX_FINAL_BYTES) low = mid;
-    else high = mid - 1;
-  }
-  return { text: serialize(prefix(low), true), truncated: true };
-}
-
-function safeDiagnosticText(value: string): string {
-  return sanitizeDisplayText(value).replace(/\s+/g, " ").slice(0, 80);
-}
-
-function safeObservations(value: ChildFailureObservations): ChildFailureObservations {
-  const bounded = (n: number, max = MAX_OBSERVATION_COUNT) =>
-    Number.isFinite(n) ? Math.min(max, Math.max(0, Math.trunc(n))) : 0;
-  return {
-    counts: Object.fromEntries(OBSERVED_CHILD_EVENTS.map((key) => [key, bounded(value.counts[key])])) as Record<ObservedChildEvent, number>,
-    receipts: Object.fromEntries(OBSERVED_CHILD_EVENTS.map((key) => [key, bounded(value.receipts[key])])) as Record<ObservedChildEvent, number>,
-    ...(OBSERVED_CHILD_EVENTS.includes(value.lastEvent!) ? { lastEvent: value.lastEvent } : {}),
-    ...(Number.isFinite(value.lastEventAgeMs) ? { lastEventAgeMs: bounded(value.lastEventAgeMs!, 2_147_483_647) } : {}),
-    lastEventValidated: value.lastEventValidated === true,
-    toolBalance: value.incomplete || value.toolBalance === null ? null : bounded(value.toolBalance),
-    incomplete: value.incomplete === true,
-  };
-}
-
-function failureDiagnosticSuffix(diagnostics: SubagentFailureDiagnostics): string {
-  const safe = {
-    phase: diagnostics.phase,
-    ...(Number.isInteger(diagnostics.exitCode) ? { exitCode: diagnostics.exitCode } : {}),
-    ...(diagnostics.exitSignal ? { exitSignal: safeDiagnosticText(diagnostics.exitSignal) } : {}),
-    ...(typeof diagnostics.guardReady === "boolean" ? { guardReady: diagnostics.guardReady } : {}),
-    ...(diagnostics.stopReason ? { stopReason: safeDiagnosticText(diagnostics.stopReason) } : {}),
-    ...(Number.isFinite(diagnostics.durationMs) ? { durationMs: Math.max(0, Math.round(diagnostics.durationMs!)) } : {}),
-    ...(Number.isInteger(diagnostics.assistantMessages) ? { assistantMessages: diagnostics.assistantMessages } : {}),
-    ...(diagnostics.lastAssistantMode ? { lastAssistantMode: diagnostics.lastAssistantMode } : {}),
-    ...(Number.isInteger(diagnostics.toolErrors) ? { toolErrors: diagnostics.toolErrors } : {}),
-    ...(diagnostics.lastToolError ? { lastToolError: safeDiagnosticText(diagnostics.lastToolError) } : {}),
-    ...(diagnostics.observations ? { observations: safeObservations(diagnostics.observations) } : {}),
-  };
-  return `\n\n[Subagent diagnostics ${JSON.stringify(safe)}]`;
-}
-
-export function boundedParentError(error: unknown, diagnostics?: SubagentFailureDiagnostics): string {
-  const raw = sanitizeDisplayText(error instanceof Error ? error.message : String(error));
-  if (!diagnostics) {
-    return truncateUtf8WithMarker(raw, MAX_PARENT_ERROR_BYTES, "\n\n[Subagent error truncated]").text;
-  }
-  const suffix = failureDiagnosticSuffix(diagnostics);
-  const messageBudget = Math.max(0, MAX_PARENT_ERROR_BYTES - Buffer.byteLength(suffix, "utf8"));
-  const message = truncateUtf8WithMarker(raw, messageBudget, "\n\n[Subagent error truncated]").text;
-  return `${message}${suffix}`;
 }

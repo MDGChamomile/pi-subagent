@@ -15,7 +15,8 @@ import {
   formatResultSummary,
   readBudgetTelemetry,
 } from "./subprocess.ts";
-import { boundedParentError, MAX_JSON_LINE_BYTES, MAX_OBSERVATION_COUNT, MAX_PARENT_ERROR_BYTES, READY_MARKER, sanitizeDisplayText, type ChildPolicy } from "./shared.ts";
+import { MAX_JSON_LINE_BYTES, MAX_OBSERVATION_COUNT, MAX_PARENT_ERROR_BYTES, READY_MARKER, sanitizeDisplayText, type ChildPolicy } from "./shared.ts";
+import { boundedParentError } from "./diagnostics.ts";
 
 function assistantEvent(text: string, overrides: Record<string, unknown> = {}): string {
   return JSON.stringify({
