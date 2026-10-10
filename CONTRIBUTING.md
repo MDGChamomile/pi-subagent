@@ -107,7 +107,19 @@ python3 -B -m unittest discover -s .github/scripts -p 'test_*.py' -v
 python3 -B .github/scripts/validate_skills.py
 ```
 
-The development lockfile and CI pin Pi 1.0.0, the declared minimum; the weekly canary tests current upstream packages separately. `npm test` preloads `scripts/pi-sdk-test-loader.mjs` to select Pi's bundled SDK when available. When running a TypeScript test directly from `extensions/pi-subagent`, keep that preload, for example `node --import ./scripts/pi-sdk-test-loader.mjs --experimental-strip-types --test child-retry.test.ts`. The provider/selection fixtures receive the same preload from their spawning tests; package discovery chooses its SDK independently. Dependency installation can access registries. The checks do not call models. Package validation rebuilds ignored `dist/`, verifies the exact npm file set and documentation links, and runs isolated offline resource discovery plus negative controls.
+The development lockfile and CI pin Pi 1.0.0, the declared minimum; the weekly canary tests current upstream Pi packages separately. An independent `latest-web` canary job installs `pi-web-access@latest` only in its disposable test environment and checks its registered Pi request schemas against the guard's allowlist and representative original/normalized inputs. It never invokes the tools or starts a model session. Regular validation tests the checker with synthetic schemas and breaking-change controls; it does not install the web dependency.
+
+To reproduce the web schema canary in a disposable checkout:
+
+```bash
+npm --prefix extensions/pi-subagent ci --ignore-scripts
+npm --prefix extensions/pi-subagent install --no-save --package-lock=false --ignore-scripts pi-web-access@latest
+npm --prefix extensions/pi-subagent run test:web-schema
+```
+
+Package installation accesses npm. Schema discovery runs in a bounded child with a temporary HOME/config directory, no inherited credentials, and network/subprocess tripwires; this is not an OS sandbox for untrusted dependencies. The check detects missing tools/keys and representative type, required-field, enum, and limit incompatibilities, not every possible request or semantic change. It does not establish live provider compatibility, SSRF behavior, or compatibility with custom web configurations. Scheduled canaries use the default branch, so changes merged only to `updates` take effect on the schedule after a release to `main`; an authorized `workflow_dispatch` can test a task branch earlier.
+
+`npm test` preloads `scripts/pi-sdk-test-loader.mjs` to select Pi's bundled SDK when available. When running a TypeScript test directly from `extensions/pi-subagent`, keep that preload, for example `node --import ./scripts/pi-sdk-test-loader.mjs --experimental-strip-types --test child-retry.test.ts`. The provider/selection fixtures receive the same preload from their spawning tests; package discovery chooses its SDK independently. Dependency installation can access registries. The checks do not call models. Package validation rebuilds ignored `dist/`, verifies the exact npm file set and documentation links, and runs isolated offline resource discovery plus negative controls.
 
 For documentation changes, review relative links and commands; for runtime changes, add regression coverage and run all three runtime/package checks. The skill validator covers metadata and relative links in `SKILL.md` and the maintained root documents (`README.md`, `AGENTS.md`, `MIGRATION.md`, `CONTRIBUTING.md`, `PRINCIPLE.md`) plus `packaging/pi-subagent/DEVELOPMENT.md`; it does not check semantic compatibility.
 
