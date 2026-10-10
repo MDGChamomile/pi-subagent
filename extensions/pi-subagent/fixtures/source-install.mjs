@@ -2,15 +2,15 @@
 import assert from "node:assert/strict";
 import { spawnSync } from "node:child_process";
 import { existsSync, mkdirSync, mkdtempSync, readFileSync, realpathSync, rmSync } from "node:fs";
-import { createRequire } from "node:module";
 import { tmpdir } from "node:os";
-import { dirname, join } from "node:path";
+import { basename, dirname, join } from "node:path";
 import { fileURLToPath } from "node:url";
 
 const local = process.argv[2] === "local";
 const checkout = realpathSync(fileURLToPath(new URL("../../..", import.meta.url)));
-const sdkEntry = createRequire(import.meta.url).resolve("@earendil-works/pi-coding-agent");
-const cli = join(dirname(sdkEntry), "cli.js");
+// Use ESM resolution: Pi's minimum-version package has no CommonJS export on Node 22.
+const sdkDirectory = dirname(fileURLToPath(import.meta.resolve("@earendil-works/pi-coding-agent")));
+const cli = join(sdkDirectory, ...(basename(sdkDirectory) === "bundle" ? [".."] : []), "cli.js");
 const root = realpathSync(mkdtempSync(join(tmpdir(), "pi-subagent-install-")));
 const cwd = join(root, "project");
 const agentDir = join(root, "custom-agent");
