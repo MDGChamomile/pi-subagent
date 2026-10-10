@@ -6,6 +6,7 @@ import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { describe, test, type TestContext } from "node:test";
 import childGuard, { prepareWebCall } from "./child-guard.ts";
+import { ChildJsonCollector } from "./subprocess.ts";
 import {
   ALLOWED_FILE_TOOLS,
   ALLOWED_WEB_TOOLS,
@@ -879,4 +880,64 @@ describe("pi-subagent child guard", () => {
       await harness.cleanup();
     }
   });
+});
+
+// One table of assistant endings, two consumers with different jobs. The guard asks for
+// one tool-disabled finalization when an ending is not a usable final answer; the
+// collector keeps length-limited text as partial evidence (README "Result and lifecycle").
+// Both leave error and aborted endings to Pi's retry handling.
+describe("assistant ending classification: guard finalization vs collector evidence", () => {
+  const toolCall = { type: "toolCall", id: "ending-call", name: "read", arguments: { path: "allowed/inside.txt" } };
+  const contents = {
+    text: [{ type: "text", text: "Conclusion with evidence." }],
+    tool: [toolCall],
+    mixed: [{ type: "text", text: "Conclusion with evidence." }, toolCall],
+    empty: [{ type: "text", text: "  " }],
+  };
+  // [content, stopReason, guard requests finalization, collector keeps the text]
+  const endings: Array<[keyof typeof contents, string, boolean, boolean]> = [
+    ["text", "stop", false, true],
+    ["text", "length", true, true],
+    ["text", "toolUse", true, false],
+    ["text", "error", false, false],
+    ["text", "aborted", false, false],
+    ["tool", "stop", true, false],
+    ["tool", "length", true, false],
+    ["tool", "toolUse", true, false],
+    ["tool", "error", false, false],
+    ["tool", "aborted", false, false],
+    ["mixed", "stop", true, false],
+    ["mixed", "length", true, false],
+    ["mixed", "toolUse", true, false],
+    ["mixed", "error", false, false],
+    ["mixed", "aborted", false, false],
+    ["empty", "stop", true, false],
+    ["empty", "length", true, false],
+    ["empty", "toolUse", true, false],
+    ["empty", "error", false, false],
+    ["empty", "aborted", false, false],
+  ];
+
+  for (const [content, stopReason, guardFinalizes, collectorKeeps] of endings) {
+    test(`${content} ending with ${stopReason}`, async () => {
+      const message = { role: "assistant", stopReason, content: contents[content] };
+
+      const harness = await createHarness(["allowed"], "local");
+      try {
+        await harness.emit("session_start");
+        await harness.emit("agent_start");
+        await harness.emit("turn_end", { message });
+        await harness.emit("agent_end", { messages: [message] });
+        assert.equal(harness.getSentUserMessages().length, guardFinalizes ? 1 : 0, "guard finalization requests");
+        assert.deepEqual(harness.getActiveTools(), guardFinalizes ? [] : [...ALLOWED_FILE_TOOLS]);
+      } finally {
+        await harness.cleanup();
+      }
+
+      const collector = new ChildJsonCollector();
+      collector.push(`${JSON.stringify({ type: "message_end", message })}\n`);
+      collector.finish();
+      assert.equal(collector.snapshot().finalOutput, collectorKeeps ? "Conclusion with evidence." : "", "collector evidence");
+    });
+  }
 });
