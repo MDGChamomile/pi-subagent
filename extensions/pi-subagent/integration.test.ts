@@ -7,7 +7,8 @@ import { describe, test } from "node:test";
 import { fileURLToPath } from "node:url";
 import { normalizeContext, type Message, type Model } from "@earendil-works/pi-ai";
 import { convertResponsesMessages } from "@earendil-works/pi-ai/api/openai-responses-shared";
-import { ChildRunError, emptyUsage, runChild, type ChildResult } from "./subprocess.ts";
+import { ChildRunError, runChild, type ChildResult } from "./subprocess.ts";
+import { emptyUsage } from "./child-stream.ts";
 import { buildChildPolicy, CHILD_GUARD_EXIT_CODES, MAX_FINAL_BYTES, MAX_PARENT_ERROR_BYTES } from "./shared.ts";
 
 const FAKE_CHILD = fileURLToPath(new URL("./fixtures/fake-child.mjs", import.meta.url));

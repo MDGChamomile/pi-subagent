@@ -6,7 +6,7 @@ import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { describe, test, type TestContext } from "node:test";
 import childGuard, { prepareWebCall } from "./child-guard.ts";
-import { ChildJsonCollector } from "./subprocess.ts";
+import { ChildJsonCollector } from "./child-stream.ts";
 import {
   ALLOWED_FILE_TOOLS,
   ALLOWED_WEB_TOOLS,

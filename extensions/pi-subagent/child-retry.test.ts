@@ -6,7 +6,7 @@ import { test } from "node:test";
 import { createAssistantMessageEventStream, getCurrentTools, type AssistantMessage, type Model } from "@earendil-works/pi-ai";
 import type { AgentSession } from "@earendil-works/pi-coding-agent";
 import childGuard from "./child-guard.ts";
-import { emptyUsage } from "./subprocess.ts";
+import { emptyUsage } from "./child-stream.ts";
 import { ALLOWED_FILE_TOOLS, BUDGET_TELEMETRY_ENV, buildChildPolicy, POLICY_ENV, READY_ENV, SOFT_DEADLINE_ENV } from "./shared.ts";
 
 // The configured test loader selects the bundled SDK when available.

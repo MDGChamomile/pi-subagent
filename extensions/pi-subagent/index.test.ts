@@ -10,7 +10,8 @@ import { MAX_FINAL_BYTES, TOOL_NAME } from "./shared.ts";
 import { MAX_SUBAGENT_CALLS } from "./invocation-gate.ts";
 import { formatChildOutput } from "./envelope.ts";
 import { boundedParentError } from "./diagnostics.ts";
-import { ChildRunError, emptyUsage, type ChildResult } from "./subprocess.ts";
+import { ChildRunError, type ChildResult } from "./subprocess.ts";
+import { emptyUsage } from "./child-stream.ts";
 
 const SOURCE_PATH = "/test/pi-subagent/index.ts";
 let agentDir: string;
