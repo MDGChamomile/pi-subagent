@@ -11,6 +11,7 @@ import {
   buildChildPolicy,
   buildChildPrompt,
   CHILD_FINALIZATION_GRACE_MS,
+  CHILD_GUARD_EXIT_CODES,
   CHILD_TIMEOUT_MS,
   formatChildOutput,
   MAX_FINAL_BYTES,
@@ -412,6 +413,18 @@ describe("pi-subagent public contract", () => {
     };
     assert.deepEqual(SUBAGENT_PRESETS, expectedPresets);
     assert.deepEqual(PRESET_NAMES, Object.keys(expectedPresets));
+  });
+
+  test("keeps the documented guard exit codes", () => {
+    // Literal values from the extension README. The fixture and integration tests
+    // read the same constant, so only this assertion catches renumbering.
+    assert.deepEqual(CHILD_GUARD_EXIT_CODES, {
+      initialization: 70,
+      toolOwnership: 71,
+      readiness: 72,
+      modelSelection: 73,
+      runtime: 74,
+    });
   });
 
   test("result envelopes cap escaped bytes and preserve Unicode at boundary positions", () => {
