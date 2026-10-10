@@ -36,10 +36,10 @@ const inlineLinks = '![Preview](extensions/pi-subagent/assets/pi-subagent-automa
 assert.equal(renderPackageReadme(inlineLinks, futureVersion),
   `![Preview](${rawRoot}/v${futureVersion}/extensions/pi-subagent/assets/pi-subagent-automatic.gif)\n[Guide](https://github.com/MDGChamomile/pi-subagent/blob/v${futureVersion}/extensions/pi-subagent/README.md#presets)\n[Here](#presets)\n[Remote](https://example.com/guide)\n[Mail](mailto:help@example.com)`);
 
-const guideLinks = '![Demo](assets/pi-subagent-automatic.gif)\n[![Architecture](assets/pi-subagent-architecture.png)](assets/pi-subagent-architecture.png)\n[Skill](../../skills/pi-subagent/README.md)\n[Here](#presets)\n[Remote](https://example.com/image.png)';
+const guideLinks = '[Development](DEVELOPMENT.md)\n[Verification](DEVELOPMENT.md#verification)\n![Demo](assets/pi-subagent-automatic.gif)\n[![Architecture](assets/pi-subagent-architecture.png)](assets/pi-subagent-architecture.png)\n[Skill](../../skills/pi-subagent/README.md)\n[Here](#presets)\n[Remote](https://example.com/image.png)';
 const futureAssets = `${rawRoot}/v${futureVersion}/extensions/pi-subagent/assets/`;
 assert.equal(renderExtensionReadme(guideLinks, futureVersion),
-  `![Demo](${futureAssets}pi-subagent-automatic.gif)\n[![Architecture](${futureAssets}pi-subagent-architecture.png)](${futureAssets}pi-subagent-architecture.png)\n[Skill](../../skills/pi-subagent/README.md)\n[Here](#presets)\n[Remote](https://example.com/image.png)`);
+  `[Development](https://github.com/MDGChamomile/pi-subagent/blob/v${futureVersion}/extensions/pi-subagent/DEVELOPMENT.md)\n[Verification](https://github.com/MDGChamomile/pi-subagent/blob/v${futureVersion}/extensions/pi-subagent/DEVELOPMENT.md#verification)\n![Demo](${futureAssets}pi-subagent-automatic.gif)\n[![Architecture](${futureAssets}pi-subagent-architecture.png)](${futureAssets}pi-subagent-architecture.png)\n[Skill](../../skills/pi-subagent/README.md)\n[Here](#presets)\n[Remote](https://example.com/image.png)`);
 const futureExtensionReadme = renderExtensionReadme(sourceExtensionReadme, futureVersion);
 assert.equal(renderExtensionReadme(futureExtensionReadme, futureVersion), futureExtensionReadme);
 assert.throws(() => renderExtensionReadme(sourceExtensionReadme, "1.0.0-beta.1"), /stable release version/);
@@ -69,9 +69,11 @@ assert.equal(
 const bundledExtensionReadme = await readFile(join(stagingDirectory, extensionReadmePath), "utf8");
 assert.equal(bundledExtensionReadme, renderExtensionReadme(sourceExtensionReadme, manifest.version));
 assert.equal(
-  bundledExtensionReadme.replaceAll(`${rawRoot}/v${manifest.version}/extensions/pi-subagent/`, ""),
+  bundledExtensionReadme
+    .replaceAll(`${rawRoot}/v${manifest.version}/extensions/pi-subagent/`, "")
+    .replaceAll(`https://github.com/MDGChamomile/pi-subagent/blob/v${manifest.version}/extensions/pi-subagent/DEVELOPMENT.md`, "DEVELOPMENT.md"),
   sourceExtensionReadme,
-  "bundled extension guide must preserve its body and document links, rebasing only asset links",
+  "bundled extension guide must preserve its body, rebasing only assets and the source-only development guide",
 );
 for (const asset of ["pi-subagent-automatic.gif", "pi-subagent-architecture.png"]) {
   assert.equal((await stat(join(sourceRoot, "extensions/pi-subagent/assets", asset))).isFile(), true,
@@ -180,6 +182,8 @@ assert.equal(actualFiles.some((path) => path.startsWith("extensions/pi-subagent/
 
 for (const [markdownPath, root] of [
   ["README.md", sourceRoot],
+  ["extensions/pi-subagent/README.md", sourceRoot],
+  ["extensions/pi-subagent/DEVELOPMENT.md", sourceRoot],
   ...actualFiles.filter((path) => path.endsWith(".md")).map((path) => [path, stagingDirectory]),
 ]) {
   const markdown = await readFile(join(root, markdownPath), "utf8");
