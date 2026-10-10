@@ -6,13 +6,9 @@ import { StringEnum } from "@earendil-works/pi-ai";
 import { Text, TruncatedText, truncateToWidth } from "@earendil-works/pi-tui";
 import { Type } from "typebox";
 import {
-  boundedParentError,
   buildChildPolicy,
   MAX_SCOPE_ROOTS,
-  invocationLimitBlock,
   makeCanonicalTempDirectory,
-  MAX_SUBAGENT_CALLS,
-  ModelInvocationGate,
   PRESET_NAMES,
   resolveWebExtensionPath,
   sanitizeDisplayText,
@@ -21,6 +17,8 @@ import {
   type ChildPolicy,
   type Preset,
 } from "./shared.ts";
+import { invocationLimitBlock, MAX_SUBAGENT_CALLS, ModelInvocationGate } from "./invocation-gate.ts";
+import { boundedParentError } from "./diagnostics.ts";
 import { ChildRunError, formatResultSummary, runChild } from "./subprocess.ts";
 import { loadPresetSettings, validatePresetSelection, type PresetSelection } from "./config.ts";
 import { registerSubagentSettingsCommand } from "./settings-command.ts";

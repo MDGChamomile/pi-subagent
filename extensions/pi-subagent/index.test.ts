@@ -6,7 +6,10 @@ import { join } from "node:path";
 import { stripVTControlCharacters } from "node:util";
 import piSubagentExtension from "./index.ts";
 import { visibleWidth } from "@earendil-works/pi-tui";
-import { boundedParentError, formatChildOutput, MAX_FINAL_BYTES, MAX_SUBAGENT_CALLS, TOOL_NAME } from "./shared.ts";
+import { MAX_FINAL_BYTES, TOOL_NAME } from "./shared.ts";
+import { MAX_SUBAGENT_CALLS } from "./invocation-gate.ts";
+import { formatChildOutput } from "./envelope.ts";
+import { boundedParentError } from "./diagnostics.ts";
 import { ChildRunError, emptyUsage, type ChildResult } from "./subprocess.ts";
 
 const SOURCE_PATH = "/test/pi-subagent/index.ts";
