@@ -77,6 +77,8 @@ Newer stable versions are allowed without an upper bound, not guaranteed compati
 
 Before your first call, run `/pi-subagent-settings` in Pi's TUI to check the model for each preset you plan to use. If you cannot access a default model, select one you can access. Subagents do not inherit the parent model, and there is no automatic fallback. See [Presets](#presets) for details.
 
+If a call fails with a generic exit-code error, check the selected preset's provider authentication, model access, and settings. Use the provider's supported Pi authentication method (`/login` where supported, or its documented API-key setup), or select another authenticated, accessible model with `/pi-subagent-settings`. The exit code alone does not establish an authentication failure.
+
 The model can select the skill automatically. To invoke it explicitly, include a focused task and scope. For example, from a project with a `src/` directory:
 
 ```text
@@ -92,7 +94,7 @@ This command gives delegation guidance to the parent, which then calls the `pi_s
 | `local` | Pi-owned `read`, `grep`, `find`, and `ls` | 1–8 existing paths inside the parent working directory |
 | `web` | Guarded tools from `pi-web-access` v0.33.0 or later (stable releases) | Empty; no local-file access |
 
-Mixed local-and-web work uses separate child calls, with synthesis performed by the parent. One call is the default; up to three distinct, independent calls may run in parallel during one parent agent run, which can multiply model, provider, and web-request usage.
+Mixed local-and-web work uses separate child calls, with synthesis performed by the parent. One call is the default; each parent agent run allows at most three started child calls in total, whether sequential or parallel. Distinct, independent calls can run in parallel, and local and web calls share the same limit. One corrected retry is allowed after a preflight validation failure; it does not permit a fourth started call. Multiple calls can multiply model, provider, and web-request usage.
 
 ## Presets
 
@@ -108,7 +110,7 @@ Run **`/pi-subagent-settings`** in Pi's TUI to change a preset's provider, model
 
 ## Security and data flow
 
-Authorized local-file contents, web tasks and queries, fetched pages, and the final answer are sent to the applicable configured model or search providers. Do not delegate secrets that must not leave the host or use the package for untrusted workloads requiring host isolation.
+The delegated task, scope path names, local-file contents read by the child, and retrieved web content enter the configured child model provider's context. Web queries and requested URLs also go to the applicable search/fetch services. The final answer returns to the parent and enters its model context. Do not delegate secrets that must not leave the host or use the package for untrusted workloads requiring host isolation.
 
 The runtime canonicalizes local paths, blocks lexical and symlink escapes, verifies tool provenance, and sanitizes control characters in returned text. After the child exits, the parent verifies the guard's private readiness marker before accepting its final answer.
 
@@ -120,7 +122,7 @@ The runtime canonicalizes local paths, blocks lexical and symlink escapes, verif
 - [Issue tracker](https://github.com/MDGChamomile/pi-subagent/issues)
 - [Contributing](CONTRIBUTING.md) — development setup and offline verification.
 - [Package maintenance](packaging/pi-subagent/DEVELOPMENT.md) — package assembly and release procedures.
-- [Migration](MIGRATION.md) — breaking changes for existing installations.
+- [Migration](MIGRATION.md) — release notes and migration steps.
 - [Design principles](PRINCIPLE.md) — local pointer to the [canonical principles](https://github.com/MDGChamomile/MDGChamomile/blob/main/PRINCIPLE.md).
 
 ## License

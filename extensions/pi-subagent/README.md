@@ -44,21 +44,24 @@ pi install npm:pi-web-access
 Alternatively, install both components from a checkout. These commands are for a new source installation and stop if either destination already exists, including as a broken symbolic link:
 
 ```bash
-git clone https://github.com/MDGChamomile/pi-subagent.git
-cd pi-subagent
-mkdir -p ~/.pi/agent/extensions ~/.pi/agent/skills
+(
+  set -e
+  git clone https://github.com/MDGChamomile/pi-subagent.git
+  cd pi-subagent
+  mkdir -p ~/.pi/agent/extensions ~/.pi/agent/skills
 
-extension_target="$HOME/.pi/agent/extensions/pi-subagent"
-skill_target="$HOME/.pi/agent/skills/pi-subagent"
-for target in "$extension_target" "$skill_target"; do
-  if [ -e "$target" ] || [ -L "$target" ]; then
-    printf 'Refusing to replace existing path: %s\n' "$target" >&2
-    exit 1
-  fi
-done
+  extension_target="$HOME/.pi/agent/extensions/pi-subagent"
+  skill_target="$HOME/.pi/agent/skills/pi-subagent"
+  for target in "$extension_target" "$skill_target"; do
+    if [ -e "$target" ] || [ -L "$target" ]; then
+      printf 'Refusing to replace existing path: %s\n' "$target" >&2
+      exit 1
+    fi
+  done
 
-ln -s "$PWD/extensions/pi-subagent" "$extension_target"
-ln -s "$PWD/skills/pi-subagent" "$skill_target"
+  ln -s "$PWD/extensions/pi-subagent" "$extension_target"
+  ln -s "$PWD/skills/pi-subagent" "$skill_target"
+)
 ```
 
 To update a linked source installation, update the checkout after reviewing its changes; do not rerun the link commands. Use either the npm package or a source installation, not both. Restart Pi or run `/reload` after installation or update.
@@ -88,7 +91,7 @@ The command loads delegation guidance for the parent, which then calls the `pi_s
 
 Collection, control-character sanitization, and result assembly run in the parent extension. Complete/partial calls return bounded answer text and separate host-only metadata; failures return bounded error text. Sanitization does not redact source quotations from the final answer. `--no-session` disables persisted Pi sessions, not in-memory context or private runtime files.
 
-One child call is the default. Up to three distinct, independent calls may run in parallel during one parent agent run; local and web calls each count toward that limit and can multiply model, provider, and web-request usage. One corrected retry is allowed only after preflight validation fails.
+One child call is the default. Each parent agent run allows at most three started child calls in total, whether sequential or parallel. Distinct, independent calls can run in parallel; local and web calls share the same limit and can multiply model, provider, and web-request usage. One corrected retry is allowed only after preflight validation fails; it does not permit a fourth started call.
 
 ## Runtime contract
 
@@ -153,7 +156,7 @@ The JSON record cap accommodates Pi's default 4.5 MiB base64 image payload plus 
 - Answers received by the parent during the text-finalization window are labelled `partial` with `partialReason: "time_limit"`. The receipt time of the last eligible answer determines this label, not the child's timestamp or subsequent shutdown duration; termination still starts at the hard deadline. Cancellation, timeout, a child JSON protocol error, or a failed progress callback sends SIGTERM to the process group, then SIGKILL after a 5-second grace period unless a POSIX probe confirms that the entire group has disappeared. Probes run at intervals of up to 100 ms; permission errors and other uncertain results retain the grace period and escalation. A failed first progress update stops the child before the investigation prompt is delivered; later progress failures stop the ongoing investigation. The parent returns a `progress` failure after cleanup, without forwarding callback error text. Already-issued provider requests may still incur usage. The direct child's exit alone does not end the wait when descendants may survive, so shutdown can extend beyond the investigation deadline. Normal completion does not add this wait.
 - If the last answer still has `stopReason: "length"`, its available text is returned as `partial` with `partialReason: "model_length"`, never as complete. This reason takes precedence over a simultaneous budget or time limit. `outputTruncated` continues to report only truncation by the runtime's byte cap.
 - Allowed and denied tool attempts both count. A soft warning leaves later calls available; a hard stop disables tools, reuses text finalization, and returns a `partial` result with `partialReason: "tool_budget"`.
-- Web calls reserve their full cost synchronously during sequential Pi tool preflight, before parallel execution: `web_search` charges its normalized `query`/`queries`; `source_check` charges its effective queries and, with `fetchContent: true`, conservatively up to five result pages (`min(5, queries × results per query)`); `fetch_content` charges its normalized unique `url`/`urls`; and each `get_search_content` retrieval charges one content target. A batch that would cross either limit does not execute or consume query/fetch counters. Each resource gets one soft warning after an admitted reservation first reaches or crosses its warning threshold, reporting reserved and remaining counts without queries or URLs. These notices do not disable tools or mark the result partial; the existing tool-attempt warning and hard limits remain unchanged.
+- Web calls reserve their full cost synchronously during sequential Pi tool preflight, before parallel execution: `web_search` charges its normalized `query`/`queries`; `source_check` charges its effective queries and, with `fetchContent: true`, conservatively up to five result pages (`min(5, queries × results per query)`); `fetch_content` charges its normalized unique `url`/`urls`; and each `get_search_content` retrieval charges one content target. A batch that would cross either limit does not execute or consume query/fetch counters. It also starts tool-disabled finalization, so later calls cannot spend the remaining budget. A returned answer is `partial` with `partialReason: "tool_budget"` unless the higher-priority `model_length` reason applies; finalization can still fail instead of returning an answer. Each resource gets one soft warning after an admitted reservation first reaches or crosses its warning threshold, reporting reserved and remaining counts without queries or URLs. These notices do not disable tools or mark the result partial; the existing tool-attempt warning and hard limits remain unchanged.
 - A dedicated parent-liveness pipe makes the child remove private runtime files and terminate its POSIX process group if the parent exits abruptly. The implementation has a native-Windows fallback that terminates the child process itself, but native Windows is not officially supported or tested.
 - Final diff, audit, test, and retrieval validation stays with the parent when it holds the edited files or may need to make follow-up fixes.
 
@@ -168,7 +171,7 @@ Only the bounded result text (`content`) enters the parent model context. Every 
 
 JSON escaping keeps literal markers, quotes, and forged envelope text inside `answer`, not in the runtime fields. The whole serialized envelope, including escaping overhead, fits within the 12 KiB cap and determines the injected-context estimate. That estimate is its UTF-8 byte length divided by four, rounded up: a model-independent size heuristic, not measured tokens or a guaranteed error bound across languages and models. Byte truncation shortens `answer` at a UTF-8 boundary while preserving valid JSON and the runtime fields; it adds no in-body status marker. This separates status provenance but does not make the answer trustworthy or prevent all model-level prompt injection.
 
-Parent tool-result `details` retain content-free execution and budget metadata for the UI and host, such as the selected capability, preset, model, scope-root count, status, duration, usage, limits, and counters. They are not sent to the parent model and never include tasks, queries, URLs, paths, or tool content.
+Parent tool-result `details` retain content-free execution and budget metadata for the UI and host, such as the selected capability, preset, model, scope-root count, status, duration, usage, limit-status flags, and counters. They are not sent to the parent model and never include tasks, queries, URLs, paths, or tool content.
 
 ## Security boundary
 
@@ -184,7 +187,7 @@ The web extension loads before the guard, making the guard the final `tool_call`
 - fetches allow at most five readable HTTP(S) URLs under the web extension's SSRF policy; omitted modes are explicitly set to `readable`, regardless of the web extension's default mode (its allowed-mode restrictions still apply);
 - caller-selected providers or proxies, local files, browser-cookie authentication, answer/model/media modes, embedded URL credentials, and forced GitHub clones are rejected.
 
-A denied input blocks only that call, allowing the child to correct it. Every corrected call is validated independently.
+An input rejected by argument validation blocks only that call, allowing the child to correct it. Every corrected call is validated independently. Lifetime budget exhaustion instead starts finalization, as described in [Result and lifecycle](#result-and-lifecycle).
 
 ### Trust model and data flow
 
@@ -194,7 +197,7 @@ Failures after collector creation also include model-visible `observations` in t
 
 These are untrusted stream observations, not a verified execution trace: IDs are not retained or paired. `toolBalance` is the nonnegative difference between validated starts and ends, or `null` whenever observations are incomplete; it is never proof of active tools. Pi's JSON `message_update` records are delta-only, but block-end updates carry the completed text, thinking, or tool call, and tool ends contain full results, so records over 4 KiB are routine. Their receipts remain visible, but cannot establish execution or completion; missing events can still hide progress. A tool start without an observed end differs from an observed end followed by assistant streaming, but neither identifies the cause of a stall or confirms when a provider request was sent. Child timestamps, text/thinking, arguments/results, names, IDs, URLs, paths, and raw provider errors are never copied into the new observations. The existing 6 MiB answer-record cap and 4 KiB total failure-error cap remain unchanged.
 
-Authorized local file contents, web tasks and queries, fetched web pages, and the final answer are sent to the applicable model or search providers. The trusted web extension may maintain its documented bounded cache or temporary files.
+The delegated task, scope path names, local-file contents read by the child, and retrieved web content enter the configured child model provider's context. Web queries and requested URLs also go to the applicable search/fetch services. The final answer returns to the parent and enters its model context. The trusted web extension may maintain its documented bounded cache or temporary files.
 
 This is an application-level capability boundary, not an OS or network sandbox. The child and trusted web extension still run as the current user. The `web` capability restricts the available tool names and arguments; it does not guarantee anonymous, public-only target access or isolate host GitHub, Git, SSH, or browser credentials that the trusted web extension may use. Do not use it for untrusted workloads requiring host isolation or for secrets that must not be sent to configured providers.
 
