@@ -110,7 +110,7 @@ Run **`/pi-subagent-settings`** in Pi's TUI to change a preset's provider, model
 
 ## Security and data flow
 
-The delegated task, scope path names, local-file contents read by the child, and retrieved web content enter the configured child model provider's context. Web queries and requested URLs also go to the applicable search/fetch services. The final answer returns to the parent and enters its model context. Do not delegate secrets that must not leave the host or use the package for untrusted workloads requiring host isolation.
+The delegated task, scope path names, local tool results (file contents, matched lines, and file/directory listings), and retrieved web content enter the configured child model provider's context. Web queries and requested URLs also go to the applicable search/fetch services. The final answer returns to the parent and enters its model context. Do not delegate secrets that must not leave the host or use the package for untrusted workloads requiring host isolation.
 
 The runtime canonicalizes local paths, blocks lexical and symlink escapes, verifies tool provenance, and sanitizes control characters in returned text. After the child exits, the parent verifies the guard's private readiness marker before accepting its final answer.
 
