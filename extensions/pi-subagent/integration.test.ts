@@ -137,7 +137,7 @@ describe("pi-subagent spawned-child integration", () => {
         assert.equal(diagnostics.observations.incomplete, scenario === "protocol");
         assert.ok(diagnostics.observations.lastEventAgeMs >= 0);
         assert.ok(Buffer.byteLength(error.message) <= MAX_PARENT_ERROR_BYTES);
-        assert.doesNotMatch(error.message, /private-|https?:|Objective/);
+        assert.doesNotMatch(error.message, /private-|https?:|Objective|provider authentication|pi-subagent-settings/);
         return true;
       });
     }
@@ -374,20 +374,52 @@ describe("pi-subagent spawned-child integration", () => {
     assert.match(message, /"stopReason":"error"/);
   });
 
-  test("discards child stderr on process failure", async () => {
-    await assert.rejects(
-      () => withFixture("process-error", (options) => runChild(options)),
-      (error: unknown) => {
-        const message = error instanceof Error ? error.message : String(error);
-        assert.match(message, /Subagent exited with code 7/);
-        assert.match(message, /"phase":"process"/);
-        assert.match(message, /"guardReady":true/);
-        assert.doesNotMatch(message, /exitSignal/);
-        assert.doesNotMatch(message, /private child stderr/);
+  for (const scenario of ["process-error", "ready-startup-error"]) {
+    test(`adds a fixed, non-diagnostic startup hint for ${scenario} without forwarding child content`, async () => {
+      await assert.rejects(
+        () => withFixture(scenario, (options) => runChild({
+          ...options, task: "private-task-sentinel", model: "private-provider/private-model",
+        })),
+        (error: unknown) => {
+          assert.ok(error instanceof ChildRunError);
+          const message = error.message;
+          assert.match(message, new RegExp(`Subagent exited with code ${scenario === "ready-startup-error" ? 1 : 7}`));
+          assert.match(message, /No investigation activity was observed; the cause is unknown/);
+          assert.match(message, /selected preset's provider authentication and model access/);
+          assert.match(message, /pi-subagent-settings/);
+          assert.match(message, /"phase":"process"/);
+          assert.match(message, /"guardReady":true/);
+          assert.match(message, /"assistantMessages":0/);
+          assert.doesNotMatch(message, /exitSignal|private|stderr|policy\.json|guard\.ready|pi-subagent-integration-/);
+          assert.ok(Buffer.byteLength(message) <= MAX_PARENT_ERROR_BYTES);
+          assert.deepEqual(error.usage, emptyUsage());
+          return true;
+        },
+      );
+    });
+  }
+
+  for (const activity of ["turn", "incomplete", "tool", "assistant", "tool-error"]) {
+    test(`does not add a startup hint after ${activity} activity`, async () => {
+      await assert.rejects(() => withFixture(`process-error-${activity}`, (options) => runChild(options)), (error: unknown) => {
+        assert.ok(error instanceof ChildRunError);
+        assert.match(error.message, /Subagent exited with code 7/);
+        assert.match(error.message, /"phase":"process"/);
+        assert.match(error.message, /"guardReady":true/);
+        assert.doesNotMatch(error.message, /provider authentication|pi-subagent-settings|cause is unknown|private-/);
+        const diagnostics = JSON.parse(error.message.split("[Subagent diagnostics ")[1]!.slice(0, -1));
+        assert.equal(diagnostics.assistantMessages, activity === "assistant" ? 1 : 0);
+        assert.equal(diagnostics.toolErrors, activity === "tool-error" ? 1 : 0);
+        assert.equal(diagnostics.observations.incomplete, activity === "incomplete");
+        assert.equal(diagnostics.observations.receipts.turn_start, ["turn", "incomplete"].includes(activity) ? 1 : 0);
+        assert.equal(diagnostics.observations.counts.turn_start, activity === "turn" ? 1 : 0);
+        assert.equal(diagnostics.observations.counts.tool_execution_start, activity === "tool" ? 1 : 0);
+        assert.equal(error.usage.totalTokens, ["assistant", "tool-error"].includes(activity) ? 16 : 0);
+        assert.ok(Buffer.byteLength(error.message) <= MAX_PARENT_ERROR_BYTES);
         return true;
-      },
-    );
-  });
+      });
+    });
+  }
 
   for (const scenario of ["startup-error", "invalid-ready-error", "startup-signal", "ready-signal"]) {
     test(`reports content-free process diagnostics for ${scenario}`, async () => {
@@ -406,7 +438,7 @@ describe("pi-subagent spawned-child integration", () => {
             assert.match(message, new RegExp(`"exitCode":${scenario === "startup-error" ? 1 : 7}`));
             assert.doesNotMatch(message, /exitSignal/);
           }
-          assert.doesNotMatch(message, /private|stderr|guard\.ready|policy\.json/);
+          assert.doesNotMatch(message, /private|stderr|guard\.ready|policy\.json|provider authentication|pi-subagent-settings/);
           assert.ok(Buffer.byteLength(message, "utf8") <= MAX_PARENT_ERROR_BYTES);
           return true;
         },
@@ -423,7 +455,7 @@ describe("pi-subagent spawned-child integration", () => {
           assert.match(error.message, new RegExp(`Subagent guard failed: ${reason}`));
           assert.match(error.message, new RegExp(`"exitCode":${CHILD_GUARD_EXIT_CODES[reason]}`));
           assert.match(error.message, new RegExp(`"guardReady":${reason === "runtime"}`));
-          assert.doesNotMatch(error.message, /private|initialization detail|policy\.json|guard\.ready/);
+          assert.doesNotMatch(error.message, /private|initialization detail|policy\.json|guard\.ready|provider authentication|pi-subagent-settings/);
           return true;
         },
       );

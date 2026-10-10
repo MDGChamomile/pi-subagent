@@ -220,9 +220,24 @@ if (scenario.startsWith("observations-")) {
     usage,
     stopReason: "stop",
   });
-} else if (scenario === "process-error" || scenario === "invalid-ready-error") {
-  process.stderr.write("private child stderr must not reach the parent\n");
+} else if (scenario.startsWith("process-error-")) {
+  if (scenario === "process-error-turn") {
+    process.stdout.write(`${JSON.stringify({ type: "turn_start" })}\n`);
+  } else if (scenario === "process-error-incomplete") {
+    process.stdout.write(`${JSON.stringify({ type: "turn_start", private: "x".repeat(5_000) })}\n`);
+  } else if (scenario === "process-error-tool") {
+    process.stdout.write(`${JSON.stringify({ type: "tool_execution_start", toolCallId: "private-id", toolName: "read", args: { path: "/private-path" } })}\n`);
+  } else if (scenario === "process-error-assistant") {
+    emit({ role: "assistant", content: [{ type: "text", text: "private-answer" }], usage, stopReason: "stop" });
+  } else if (scenario === "process-error-tool-error") {
+    emit({ role: "toolResult", toolName: "read", content: [{ type: "text", text: "private-tool-error" }], usage, isError: true });
+  } else {
+    throw new Error("Unknown process-error fixture");
+  }
   process.exitCode = 7;
+} else if (scenario === "process-error" || scenario === "invalid-ready-error" || scenario === "ready-startup-error") {
+  process.stderr.write("private child stderr must not reach the parent\n");
+  process.exitCode = scenario === "ready-startup-error" ? 1 : 7;
 } else if (scenario === "timeout" || scenario === "timeout-after-usage") {
   if (scenario === "timeout-after-usage") {
     emit({
