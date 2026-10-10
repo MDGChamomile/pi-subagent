@@ -450,9 +450,17 @@ export async function runChild(options: {
     // Readiness is an observation, not a diagnosis of why startup failed.
     const guardReady = await assertChildReady(options.readyFile).then(() => true, () => false);
     const guardFailure = Object.entries(CHILD_GUARD_EXIT_CODES).find(([, code]) => code === exitCode)?.[0];
+    let message = exitSignal ? `Subagent exited with signal ${exitSignal}`
+      : guardFailure ? `Subagent guard failed: ${guardFailure}` : `Subagent exited with code ${exitCode}`;
+    if (guardReady && !exitSignal && !guardFailure
+      && snapshot.assistantMessageCount === 0 && snapshot.toolErrorCount === 0
+      && !snapshot.observations.incomplete
+      && Object.values(snapshot.observations.receipts).every((count) => count === 0)) {
+      // Missing stream activity does not prove an authentication failure.
+      message += ". No investigation activity was observed; the cause is unknown. Check the selected preset's provider authentication and model access, or review /pi-subagent-settings.";
+    }
     throw childFailure(
-      exitSignal ? `Subagent exited with signal ${exitSignal}`
-        : guardFailure ? `Subagent guard failed: ${guardFailure}` : `Subagent exited with code ${exitCode}`,
+      message,
       "process",
       snapshot,
       startedAt,
