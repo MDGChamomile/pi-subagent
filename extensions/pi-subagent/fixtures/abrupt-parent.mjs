@@ -1,7 +1,7 @@
 import { access, writeFile } from "node:fs/promises";
 import { join } from "node:path";
 import { fileURLToPath } from "node:url";
-import { buildChildPolicy } from "../shared.ts";
+import { buildChildPolicy } from "../path-policy.ts";
 import { runChild } from "../subprocess.ts";
 
 const FAKE_CHILD = fileURLToPath(new URL("./fake-child.mjs", import.meta.url));

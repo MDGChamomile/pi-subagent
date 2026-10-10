@@ -9,7 +9,6 @@ import { isProcessGroupGone, killProcessGroup, PARENT_LIVENESS_ENV, PARENT_LIVEN
 import {
   BUDGET_TELEMETRY_ENV,
   CHILD_GUARD_EXIT_CODES,
-  buildChildPrompt,
   CHILD_FINALIZATION_GRACE_MS,
   CHILD_TIMEOUT_MS,
   LIFETIME_TOOL_CALL_LIMITS,
@@ -35,6 +34,7 @@ import {
   type SubagentFailurePhase,
   type Thinking,
 } from "./shared.ts";
+import { buildChildPrompt } from "./path-policy.ts";
 import { formatChildOutput } from "./envelope.ts";
 import { boundedParentError } from "./diagnostics.ts";
 import { ChildJsonCollector, type ChildJsonSnapshot } from "./child-stream.ts";

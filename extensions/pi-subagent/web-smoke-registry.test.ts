@@ -5,7 +5,8 @@ import { join } from "node:path";
 import { fileURLToPath } from "node:url";
 import { test } from "node:test";
 import type { AgentSession } from "@earendil-works/pi-coding-agent";
-import { ALLOWED_WEB_TOOLS, resolveWebExtensionPath, TOOL_NAME } from "./shared.ts";
+import { ALLOWED_WEB_TOOLS, TOOL_NAME } from "./shared.ts";
+import { resolveWebExtensionPath } from "./web-provenance.ts";
 
 // The configured test loader selects the bundled SDK when available.
 import { createAgentSession, DefaultResourceLoader, ModelRuntime, SessionManager, SettingsManager } from "@earendil-works/pi-coding-agent";

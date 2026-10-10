@@ -9,7 +9,8 @@ import { normalizeContext, type Message, type Model } from "@earendil-works/pi-a
 import { convertResponsesMessages } from "@earendil-works/pi-ai/api/openai-responses-shared";
 import { ChildRunError, runChild, type ChildResult } from "./subprocess.ts";
 import { emptyUsage } from "./child-stream.ts";
-import { buildChildPolicy, CHILD_GUARD_EXIT_CODES, MAX_FINAL_BYTES, MAX_PARENT_ERROR_BYTES } from "./shared.ts";
+import { CHILD_GUARD_EXIT_CODES, MAX_FINAL_BYTES, MAX_PARENT_ERROR_BYTES } from "./shared.ts";
+import { buildChildPolicy } from "./path-policy.ts";
 
 const FAKE_CHILD = fileURLToPath(new URL("./fixtures/fake-child.mjs", import.meta.url));
 const ABRUPT_PARENT = fileURLToPath(new URL("./fixtures/abrupt-parent.mjs", import.meta.url));

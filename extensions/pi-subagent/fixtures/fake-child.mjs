@@ -113,7 +113,7 @@ if (scenario.startsWith("observations-")) {
   // Import the native tool module directly; Pi 1.0.0's SDK barrel would also work.
   const grepModule = new URL("./core/tools/grep.js", import.meta.resolve("@earendil-works/pi-coding-agent"));
   const { createGrepTool } = await import(grepModule.href);
-  const { authorizeReadPath } = await import("../shared.ts");
+  const { authorizeReadPath } = await import("../path-policy.ts");
   const policy = JSON.parse(readFileSync(process.env.PI_SUBAGENT_POLICY_FILE, "utf8"));
   const path = await authorizeReadPath(policy, "allowed");
   const result = await createGrepTool(policy.cwd).execute("grep-scope", {

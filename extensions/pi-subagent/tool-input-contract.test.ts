@@ -11,7 +11,7 @@ import {
 import { Type } from "typebox";
 import { prepareWebCall } from "./child-guard.ts";
 import { emptyUsage } from "./child-stream.ts";
-import { authorizeReadPath, buildChildPolicy } from "./shared.ts";
+import { authorizeReadPath, buildChildPolicy } from "./path-policy.ts";
 
 const model: Model<"openai-completions"> = {
   id: "offline-input-contract", name: "Offline Input Contract", provider: "offline-test", api: "openai-completions",
