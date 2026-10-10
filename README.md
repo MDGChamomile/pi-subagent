@@ -106,7 +106,7 @@ Mixed local-and-web work uses separate child calls, with synthesis performed by 
 
 These are **default settings**, not required providers or models. They do not inherit the parent model or change its thinking level.
 
-Run **`/pi-subagent-settings`** in Pi's TUI to change a preset's provider, model, or thinking level, or edit `~/.pi/agent/pi-subagent.json` (under `PI_CODING_AGENT_DIR` when set). Settings apply to the next call without a reload. Only user-level settings are read; project files and tool arguments cannot override them, and there is no automatic fallback. Authenticate each provider through Pi. See the [extension guide](extensions/pi-subagent/README.md#presets) for the settings file format and validation rules.
+Run **`/pi-subagent-settings`** in Pi's TUI to change a preset's provider, model, or thinking level, or edit `~/.pi/agent/pi-subagent.json` (under `PI_CODING_AGENT_DIR` when set). Settings apply to the next call without a reload. OpenAI access is not required when you configure other providers available through Pi. Change each preset you intend to use; untouched presets retain their Codex defaults. Only user-level settings are read; project files and tool arguments cannot override them, and there is no automatic fallback. Authenticate each provider through Pi. See the [extension guide](extensions/pi-subagent/README.md#presets) for the settings file format and validation rules.
 
 ## Security and data flow
 
