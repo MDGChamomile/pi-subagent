@@ -1,6 +1,6 @@
 // Isolated offline contract: real SDK -> built-in Codex SSE API -> onPayload -> guard.
 import assert from "node:assert/strict";
-import { mkdtempSync, readFileSync, rmSync, writeFileSync } from "node:fs";
+import { mkdtempSync, readFileSync, realpathSync, rmSync, writeFileSync } from "node:fs";
 import { syncBuiltinESMExports } from "node:module";
 import net from "node:net";
 import tls from "node:tls";
@@ -8,7 +8,7 @@ import { tmpdir } from "node:os";
 import { join } from "node:path";
 
 const scenario = process.argv[2];
-const root = mkdtempSync(join(tmpdir(), "pi-subagent-provider-contract-"));
+const root = realpathSync(mkdtempSync(join(tmpdir(), "pi-subagent-provider-contract-")));
 Object.assign(process.env, { HOME: root, PI_CODING_AGENT_DIR: root, PI_OFFLINE: "1", PI_TELEMETRY: "0" });
 let requests = 0;
 let hooks = 0;

@@ -1,7 +1,7 @@
 import assert from "node:assert/strict";
 import fs from "node:fs";
 import { syncBuiltinESMExports } from "node:module";
-import { mkdtemp, mkdir, readFile, rm, symlink, writeFile } from "node:fs/promises";
+import { mkdtemp, mkdir, readFile, realpath, rm, symlink, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { describe, test, type TestContext } from "node:test";
@@ -27,7 +27,7 @@ async function createHarness(
   capability: "local" | "web" = "local",
   softDeadline = Date.now() + 60_000,
 ) {
-  const root = await mkdtemp(join(tmpdir(), "pi-subagent-guard-test-"));
+  const root = await realpath(await mkdtemp(join(tmpdir(), "pi-subagent-guard-test-")));
   const workspace = join(root, "workspace");
   await mkdir(join(workspace, "allowed"), { recursive: true });
   await writeFile(join(workspace, "allowed", "inside.txt"), "inside\n");

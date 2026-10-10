@@ -107,6 +107,8 @@ python3 -B -m unittest discover -s .github/scripts -p 'test_*.py' -v
 python3 -B .github/scripts/validate_skills.py
 ```
 
+The `subagent-macos` validation job runs the runtime and package checks on macOS 15/arm64 with Node.js 22.22.0 and Python 3.10, including source package discovery, private canonical paths, cancellation, process-group escalation, and abrupt parent exit. It deliberately uses a symlinked `TMPDIR` to exercise macOS-style path aliases. Existing required checks remain `skills` and `subagent`; macOS support changes also require a successful `subagent-macos` result before merge and on the merged commit. No live provider requests are made. Other macOS versions, Intel Macs, and non-Node Pi launchers are not covered by this job.
+
 The development lockfile and CI pin Pi 1.0.0, the declared minimum; the weekly canary tests current upstream Pi packages separately. An independent `latest-web` canary job installs `pi-web-access@latest` only in its disposable test environment and checks its registered Pi request schemas against the guard's allowlist and representative original/normalized inputs. It never invokes the tools or starts a model session. Regular validation tests the checker with synthetic schemas and breaking-change controls; it does not install the web dependency.
 
 To reproduce the web schema canary in a disposable checkout:

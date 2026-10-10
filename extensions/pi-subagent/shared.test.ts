@@ -30,7 +30,7 @@ import { boundedParentError } from "./diagnostics.ts";
 
 describe("pi-subagent scope policy", () => {
   test("canonicalizes, deduplicates, and authorizes explicit roots", async () => {
-    const root = await mkdtemp(join(tmpdir(), "pi-subagent-test-"));
+    const root = await realpath(await mkdtemp(join(tmpdir(), "pi-subagent-test-")));
     try {
       const workspace = join(root, "workspace");
       const nested = join(workspace, "src");
@@ -100,7 +100,7 @@ describe("pi-subagent scope policy", () => {
   });
 
   test("preserves exact file scopes", async () => {
-    const root = await mkdtemp(join(tmpdir(), "pi-subagent-test-"));
+    const root = await realpath(await mkdtemp(join(tmpdir(), "pi-subagent-test-")));
     try {
       await writeFile(join(root, "a.txt"), "a\n");
       await writeFile(join(root, "b.txt"), "b\n");
@@ -278,7 +278,7 @@ describe("pi-subagent model invocation contract", () => {
   });
 
   test("resolves one common installed web extension source", async () => {
-    const root = await mkdtemp(join(tmpdir(), "pi-subagent-test-"));
+    const root = await realpath(await mkdtemp(join(tmpdir(), "pi-subagent-test-")));
     try {
       const entry = join(root, "index.ts");
       await writeFile(entry, "export default () => {};\n");
@@ -331,7 +331,7 @@ describe("pi-subagent model invocation contract", () => {
   });
 
   test("resolves packaged directory entries without trusting sibling files or source fallbacks", async () => {
-    const root = await mkdtemp(join(tmpdir(), "pi-subagent-web-entry-"));
+    const root = await realpath(await mkdtemp(join(tmpdir(), "pi-subagent-web-entry-")));
     try {
       const pkg = join(root, "package");
       const dist = join(pkg, "dist");
