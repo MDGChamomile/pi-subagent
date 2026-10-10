@@ -11,7 +11,6 @@ import {
   ALLOWED_FILE_TOOLS,
   ALLOWED_WEB_TOOLS,
   BUDGET_TELEMETRY_ENV,
-  buildChildPolicy,
   LIFETIME_TOOL_CALL_LIMITS,
   POLICY_ENV,
   READY_ENV,
@@ -19,6 +18,7 @@ import {
   SOFT_DEADLINE_ENV,
   WEB_EXTENSION_ENV,
 } from "./shared.ts";
+import { buildChildPolicy } from "./path-policy.ts";
 
 type Handler = (...args: any[]) => any;
 

@@ -262,6 +262,12 @@ try {
       const child = join(directory, "extensions/pi-subagent/child-guard.ts");
       await writeFile(child, 'import "./missing-child-dependency.ts";\n' + await readFile(child, "utf8"));
     }, /Pi child extension loading failed/],
+    ["missing-path-policy", async (directory) => {
+      await rm(join(directory, "extensions/pi-subagent/path-policy.ts"));
+    }, /Pi extension loading failed/],
+    ["missing-web-provenance", async (directory) => {
+      await rm(join(directory, "extensions/pi-subagent/web-provenance.ts"));
+    }, /Pi extension loading failed/],
     ["missing-tool", async (directory) => {
       await writeFile(join(directory, "index.ts"), "export default function () {}\n");
     }, /expected pi_subagent tool registration/],
@@ -283,4 +289,4 @@ try {
   await rm(temporaryConfig, { recursive: true, force: true });
 }
 
-console.log(`${manifest.name}@${manifest.version}: ${actualFiles.length} package files, Pi parent/child discovery, and 4 negative controls verified`);
+console.log(`${manifest.name}@${manifest.version}: ${actualFiles.length} package files, Pi parent/child discovery, and 6 negative controls verified`);

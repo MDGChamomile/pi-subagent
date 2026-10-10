@@ -6,11 +6,9 @@ import { validatePresetSelection, type PresetSelection } from "./config.ts";
 import {
   ALLOWED_FILE_TOOLS,
   ALLOWED_WEB_TOOLS,
-  authorizeReadPath,
   BUDGET_TELEMETRY_ENV,
   CHILD_GUARD_EXIT_CODES,
   DEFAULT_WEB_RESULTS_PER_QUERY,
-  isWithin,
   LIFETIME_TOOL_CALL_LIMITS,
   LIFETIME_WEB_FETCH_TARGET_LIMIT,
   LIFETIME_WEB_FETCH_TARGET_SOFT_LIMIT,
@@ -32,6 +30,7 @@ import {
   type BudgetTelemetry,
   type ChildPolicy,
 } from "./shared.ts";
+import { authorizeReadPath, isWithin } from "./path-policy.ts";
 
 const FILE_TOOLS = new Set<string>(ALLOWED_FILE_TOOLS);
 const WEB_TOOLS = new Set<string>(ALLOWED_WEB_TOOLS);
@@ -193,7 +192,7 @@ function validateBoundedQueries(toolName: string, input: Record<string, unknown>
   return undefined;
 }
 
-export function webResourceCost(
+function webResourceCost(
   toolName: string,
   input: Record<string, unknown>,
 ): { queries: number; fetchTargets: number } {

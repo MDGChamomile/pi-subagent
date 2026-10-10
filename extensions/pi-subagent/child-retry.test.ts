@@ -7,7 +7,8 @@ import { createAssistantMessageEventStream, getCurrentTools, type AssistantMessa
 import type { AgentSession } from "@earendil-works/pi-coding-agent";
 import childGuard from "./child-guard.ts";
 import { emptyUsage } from "./child-stream.ts";
-import { ALLOWED_FILE_TOOLS, BUDGET_TELEMETRY_ENV, buildChildPolicy, POLICY_ENV, READY_ENV, SOFT_DEADLINE_ENV } from "./shared.ts";
+import { ALLOWED_FILE_TOOLS, BUDGET_TELEMETRY_ENV, POLICY_ENV, READY_ENV, SOFT_DEADLINE_ENV } from "./shared.ts";
+import { buildChildPolicy } from "./path-policy.ts";
 
 // The configured test loader selects the bundled SDK when available.
 import { createAgentSession, DefaultResourceLoader, ModelRuntime, SessionManager, SettingsManager } from "@earendil-works/pi-coding-agent";

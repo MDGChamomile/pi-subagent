@@ -6,17 +6,16 @@ import { StringEnum } from "@earendil-works/pi-ai";
 import { Text, TruncatedText, truncateToWidth } from "@earendil-works/pi-tui";
 import { Type } from "typebox";
 import {
-  buildChildPolicy,
   MAX_SCOPE_ROOTS,
-  makeCanonicalTempDirectory,
   PRESET_NAMES,
-  resolveWebExtensionPath,
   sanitizeDisplayText,
   TOOL_NAME,
   type Capability,
   type ChildPolicy,
   type Preset,
 } from "./shared.ts";
+import { buildChildPolicy, makeCanonicalTempDirectory } from "./path-policy.ts";
+import { resolveWebExtensionPath } from "./web-provenance.ts";
 import { invocationLimitBlock, MAX_SUBAGENT_CALLS, ModelInvocationGate } from "./invocation-gate.ts";
 import { boundedParentError } from "./diagnostics.ts";
 import { ChildRunError, formatResultSummary, runChild } from "./subprocess.ts";
