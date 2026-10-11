@@ -127,9 +127,11 @@ describe("child invocation", () => {
       assert.equal(args[0], "/synthetic/pi.js");
       const piArgs = args.slice(1);
       assert.equal(piArgs.includes("/synthetic/pi.js"), false);
+      // Pi's parser keeps the last repeated value option, so value options must also appear once.
       for (const flag of [
         "--print", "--no-session", "--no-extensions", "--no-skills", "--no-prompt-templates",
         "--no-themes", "--no-context-files", "--no-approve",
+        "--mode", "--model", "--thinking", "--tools", "--system-prompt",
       ]) {
         assert.equal(piArgs.filter((arg) => arg === flag).length, 1, `${capability}: ${flag}`);
       }

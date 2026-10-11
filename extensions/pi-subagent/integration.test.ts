@@ -1,5 +1,6 @@
 import assert from "node:assert/strict";
 import { spawn } from "node:child_process";
+import { existsSync } from "node:fs";
 import { mkdir, mkdtemp, readFile, rm, symlink, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
@@ -7,7 +8,7 @@ import { describe, test } from "node:test";
 import { fileURLToPath } from "node:url";
 import { normalizeContext, type Message, type Model } from "@earendil-works/pi-ai";
 import { convertResponsesMessages } from "@earendil-works/pi-ai/api/openai-responses-shared";
-import { ChildRunError, runChild, type ChildResult } from "./subprocess.ts";
+import { buildChildInvocation, ChildRunError, runChild, type ChildResult } from "./subprocess.ts";
 import { emptyUsage } from "./child-stream.ts";
 import { CHILD_GUARD_EXIT_CODES, MAX_FINAL_BYTES, MAX_PARENT_ERROR_BYTES } from "./shared.ts";
 import { buildChildPolicy } from "./path-policy.ts";
@@ -82,6 +83,13 @@ function modelVisibleOutput(result: ChildResult): string {
   assert.equal("details" in toolOutput, false);
   assert.equal(result.contextTokens, Math.ceil(Buffer.byteLength(toolOutput.output, "utf8") / 4));
   return toolOutput.output;
+}
+
+// The "timeout" fixture publishes its PID once SIGTERM is ignored and records each SIGTERM.
+async function assertIgnoredSigtermEscalated(root: string): Promise<void> {
+  const pid = Number(await readFile(join(root, "sigterm-ignored.pid"), "utf8"));
+  assert.ok(existsSync(join(root, "sigterm-received")), "the child must receive and ignore SIGTERM");
+  assert.throws(() => process.kill(pid, 0), { code: "ESRCH" }, "SIGKILL escalation must end the child");
 }
 
 async function waitForProcessExit(pid: number, timeoutMs = 3_000): Promise<void> {
@@ -178,16 +186,21 @@ describe("pi-subagent spawned-child integration", () => {
     }
   });
 
-  test("the spawned child receives the restrictive Pi arguments once and no session or provider overrides", async () => {
+  test("the spawned child receives the built Pi arguments unchanged and no session or provider overrides", async () => {
     const inherited = [
       "PI_SESSION_ID", "PI_SESSION_FILE", "PI_PROVIDER", "PI_MODEL", "PI_REASONING_LEVEL",
       "PI_ALLOW_BROWSER_COOKIES", "FEYNMAN_ALLOW_BROWSER_COOKIES",
     ];
     const previous = inherited.map((name) => process.env[name]);
     let received: { piArgs: string[]; inheritedEnv: string[] };
+    let built: string[] = [];
     try {
       for (const name of inherited) process.env[name] = "synthetic-parent-value";
-      const result = await withFixture("argv-report", (options) => runChild(options));
+      const result = await withFixture("argv-report", (options) => {
+        // The soft deadline reaches only the environment, not the argument list.
+        built = buildChildInvocation({ ...options, softDeadline: 0 }, { command: "", args: [] }, {}).args;
+        return runChild(options);
+      });
       received = JSON.parse(JSON.parse(result.output).answer);
     } finally {
       inherited.forEach((name, index) => {
@@ -196,21 +209,8 @@ describe("pi-subagent spawned-child integration", () => {
       });
     }
     const { piArgs, inheritedEnv } = received;
-    const count = (flag: string) => piArgs.filter((arg) => arg === flag).length;
-    const value = (flag: string) => piArgs[piArgs.indexOf(flag) + 1];
-    for (const flag of [
-      "--mode", "--print", "--no-session", "--model", "--thinking", "--tools", "--no-extensions", "--extension",
-      "--no-skills", "--no-prompt-templates", "--no-themes", "--no-context-files", "--no-approve", "--system-prompt",
-    ]) {
-      assert.equal(count(flag), 1, `${flag} must be passed exactly once`);
-    }
-    assert.equal(value("--mode"), "json");
-    assert.equal(value("--model"), "test/fake");
-    assert.equal(value("--thinking"), "low");
-    assert.equal(value("--tools"), "read,grep,find,ls");
-    assert.match(value("--extension"), /[\\/]child-guard\.ts$/);
-    assert.ok(piArgs.indexOf("--no-extensions") < piArgs.indexOf("--extension"), "only the guard loads after --no-extensions");
-    assert.ok(value("--system-prompt").length > 0);
+    // The unit tests pin the argument contract; this pins its delivery to the spawned child.
+    assert.deepEqual(piArgs, built, "runChild must pass the built Pi arguments unchanged");
     assert.deepEqual(inheritedEnv, []);
   });
 
@@ -485,17 +485,19 @@ describe("pi-subagent spawned-child integration", () => {
   });
 
   test("terminates a child process that ignores the timeout SIGTERM", async () => {
-    const startedAt = Date.now();
-    await assert.rejects(
-      () => withFixture("timeout", (options) => runChild({ ...options, timeoutMs: 50, killGraceMs: 50 })),
-      (error: unknown) => {
-        const message = error instanceof Error ? error.message : String(error);
-        assert.match(message, /timed out after 50 milliseconds/);
-        assert.match(message, /"phase":"timeout"/);
-        return true;
-      },
-    );
-    assert.ok(Date.now() - startedAt < 2_000);
+    await withFixture("timeout", async (options) => {
+      // Leave time for the fixture to install its SIGTERM handler before the deadline.
+      await assert.rejects(
+        () => runChild({ ...options, timeoutMs: 1_500, killGraceMs: 50 }),
+        (error: unknown) => {
+          const message = error instanceof Error ? error.message : String(error);
+          assert.match(message, /timed out after 1500 milliseconds/);
+          assert.match(message, /"phase":"timeout"/);
+          return true;
+        },
+      );
+      await assertIgnoredSigtermEscalated(options.policy.cwd);
+    });
   });
 
   test("preserves reported usage when a started child later times out", async () => {
@@ -513,17 +515,25 @@ describe("pi-subagent spawned-child integration", () => {
   });
 
   test("terminates a running child when the parent aborts", async () => {
-    const controller = new AbortController();
-    setTimeout(() => controller.abort(), 50);
-    await assert.rejects(
-      () => withFixture("timeout", (options) => runChild({ ...options, signal: controller.signal })),
-      (error: unknown) => {
-        const message = error instanceof Error ? error.message : String(error);
-        assert.match(message, /cancelled/);
-        assert.match(message, /"phase":"cancelled"/);
-        return true;
-      },
-    );
+    await withFixture("timeout", async (options) => {
+      const controller = new AbortController();
+      const running = runChild({ ...options, timeoutMs: 10_000, killGraceMs: 50, signal: controller.signal })
+        .then(() => undefined, (error: unknown) => error);
+      try {
+        const marker = join(options.policy.cwd, "sigterm-ignored.pid");
+        const deadline = Date.now() + 3_000;
+        while (!existsSync(marker) && Date.now() < deadline) await new Promise((resolve) => setTimeout(resolve, 10));
+        assert.ok(existsSync(marker), "the child must be running before cancellation");
+        controller.abort();
+        const error = await running;
+        assert.ok(error instanceof ChildRunError, "a started child, not a pre-start cancellation");
+        assert.match(error.message, /"phase":"cancelled"/);
+        await assertIgnoredSigtermEscalated(options.policy.cwd);
+      } finally {
+        controller.abort();
+        await running;
+      }
+    });
   });
 
   test("finishes cancellation before the grace deadline when the whole group exits", {
