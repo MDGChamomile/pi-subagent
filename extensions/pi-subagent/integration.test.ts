@@ -186,7 +186,7 @@ describe("pi-subagent spawned-child integration", () => {
     }
   });
 
-  test("the spawned child receives the restrictive Pi arguments once and no session or provider overrides", async () => {
+  test("the spawned child receives the built Pi arguments unchanged and no session or provider overrides", async () => {
     const inherited = [
       "PI_SESSION_ID", "PI_SESSION_FILE", "PI_PROVIDER", "PI_MODEL", "PI_REASONING_LEVEL",
       "PI_ALLOW_BROWSER_COOKIES", "FEYNMAN_ALLOW_BROWSER_COOKIES",
@@ -211,21 +211,6 @@ describe("pi-subagent spawned-child integration", () => {
     const { piArgs, inheritedEnv } = received;
     // The unit tests pin the argument contract; this pins its delivery to the spawned child.
     assert.deepEqual(piArgs, built, "runChild must pass the built Pi arguments unchanged");
-    const count = (flag: string) => piArgs.filter((arg) => arg === flag).length;
-    const value = (flag: string) => piArgs[piArgs.indexOf(flag) + 1];
-    for (const flag of [
-      "--mode", "--print", "--no-session", "--model", "--thinking", "--tools", "--no-extensions", "--extension",
-      "--no-skills", "--no-prompt-templates", "--no-themes", "--no-context-files", "--no-approve", "--system-prompt",
-    ]) {
-      assert.equal(count(flag), 1, `${flag} must be passed exactly once`);
-    }
-    assert.equal(value("--mode"), "json");
-    assert.equal(value("--model"), "test/fake");
-    assert.equal(value("--thinking"), "low");
-    assert.equal(value("--tools"), "read,grep,find,ls");
-    assert.match(value("--extension"), /[\\/]child-guard\.ts$/);
-    assert.ok(piArgs.indexOf("--no-extensions") < piArgs.indexOf("--extension"), "only the guard loads after --no-extensions");
-    assert.ok(value("--system-prompt").length > 0);
     assert.deepEqual(inheritedEnv, []);
   });
 
