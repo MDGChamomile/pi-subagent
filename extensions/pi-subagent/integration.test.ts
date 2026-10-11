@@ -8,7 +8,7 @@ import { describe, test } from "node:test";
 import { fileURLToPath } from "node:url";
 import { normalizeContext, type Message, type Model } from "@earendil-works/pi-ai";
 import { convertResponsesMessages } from "@earendil-works/pi-ai/api/openai-responses-shared";
-import { ChildRunError, runChild, type ChildResult } from "./subprocess.ts";
+import { buildChildInvocation, ChildRunError, runChild, type ChildResult } from "./subprocess.ts";
 import { emptyUsage } from "./child-stream.ts";
 import { CHILD_GUARD_EXIT_CODES, MAX_FINAL_BYTES, MAX_PARENT_ERROR_BYTES } from "./shared.ts";
 import { buildChildPolicy } from "./path-policy.ts";
@@ -193,9 +193,14 @@ describe("pi-subagent spawned-child integration", () => {
     ];
     const previous = inherited.map((name) => process.env[name]);
     let received: { piArgs: string[]; inheritedEnv: string[] };
+    let built: string[] = [];
     try {
       for (const name of inherited) process.env[name] = "synthetic-parent-value";
-      const result = await withFixture("argv-report", (options) => runChild(options));
+      const result = await withFixture("argv-report", (options) => {
+        // The soft deadline reaches only the environment, not the argument list.
+        built = buildChildInvocation({ ...options, softDeadline: 0 }, { command: "", args: [] }, {}).args;
+        return runChild(options);
+      });
       received = JSON.parse(JSON.parse(result.output).answer);
     } finally {
       inherited.forEach((name, index) => {
@@ -204,6 +209,8 @@ describe("pi-subagent spawned-child integration", () => {
       });
     }
     const { piArgs, inheritedEnv } = received;
+    // The unit tests pin the argument contract; this pins its delivery to the spawned child.
+    assert.deepEqual(piArgs, built, "runChild must pass the built Pi arguments unchanged");
     const count = (flag: string) => piArgs.filter((arg) => arg === flag).length;
     const value = (flag: string) => piArgs[piArgs.indexOf(flag) + 1];
     for (const flag of [
