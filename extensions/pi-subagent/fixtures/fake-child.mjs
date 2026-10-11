@@ -251,7 +251,9 @@ if (scenario.startsWith("observations-")) {
       stopReason: "toolUse",
     });
   }
-  process.on("SIGTERM", () => {});
+  // Ignore SIGTERM but record it, then publish that the handler is installed.
+  process.on("SIGTERM", () => { writeFileSync(join(process.cwd(), "sigterm-received"), ""); });
+  writeFileSync(join(process.cwd(), "sigterm-ignored.pid"), String(process.pid));
   setInterval(() => {}, 1_000);
 } else if (scenario === "parent-death") {
   const pidFile = process.argv[3];

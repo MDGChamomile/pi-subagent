@@ -1,5 +1,6 @@
 import assert from "node:assert/strict";
 import { spawn } from "node:child_process";
+import { existsSync } from "node:fs";
 import { mkdir, mkdtemp, readFile, rm, symlink, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
@@ -82,6 +83,13 @@ function modelVisibleOutput(result: ChildResult): string {
   assert.equal("details" in toolOutput, false);
   assert.equal(result.contextTokens, Math.ceil(Buffer.byteLength(toolOutput.output, "utf8") / 4));
   return toolOutput.output;
+}
+
+// The "timeout" fixture publishes its PID once SIGTERM is ignored and records each SIGTERM.
+async function assertIgnoredSigtermEscalated(root: string): Promise<void> {
+  const pid = Number(await readFile(join(root, "sigterm-ignored.pid"), "utf8"));
+  assert.ok(existsSync(join(root, "sigterm-received")), "the child must receive and ignore SIGTERM");
+  assert.throws(() => process.kill(pid, 0), { code: "ESRCH" }, "SIGKILL escalation must end the child");
 }
 
 async function waitForProcessExit(pid: number, timeoutMs = 3_000): Promise<void> {
@@ -485,17 +493,19 @@ describe("pi-subagent spawned-child integration", () => {
   });
 
   test("terminates a child process that ignores the timeout SIGTERM", async () => {
-    const startedAt = Date.now();
-    await assert.rejects(
-      () => withFixture("timeout", (options) => runChild({ ...options, timeoutMs: 50, killGraceMs: 50 })),
-      (error: unknown) => {
-        const message = error instanceof Error ? error.message : String(error);
-        assert.match(message, /timed out after 50 milliseconds/);
-        assert.match(message, /"phase":"timeout"/);
-        return true;
-      },
-    );
-    assert.ok(Date.now() - startedAt < 2_000);
+    await withFixture("timeout", async (options) => {
+      // Leave time for the fixture to install its SIGTERM handler before the deadline.
+      await assert.rejects(
+        () => runChild({ ...options, timeoutMs: 1_500, killGraceMs: 50 }),
+        (error: unknown) => {
+          const message = error instanceof Error ? error.message : String(error);
+          assert.match(message, /timed out after 1500 milliseconds/);
+          assert.match(message, /"phase":"timeout"/);
+          return true;
+        },
+      );
+      await assertIgnoredSigtermEscalated(options.policy.cwd);
+    });
   });
 
   test("preserves reported usage when a started child later times out", async () => {
@@ -513,17 +523,25 @@ describe("pi-subagent spawned-child integration", () => {
   });
 
   test("terminates a running child when the parent aborts", async () => {
-    const controller = new AbortController();
-    setTimeout(() => controller.abort(), 50);
-    await assert.rejects(
-      () => withFixture("timeout", (options) => runChild({ ...options, signal: controller.signal })),
-      (error: unknown) => {
-        const message = error instanceof Error ? error.message : String(error);
-        assert.match(message, /cancelled/);
-        assert.match(message, /"phase":"cancelled"/);
-        return true;
-      },
-    );
+    await withFixture("timeout", async (options) => {
+      const controller = new AbortController();
+      const running = runChild({ ...options, timeoutMs: 10_000, killGraceMs: 50, signal: controller.signal })
+        .then(() => undefined, (error: unknown) => error);
+      try {
+        const marker = join(options.policy.cwd, "sigterm-ignored.pid");
+        const deadline = Date.now() + 3_000;
+        while (!existsSync(marker) && Date.now() < deadline) await new Promise((resolve) => setTimeout(resolve, 10));
+        assert.ok(existsSync(marker), "the child must be running before cancellation");
+        controller.abort();
+        const error = await running;
+        assert.ok(error instanceof ChildRunError, "a started child, not a pre-start cancellation");
+        assert.match(error.message, /"phase":"cancelled"/);
+        await assertIgnoredSigtermEscalated(options.policy.cwd);
+      } finally {
+        controller.abort();
+        await running;
+      }
+    });
   });
 
   test("finishes cancellation before the grace deadline when the whole group exits", {
