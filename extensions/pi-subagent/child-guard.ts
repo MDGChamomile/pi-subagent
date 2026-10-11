@@ -220,12 +220,7 @@ function validateWebCall(toolName: string, input: Record<string, unknown>): stri
     return `${toolName} input ${unknown.sort().join(", ")} is not allowed in the subagent`;
   }
 
-  if (toolName === "web_search") {
-    const boundedError = validateBoundedQueries(toolName, input);
-    if (boundedError) return boundedError;
-    return undefined;
-  }
-  if (toolName === "source_check") return validateBoundedQueries(toolName, input);
+  if (toolName === "web_search" || toolName === "source_check") return validateBoundedQueries(toolName, input);
   if (toolName === "get_search_content") return undefined;
   if (toolName !== "fetch_content") return `${toolName} is not supported in the subagent`;
   if (input.mode !== undefined && input.mode !== "readable") {
@@ -483,7 +478,7 @@ export default function childGuard(
     guardReady = true;
   });
 
-  pi.on("tool_execution_start", (event) => {
+  pi.on("tool_execution_start", () => {
     budget.toolCallsAttempted += 1;
     if (policy) {
       const limits = LIFETIME_TOOL_CALL_LIMITS[policy.capability];

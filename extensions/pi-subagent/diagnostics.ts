@@ -3,6 +3,7 @@ import {
   MAX_PARENT_ERROR_BYTES,
   OBSERVED_CHILD_EVENTS,
   sanitizeDisplayText,
+  utf8Prefix,
   type ChildFailureObservations,
   type ObservedChildEvent,
   type SubagentFailureDiagnostics,
@@ -17,9 +18,7 @@ function truncateUtf8WithMarker(
   if (source.length <= maxBytes) return { text, truncated: false };
   const marker = Buffer.from(markerText, "utf8");
   const budget = Math.max(0, maxBytes - marker.length);
-  let end = budget;
-  while (end > 0 && (source[end]! & 0xc0) === 0x80) end--;
-  return { text: Buffer.concat([source.subarray(0, end), marker]).toString("utf8"), truncated: true };
+  return { text: Buffer.concat([utf8Prefix(source, budget), marker]).toString("utf8"), truncated: true };
 }
 
 function safeDiagnosticText(value: string): string {
