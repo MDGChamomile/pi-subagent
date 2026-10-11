@@ -311,7 +311,14 @@ export default function childGuard(
     if (!budgetTelemetryPath) return;
     const snapshot = JSON.stringify(budget);
     if (snapshot === lastPersistedBudget) return;
-    writeFileSync(budgetTelemetryPath, snapshot, { encoding: "utf8", mode: 0o600 });
+    try {
+      writeFileSync(budgetTelemetryPath, snapshot, { encoding: "utf8", mode: 0o600 });
+    } catch (error) {
+      // The parent derives tool_budget status only from this file. Pi may continue
+      // after a hook error, so a stale snapshot must not let the child finish normally.
+      failClosed(`could not persist budget telemetry: ${error instanceof Error ? error.message : String(error)}`);
+      throw error;
+    }
     // Record only successful writes; changed reservations and terminal state must
     // still be persisted synchronously at their existing event boundaries.
     lastPersistedBudget = snapshot;

@@ -216,6 +216,58 @@ describe("pi-subagent child guard", () => {
     }
   });
 
+  test("a failed hard-limit telemetry write disables tools and invalidates the policy", async (t) => {
+    const tracked = trackBudgetWrites(t);
+    const harness = await createHarness(["allowed"]);
+    try {
+      await harness.emit("session_start");
+      for (let attempt = 1; attempt <= LIFETIME_TOOL_CALL_LIMITS.local.hard; attempt++) {
+        assert.equal(await harness.callTool({
+          toolName: "read", toolCallId: `within-${attempt}`, input: { path: "allowed/inside.txt" },
+        }), undefined);
+      }
+      const event = { toolName: "read", toolCallId: "over-hard-limit", input: { path: "allowed/inside.txt" } };
+      tracked.failNext();
+      // Pi records tool_execution_start handler errors and still runs tool_call preflight.
+      await assert.rejects(harness.emit("tool_execution_start", { ...event, args: event.input }),
+        /synthetic telemetry write failure/);
+      assert.deepEqual(harness.getActiveTools(), []);
+      const blocked = await harness.emit("tool_call", event);
+      assert.equal(blocked?.block, true);
+      assert.equal(blocked?.terminate, true);
+      assert.match(blocked?.reason, /policy is unavailable.*budget telemetry/);
+    } finally {
+      try { await harness.cleanup(); } finally { tracked.restore(); }
+    }
+  });
+
+  test("a failed web budget telemetry write blocks later web calls", async (t) => {
+    const tracked = trackBudgetWrites(t);
+    const harness = await createHarness([], "web");
+    try {
+      await harness.emit("session_start");
+      for (let index = 0; index < 8; index++) {
+        assert.equal(await harness.callTool({
+          toolName: "web_search", toolCallId: `four-queries-${index}`, input: { queries: ["a", "b", "c", "d"] },
+        }), undefined);
+      }
+      const event = { toolName: "web_search", toolCallId: "over-query-budget", input: { query: "one" } };
+      await harness.emit("tool_execution_start", { ...event, args: event.input });
+      tracked.failNext();
+      // Pi blocks a call whose tool_call handler throws.
+      await assert.rejects(harness.emit("tool_call", event), /synthetic telemetry write failure/);
+      await harness.emit("tool_execution_end", { ...event, result: {}, isError: true });
+      const blocked = await harness.callTool({
+        toolName: "get_search_content", toolCallId: "after-failed-write", input: { responseId: "synthetic" },
+      });
+      assert.equal(blocked?.block, true);
+      assert.equal(blocked?.terminate, true);
+      assert.deepEqual(harness.getActiveTools(), []);
+    } finally {
+      try { await harness.cleanup(); } finally { tracked.restore(); }
+    }
+  });
+
   test("failed final-answer delivery disables tools before delivery and invalidates the policy", async () => {
     const harness = await createHarness(["allowed"]);
     try {
