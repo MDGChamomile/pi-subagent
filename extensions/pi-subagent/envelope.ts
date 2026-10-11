@@ -1,4 +1,4 @@
-import { MAX_FINAL_BYTES, sanitizeDisplayText, type PartialReason } from "./shared.ts";
+import { MAX_FINAL_BYTES, sanitizeDisplayText, utf8Prefix, type PartialReason } from "./shared.ts";
 
 /** Runtime-owned fields stay outside the JSON-escaped, untrusted child answer. */
 export function formatChildOutput(answer: string, partialReason?: PartialReason): { text: string; truncated: boolean } {
@@ -14,11 +14,7 @@ export function formatChildOutput(answer: string, partialReason?: PartialReason)
 
   // Cap the serialized envelope, not just its body: JSON escaping also costs bytes.
   const source = Buffer.from(clean, "utf8");
-  const prefix = (bytes: number) => {
-    let end = bytes;
-    while (end > 0 && (source[end]! & 0xc0) === 0x80) end--;
-    return source.subarray(0, end).toString("utf8");
-  };
+  const prefix = (bytes: number) => utf8Prefix(source, bytes).toString("utf8");
   let low = 0;
   let high = Math.min(source.length, MAX_FINAL_BYTES);
   while (low < high) {

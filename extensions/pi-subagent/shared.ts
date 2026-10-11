@@ -127,3 +127,10 @@ export function toolsForCapability(capability: Capability): string[] {
 export function sanitizeDisplayText(text: string): string {
   return text.replace(/[\u0000-\u0008\u000b-\u001f\u007f-\u009f\u202a-\u202e\u2066-\u2069]/g, "?");
 }
+
+/** The first `maxBytes` bytes of UTF-8 text, shortened so no code point is split. */
+export function utf8Prefix(source: Buffer, maxBytes: number): Buffer {
+  let end = maxBytes;
+  while (end > 0 && (source[end]! & 0xc0) === 0x80) end--;
+  return source.subarray(0, end);
+}
