@@ -87,7 +87,9 @@ The model can select the skill automatically. To invoke it explicitly, include a
 /skill:pi-subagent Investigate how cancellation terminates child processes within src/. Return conclusions with file and line evidence.
 ```
 
-This command gives delegation guidance to the parent, which then calls the `pi_subagent` tool.
+Replace `src/` with an existing file or directory in your project that is relevant to your question.
+
+This command gives delegation guidance to the parent, which then calls the `pi_subagent` tool. The child investigates only: it does not modify files or run tests, and final verification remains with the parent.
 
 ## Capabilities
 
@@ -118,7 +120,7 @@ The runtime canonicalizes local paths, blocks lexical and symlink escapes, verif
 
 ## Documentation
 
-- [Extension guide](extensions/pi-subagent/README.md) — complete runtime, installation, security, and verification contract.
+- [Extension guide](extensions/pi-subagent/README.md) — detailed runtime, preset settings, source installation, security, and verification contract.
 - [Skill guide](skills/pi-subagent/README.md) — when delegation is appropriate and how the workflow selects a child.
 - [Source repository](https://github.com/MDGChamomile/pi-subagent)
 - [Issue tracker](https://github.com/MDGChamomile/pi-subagent/issues)

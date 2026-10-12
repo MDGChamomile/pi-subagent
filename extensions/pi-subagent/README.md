@@ -8,42 +8,15 @@ The companion [skill](../../skills/pi-subagent/README.md) guides the parent in d
 
 ## In action
 
-An illustrated CLI walkthrough shows Pi Subagent investigating a retry bug in **Parcel Client**, a synthetic shipping client. Dialogue, timing, and usage figures are illustrative rather than a recording of a live model session.
-
-The user asks a normal debugging question. Pi decides that a focused investigation is appropriate and delegates it to a scoped, read-only child. You can also invoke `/skill:pi-subagent` explicitly with a focused task and scope; the parent follows the skill guidance and calls the same `pi_subagent` tool.
-
-![A normal retry question leading to model-selected delegation, a bounded investigation result, targeted parent verification, and the final explanation](assets/pi-subagent-automatic.gif)
-
-Both approaches use the same bounded `pi_subagent` runtime. Intermediate child tool output stays out of the parent context; the result returns to the parent for targeted verification and synthesis.
+See the README's [illustrated walkthrough](../../README.md#see-it-in-action) for model-selected and explicit delegation.
 
 ## Requirements and installation
 
-Core requirements:
+The README maintains the [requirements and npm installation steps](../../README.md#install), including the [optional web dependency](../../README.md#optional-web-capability). Installing this extension does not grant access to the configured child model.
 
-- Linux, including Ubuntu on WSL, or macOS 15 on Apple Silicon (arm64); native Windows is not officially supported or tested;
-- Pi 1.0.0 or later;
-- authentication for the configured child provider and access to its model (`openai-codex` by default; see [Presets](#presets)). Installing this extension does not grant model access.
+### Source and project installation
 
-macOS validation targets the Node.js Pi installation on macOS 15/arm64. Other macOS versions and Intel Macs are not covered by CI; no live provider compatibility is implied.
-
-Capability-specific requirements:
-
-- `local`: `rg` for `grep`, and `fd` or `fdfind` for `find`;
-- `web`: [`pi-web-access` v0.33.0 or later (stable releases)](https://github.com/nicobailon/pi-web-access) with its default tool names.
-
-Install the extension and companion skill together from npm:
-
-```bash
-pi install npm:@mdgchamomile/pi-subagent
-```
-
-For web investigations, also install the web extension (v0.33.0 or later):
-
-```bash
-pi install npm:pi-web-access
-```
-
-Alternatively, review a source checkout and install both components through Pi's package manager. Replace the path with your checkout's absolute path:
+To install from source instead, review a checkout and install both components through Pi's package manager. Replace the path with your checkout's absolute path:
 
 ```bash
 pi install /absolute/path/to/pi-subagent
@@ -58,15 +31,7 @@ Use one installation method, not npm plus a source package or manual links. If a
 
 ### First investigation
 
-The model can select the skill automatically. To invoke it explicitly, include a focused task and scope. For example, from a project with a `src/` directory:
-
-```text
-/skill:pi-subagent Investigate how cancellation terminates child processes within src/. Return conclusions with file and line evidence.
-```
-
-Replace `src/` with an existing file or directory in your project that is relevant to your question.
-
-The command loads delegation guidance for the parent, which then calls the `pi_subagent` tool. The child investigates only: it does not modify files or run tests, and final verification remains with the parent.
+Follow the README's [first investigation](../../README.md#first-investigation) for preset setup, troubleshooting, and an explicit `/skill:pi-subagent` example.
 
 > [!NOTE]
 > The web guard verifies the dependency's package name, minimum version (>=0.33.0, stable releases only), declared entry point, and tool provenance. Newer stable versions are allowed without an upper bound so updates are not blocked solely by version; this is not a guarantee of compatibility or package safety. Prereleases and malformed versions are rejected. Existing argument allowlists and execution limits remain enforced, but changes to upstream behavior may require maintenance. Another extension exposing the same tool names does not satisfy the provenance check. Without the web dependency, `local` runs remain available. Both local and web children start with `PI_OFFLINE=1`, preventing automatic downloads of missing search binaries. This startup setting does not block model-provider requests or the web capability's search and fetch requests.

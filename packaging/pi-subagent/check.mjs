@@ -75,30 +75,33 @@ assert.equal(
   sourceExtensionReadme,
   "bundled extension guide must preserve its body, rebasing only assets and the source-only development guide",
 );
-for (const asset of ["pi-subagent-automatic.gif", "pi-subagent-architecture.png"]) {
+for (const [asset, readmes] of [
+  ["pi-subagent-automatic.gif", [topLevelReadme]],
+  ["pi-subagent-architecture.png", [topLevelReadme, bundledExtensionReadme]],
+  ["pi-subagent-cover.png", [topLevelReadme]],
+]) {
   assert.equal((await stat(join(sourceRoot, "extensions/pi-subagent/assets", asset))).isFile(), true,
     "repository assets must remain available for tagged URLs");
-  assert.ok(bundledExtensionReadme.includes(`${rawRoot}/v${manifest.version}/extensions/pi-subagent/assets/${asset}`));
+  for (const readme of readmes) {
+    assert.ok(readme.includes(`${rawRoot}/v${manifest.version}/extensions/pi-subagent/assets/${asset}`));
+  }
 }
-assert.equal((await stat(join(sourceRoot, "extensions/pi-subagent/assets/pi-subagent-cover.png"))).isFile(), true,
-  "the README cover and gallery image must remain available for tagged URLs");
 
 // Documentation must state the runtime's web minimum, not a separately maintained copy.
 const webMinimum = MIN_WEB_EXTENSION_VERSION.replaceAll(".", "\\.");
-const sharedRequirementPatterns = [
+const canonicalRequirementPatterns = [
   ["minimum Pi version", /Pi 1\.0\.0 or later/],
   ["provider authentication requirement", /authentication for the configured child provider/],
   ["minimum web extension version", new RegExp(`pi-web-access\` v${webMinimum} or later`)],
   ["npm installation command", /pi install npm:@mdgchamomile\/pi-subagent/],
 ];
-for (const [description, pattern] of sharedRequirementPatterns) {
+for (const [description, pattern] of canonicalRequirementPatterns) {
   assert.match(sourceReadme, pattern, `source README is missing ${description}`);
 }
-for (const path of ["extensions/pi-subagent/README.md", "skills/pi-subagent/README.md", "skills/pi-subagent/SKILL.md"]) {
-  const guide = await readFile(join(sourceRoot, path), "utf8");
-  assert.match(guide, /Pi 1\.0\.0 or later/, `${path} has an outdated Pi minimum`);
-  assert.match(guide, new RegExp(`pi-web-access(?:\`)? v${webMinimum} or later`), `${path} has an outdated web minimum`);
-}
+// The model-loaded workflow still declares compatibility; human guides link to the README.
+const skill = await readFile(join(sourceRoot, "skills/pi-subagent/SKILL.md"), "utf8");
+assert.match(skill, /Pi 1\.0\.0 or later/, "SKILL.md has an outdated Pi minimum");
+assert.match(skill, new RegExp(`pi-web-access(?:\`)? v${webMinimum} or later`), "SKILL.md has an outdated web minimum");
 
 const presetRows = (markdown) => {
   const section = markdown.split("\n## Presets\n")[1]?.split(/\n## /)[0] ?? "";
