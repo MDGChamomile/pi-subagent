@@ -268,9 +268,7 @@ def _evaluate_context_output(
     envelope = parse_result_envelope(result_text, child_details) if arm == "subagent" else None
     # Never substitute a parent answer for a missing or malformed delegated result.
     quality_text = (envelope["answer"] if envelope is not None else "") if arm == "subagent" else final_text
-    normalize = lambda value: " ".join(re.sub(r"[^0-9a-z가-힣]+", " ", value.casefold()).split())
-    normalized_quality = normalize(quality_text)
-    matched = sum(any(normalize(candidate) in normalized_quality for candidate in group) for group in case.expected_groups)
+    matched = _count_expected_facts(quality_text, case.expected_groups)
     return {
         "case": case.name,
         "profile": case.profile,
@@ -302,6 +300,12 @@ def _evaluate_context_output(
         "subagent_result_received": bool(result_text),
         "result_text": result_text,
     }
+
+
+def _count_expected_facts(answer: str, expected_groups: tuple[tuple[str, ...], ...]) -> int:
+    normalize = lambda value: " ".join(re.sub(r"[^0-9a-z가-힣]+", " ", value.casefold()).split())
+    normalized_quality = normalize(answer)
+    return sum(any(normalize(candidate) in normalized_quality for candidate in group) for group in expected_groups)
 
 
 def evaluate_smoke(output: str, observations: list[dict[str, Any]], *, capability: str,
