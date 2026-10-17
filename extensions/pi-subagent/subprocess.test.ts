@@ -90,7 +90,37 @@ describe("child completion boundary", () => {
     }
   });
 
-
+  test("preserves telemetry validation boundaries and read errors", async () => {
+    const root = await mkdtemp(join(tmpdir(), "pi-subagent-telemetry-contract-"));
+    const path = join(root, "budget.json");
+    const telemetry = {
+      version: 1, toolCallsAttempted: 0, toolCallsExecuted: 0, deniedCalls: 0,
+      queryCount: 0, fetchTargetCount: 0, softLimitReached: false, hardLimitReached: false,
+    };
+    try {
+      await assert.rejects(() => readBudgetTelemetry(path), { message: "Subagent budget telemetry is unavailable or malformed" });
+      await writeFile(path, "{");
+      await assert.rejects(() => readBudgetTelemetry(path), { message: "Subagent budget telemetry is unavailable or malformed" });
+      for (const value of [null, [], true, 1, "text", {}, { ...telemetry, version: 2 },
+        { ...telemetry, softLimitReached: 0 }, { ...telemetry, hardLimitReached: "false" },
+        { ...telemetry, partialReason: null }, { ...telemetry, unexpected: 0 }]) {
+        await writeFile(path, JSON.stringify(value));
+        await assert.rejects(() => readBudgetTelemetry(path), { message: "Subagent budget telemetry is malformed" });
+      }
+      for (const key of ["toolCallsAttempted", "toolCallsExecuted", "deniedCalls", "queryCount", "fetchTargetCount"]) {
+        for (const value of [undefined, null, -1, 0.5, Number.MAX_SAFE_INTEGER + 1, "1", true]) {
+          await writeFile(path, JSON.stringify({ ...telemetry, [key]: value }));
+          await assert.rejects(() => readBudgetTelemetry(path), { message: "Subagent budget telemetry is malformed" });
+        }
+        await writeFile(path, JSON.stringify({ ...telemetry, [key]: Number.MAX_SAFE_INTEGER }));
+        assert.deepEqual(await readBudgetTelemetry(path), { ...telemetry, [key]: Number.MAX_SAFE_INTEGER });
+      }
+      await writeFile(path, JSON.stringify(telemetry));
+      assert.deepEqual(await readBudgetTelemetry(path), telemetry);
+    } finally {
+      await rm(root, { recursive: true, force: true });
+    }
+  });
 });
 
 describe("child invocation", () => {

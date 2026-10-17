@@ -19,6 +19,7 @@ import {
   WEB_EXTENSION_ENV,
 } from "./shared.ts";
 import { buildChildPolicy } from "./path-policy.ts";
+import { readBudgetTelemetry } from "./subprocess.ts";
 
 type Handler = (...args: any[]) => any;
 
@@ -128,6 +129,37 @@ async function createHarness(
     },
   };
 }
+
+test("parent reads the guard's initial, admitted, denied, and exhausted telemetry unchanged", async () => {
+  const harness = await createHarness(["allowed"], "local");
+  const telemetryFile = join(harness.root, "budget-telemetry.json");
+  try {
+    await harness.emit("session_start");
+    const initial = {
+      version: 1, toolCallsAttempted: 0, toolCallsExecuted: 0, deniedCalls: 0,
+      queryCount: 0, fetchTargetCount: 0, softLimitReached: false, hardLimitReached: false,
+    };
+    assert.deepEqual(await readBudgetTelemetry(telemetryFile), initial);
+    await harness.callTool({ toolName: "read", toolCallId: "admitted", input: { path: "allowed/inside.txt" } });
+    assert.deepEqual(await readBudgetTelemetry(telemetryFile), {
+      ...initial, toolCallsAttempted: 1, toolCallsExecuted: 1,
+    });
+    await harness.callTool({ toolName: "read", toolCallId: "denied", input: { path: "outside.txt" } });
+    assert.deepEqual(await readBudgetTelemetry(telemetryFile), {
+      ...initial, toolCallsAttempted: 2, toolCallsExecuted: 1, deniedCalls: 1,
+    });
+    const hard = LIFETIME_TOOL_CALL_LIMITS.local.hard;
+    for (let attempt = 3; attempt <= hard + 1; attempt++) {
+      await harness.callTool({ toolName: "bash", toolCallId: `denied-${attempt}`, input: {} });
+    }
+    assert.deepEqual(await readBudgetTelemetry(telemetryFile), {
+      ...initial, toolCallsAttempted: hard + 1, toolCallsExecuted: 1, deniedCalls: hard,
+      softLimitReached: true, hardLimitReached: true, partialReason: "tool_budget",
+    });
+  } finally {
+    await harness.cleanup();
+  }
+});
 
 function trackBudgetWrites(t: TestContext) {
   const writes: Array<Record<string, unknown>> = [];
