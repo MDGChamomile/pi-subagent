@@ -204,7 +204,22 @@ def run_pi(
     if completed.returncode != 0:
         diagnostic = re.sub(r"\s+", " ", completed.stderr).strip()[:500]
         raise RuntimeError(f"Pi {arm} arm exited with {completed.returncode}: {diagnostic}")
+    return _evaluate_context_output(
+        completed.stdout, observations, case=case, arm=arm, child_preset=child_preset,
+        selection=selection, duration_ms=duration_ms,
+    )
 
+
+def _evaluate_context_output(
+    output: str,
+    observations: list[dict[str, Any]],
+    *,
+    case: EvalCase,
+    arm: str,
+    child_preset: str,
+    selection: dict[str, str],
+    duration_ms: int,
+) -> dict[str, Any]:
     assistant_prompts: list[int] = []
     tool_result_bytes = 0
     investigative_tool_result_bytes = 0
@@ -214,7 +229,7 @@ def run_pi(
     result_text = ""
     final_text = ""
     child_details: dict[str, Any] = {}
-    for event in json_events(completed.stdout):
+    for event in json_events(output):
         if event.get("type") != "message_end" or not isinstance(event.get("message"), dict):
             continue
         message = event["message"]
