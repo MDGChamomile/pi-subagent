@@ -130,6 +130,28 @@ function childFailure(
   return new ChildRunError(boundedParentError(error, diagnostics), snapshot.usage);
 }
 
+function classifyChildInterruption(input: {
+  progressFailed: boolean;
+  aborted: boolean;
+  timedOut: boolean;
+  effectiveTimeoutMs: number;
+  waitError: unknown;
+  protocolError: string | undefined;
+  exitCode: number;
+}): { message: unknown; phase: SubagentFailurePhase; exitCode?: number } | undefined {
+  if (input.progressFailed) return { message: "Subagent stopped because progress reporting failed", phase: "progress" };
+  if (input.aborted) return { message: "Subagent invocation was cancelled", phase: "cancelled" };
+  if (input.timedOut) return {
+    message: input.effectiveTimeoutMs === CHILD_TIMEOUT_MS
+      ? `Subagent timed out after ${CHILD_TIMEOUT_MS / 60_000} minutes`
+      : `Subagent timed out after ${input.effectiveTimeoutMs} milliseconds`,
+    phase: "timeout",
+  };
+  if (input.waitError) return { message: input.waitError, phase: "spawn" };
+  if (input.protocolError) return { message: input.protocolError, phase: "protocol", exitCode: input.exitCode };
+  return undefined;
+}
+
 /** Executable and script prefix that launches Pi; Pi CLI arguments are appended separately. */
 export type ChildLauncher = { command: string; args: string[] };
 
@@ -433,23 +455,12 @@ export async function runChild(options: {
   const completedAt = Date.now();
   const snapshot = collector.snapshot();
 
-  if (progressFailed) throw childFailure(
-    "Subagent stopped because progress reporting failed",
-    "progress",
-    snapshot,
-    startedAt,
+  const interruption = classifyChildInterruption({
+    progressFailed, aborted, timedOut, effectiveTimeoutMs, waitError, protocolError: snapshot.protocolError, exitCode,
+  });
+  if (interruption) throw childFailure(
+    interruption.message, interruption.phase, snapshot, startedAt, interruption.exitCode,
   );
-  if (aborted) throw childFailure("Subagent invocation was cancelled", "cancelled", snapshot, startedAt);
-  if (timedOut) throw childFailure(
-    effectiveTimeoutMs === CHILD_TIMEOUT_MS
-      ? `Subagent timed out after ${CHILD_TIMEOUT_MS / 60_000} minutes`
-      : `Subagent timed out after ${effectiveTimeoutMs} milliseconds`,
-    "timeout",
-    snapshot,
-    startedAt,
-  );
-  if (waitError) throw childFailure(waitError, "spawn", snapshot, startedAt);
-  if (snapshot.protocolError) throw childFailure(snapshot.protocolError, "protocol", snapshot, startedAt, exitCode);
   if (exitCode !== 0) {
     // Readiness is an observation, not a diagnosis of why startup failed.
     const guardReady = await assertChildReady(options.readyFile).then(() => true, () => false);
