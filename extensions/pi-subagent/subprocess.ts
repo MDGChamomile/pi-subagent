@@ -222,17 +222,21 @@ export async function readBudgetTelemetry(path: string): Promise<BudgetTelemetry
   } catch {
     throw new Error("Subagent budget telemetry is unavailable or malformed");
   }
+  return parseBudgetTelemetry(parsed);
+}
+
+function parseBudgetTelemetry(parsed: unknown): BudgetTelemetry {
   if (!parsed || typeof parsed !== "object" || Array.isArray(parsed)) {
     throw new Error("Subagent budget telemetry is malformed");
   }
   const value = parsed as Record<string, unknown>;
-  const allowedKeys = new Set([
+  const allowedKeys = new Set<string>([
     "version", "toolCallsAttempted", "toolCallsExecuted", "deniedCalls", "queryCount", "fetchTargetCount",
     "softLimitReached", "hardLimitReached", "partialReason",
-  ]);
+  ] satisfies (keyof BudgetTelemetry)[]);
   const integerKeys = [
     "toolCallsAttempted", "toolCallsExecuted", "deniedCalls", "queryCount", "fetchTargetCount",
-  ] as const;
+  ] as const satisfies readonly (keyof BudgetTelemetry)[];
   if (
     Object.keys(value).some((key) => !allowedKeys.has(key))
     || value.version !== 1
