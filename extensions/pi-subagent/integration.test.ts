@@ -463,6 +463,47 @@ describe("pi-subagent spawned-child integration", () => {
     });
   }
 
+  for (const [scenario, message] of [
+    ["invalid-ready-success", "Subagent guard readiness marker is invalid"],
+    ["invalid-budget-success", "Subagent budget telemetry is malformed"],
+  ] as const) {
+    test(`rejects a zero-exit answer with readiness phase for ${scenario}`, async () => {
+      await assert.rejects(() => withFixture(scenario, (options) => runChild(options)), (error: unknown) => {
+        assert.ok(error instanceof ChildRunError);
+        assert.ok(error.message.startsWith(message));
+        const diagnostics = JSON.parse(error.message.split("[Subagent diagnostics ")[1]!.slice(0, -1));
+        assert.equal(diagnostics.phase, "readiness");
+        assert.equal(diagnostics.exitCode, 0);
+        assert.equal(diagnostics.stopReason, "stop");
+        assert.equal(diagnostics.assistantMessages, 2);
+        assert.equal(error.usage.totalTokens, 48);
+        assert.doesNotMatch(error.message, /private-sentinel|Only this final|budget-telemetry\.json|guard\.ready/);
+        return true;
+      });
+    });
+  }
+
+  test("progress failure takes precedence when the same callback also cancels", async () => {
+    const controller = new AbortController();
+    await withFixture("progress-before-input", async (options) => {
+      await assert.rejects(() => runChild({
+        ...options, signal: controller.signal,
+        onUpdate() {
+          controller.abort();
+          throw new Error("private callback detail");
+        },
+      }), (error: unknown) => {
+        assert.ok(error instanceof ChildRunError);
+        assert.match(error.message, /Subagent stopped because progress reporting failed/);
+        assert.match(error.message, /"phase":"progress"/);
+        assert.doesNotMatch(error.message, /cancelled|private callback detail/);
+        assert.deepEqual(error.usage, emptyUsage());
+        return true;
+      });
+      await assert.rejects(readFile(join(options.policy.cwd, "input-received")), { code: "ENOENT" });
+    });
+  });
+
   test("stops and waits for a child before sending its task when the first progress update fails", async () => {
     await withFixture("progress-before-input", async (options) => {
       let updates = 0;

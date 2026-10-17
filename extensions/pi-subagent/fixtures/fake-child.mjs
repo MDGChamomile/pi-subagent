@@ -36,7 +36,7 @@ if (scenario.startsWith("guard-")) {
   process.exit(CHILD_GUARD_EXIT_CODES[scenario.slice("guard-".length)] ?? 9);
 }
 if (scenario === "startup-signal") process.kill(process.pid, "SIGKILL");
-writeFileSync(readyPath, scenario === "invalid-ready-error" ? "invalid\n" : READY_MARKER, { encoding: "utf8", mode: 0o600, flag: "wx" });
+writeFileSync(readyPath, ["invalid-ready-error", "invalid-ready-success"].includes(scenario) ? "invalid\n" : READY_MARKER, { encoding: "utf8", mode: 0o600, flag: "wx" });
 if (scenario === "ready-signal") process.kill(process.pid, "SIGKILL");
 const budget = {
   version: 1,
@@ -49,7 +49,7 @@ const budget = {
   hardLimitReached: false,
   ...(scenario.startsWith("budget-") ? { hardLimitReached: true, partialReason: "tool_budget" } : {}),
 };
-writeFileSync(budgetTelemetryPath, JSON.stringify(budget), { encoding: "utf8", mode: 0o600, flag: "wx" });
+writeFileSync(budgetTelemetryPath, JSON.stringify(scenario === "invalid-budget-success" ? { ...budget, unexpected: "private-sentinel" } : budget), { encoding: "utf8", mode: 0o600, flag: "wx" });
 
 const usage = {
   input: 10,
@@ -78,7 +78,7 @@ if (scenario.startsWith("observations-")) {
     process.on("SIGTERM", () => {});
     setInterval(() => {}, 1_000);
   }
-} else if (scenario === "success") {
+} else if (["success", "invalid-ready-success", "invalid-budget-success"].includes(scenario)) {
   emit({
     role: "assistant",
     content: [
