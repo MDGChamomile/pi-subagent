@@ -17,7 +17,7 @@ Run focused, bounded investigations in an ephemeral child Pi process while keepi
 
 An illustrated CLI walkthrough of Pi Subagent's delegation workflow. The example uses a synthetic retry bug; dialogue, timing, and usage figures are illustrative rather than a recording of a live model session.
 
-**Model invoked** — ask a normal question. When a focused investigation is appropriate, Pi can select the skill and delegate the investigation to a scoped, read-only child. You can also invoke `/skill:pi-subagent` explicitly with a focused task and scope; the parent follows the skill guidance and calls the same `pi_subagent` tool.
+Ask a normal question. When a focused investigation is appropriate, Pi can select the skill and delegate the investigation to a scoped, read-only child. You can also invoke `/skill:pi-subagent` explicitly with a focused task and scope; the parent follows the skill guidance and calls the same `pi_subagent` tool.
 
 ![Model-invoked investigation: a normal question leads Pi to delegate a scoped investigation, receive a bounded result, verify the decisive source lines, and answer](extensions/pi-subagent/assets/pi-subagent-automatic.gif)
 
@@ -45,9 +45,11 @@ The child cannot write files, run Bash or tests, persist a session, or recursive
 
 Requirements:
 
-- Linux, including Ubuntu on WSL; native Windows is not officially supported or tested;
+- Linux, including Ubuntu on WSL, or macOS 15 on Apple Silicon (arm64); native Windows is not officially supported or tested;
 - Pi 1.0.0 or later;
 - authentication for the configured child provider and access to its model (`openai-codex` by default; see [Presets](#presets)).
+
+macOS validation targets the Node.js Pi installation on macOS 15/arm64. Other macOS versions and Intel Macs are not covered by CI; no live provider compatibility is implied.
 
 Capability-specific requirements:
 
@@ -77,13 +79,17 @@ Newer stable versions are allowed without an upper bound, not guaranteed compati
 
 Before your first call, run `/pi-subagent-settings` in Pi's TUI to check the model for each preset you plan to use. If you cannot access a default model, select one you can access. Subagents do not inherit the parent model, and there is no automatic fallback. See [Presets](#presets) for details.
 
+If a call fails with a generic exit-code error, check the selected preset's provider authentication, model access, and settings. Use the provider's supported Pi authentication method (`/login` where supported, or its documented API-key setup), or select another authenticated, accessible model with `/pi-subagent-settings`. The exit code alone does not establish an authentication failure.
+
 The model can select the skill automatically. To invoke it explicitly, include a focused task and scope. For example, from a project with a `src/` directory:
 
 ```text
 /skill:pi-subagent Investigate how cancellation terminates child processes within src/. Return conclusions with file and line evidence.
 ```
 
-This command gives delegation guidance to the parent, which then calls the `pi_subagent` tool.
+Replace `src/` with an existing file or directory in your project that is relevant to your question.
+
+This command gives delegation guidance to the parent, which then calls the `pi_subagent` tool. The child investigates only: it does not modify files or run tests, and final verification remains with the parent.
 
 ## Capabilities
 
@@ -92,7 +98,7 @@ This command gives delegation guidance to the parent, which then calls the `pi_s
 | `local` | Pi-owned `read`, `grep`, `find`, and `ls` | 1–8 existing paths inside the parent working directory |
 | `web` | Guarded tools from `pi-web-access` v0.33.0 or later (stable releases) | Empty; no local-file access |
 
-Mixed local-and-web work uses separate child calls, with synthesis performed by the parent. One call is the default; up to three distinct, independent calls may run in parallel during one parent agent run, which can multiply model, provider, and web-request usage.
+Mixed local-and-web work uses separate child calls, with synthesis performed by the parent. One call is the default; each parent agent run allows at most three started child calls in total, whether sequential or parallel. Distinct, independent calls can run in parallel, and local and web calls share the same limit. One corrected retry is allowed after a preflight validation failure; it does not permit a fourth started call. Multiple calls can multiply model, provider, and web-request usage.
 
 ## Presets
 
@@ -104,23 +110,23 @@ Mixed local-and-web work uses separate child calls, with synthesis performed by 
 
 These are **default settings**, not required providers or models. They do not inherit the parent model or change its thinking level.
 
-Run **`/pi-subagent-settings`** in Pi's TUI to change a preset's provider, model, or thinking level, or edit `~/.pi/agent/pi-subagent.json` (under `PI_CODING_AGENT_DIR` when set). Settings apply to the next call without a reload. Only user-level settings are read; project files and tool arguments cannot override them, and there is no automatic fallback. Authenticate each provider through Pi. See the [extension guide](extensions/pi-subagent/README.md#presets) for the settings file format and validation rules.
+Run **`/pi-subagent-settings`** in Pi's TUI to change a preset's provider, model, or thinking level, or edit `~/.pi/agent/pi-subagent.json` (under `PI_CODING_AGENT_DIR` when set). Settings apply to the next call without a reload. OpenAI access is not required when you configure other providers available through Pi. Change each preset you intend to use; untouched presets retain their Codex defaults. Only user-level settings are read; project files and tool arguments cannot override them, and there is no automatic fallback. Authenticate each provider through Pi. See the [extension guide](extensions/pi-subagent/README.md#presets) for the settings file format and validation rules.
 
 ## Security and data flow
 
-Authorized local-file contents, web tasks and queries, fetched pages, and the final answer are sent to the applicable configured model or search providers. Do not delegate secrets that must not leave the host or use the package for untrusted workloads requiring host isolation.
+The delegated task, scope path names, local tool results (file contents, matched lines, and file/directory listings), and retrieved web content enter the configured child model provider's context. Web queries and requested URLs also go to the applicable search/fetch services. The final answer returns to the parent and enters its model context. Do not delegate secrets that must not leave the host or use the package for untrusted workloads requiring host isolation.
 
 The runtime canonicalizes local paths, blocks lexical and symlink escapes, verifies tool provenance, and sanitizes control characters in returned text. After the child exits, the parent verifies the guard's private readiness marker before accepting its final answer.
 
 ## Documentation
 
-- [Extension guide](extensions/pi-subagent/README.md) — complete runtime, installation, security, and verification contract.
+- [Extension guide](extensions/pi-subagent/README.md) — detailed runtime, preset settings, source installation, security, and verification contract.
 - [Skill guide](skills/pi-subagent/README.md) — when delegation is appropriate and how the workflow selects a child.
 - [Source repository](https://github.com/MDGChamomile/pi-subagent)
 - [Issue tracker](https://github.com/MDGChamomile/pi-subagent/issues)
 - [Contributing](CONTRIBUTING.md) — development setup and offline verification.
 - [Package maintenance](packaging/pi-subagent/DEVELOPMENT.md) — package assembly and release procedures.
-- [Migration](MIGRATION.md) — breaking changes for existing installations.
+- [Migration](MIGRATION.md) — release notes and migration steps.
 - [Design principles](PRINCIPLE.md) — local pointer to the [canonical principles](https://github.com/MDGChamomile/MDGChamomile/blob/main/PRINCIPLE.md).
 
 ## License

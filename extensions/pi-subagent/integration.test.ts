@@ -1,5 +1,6 @@
 import assert from "node:assert/strict";
 import { spawn } from "node:child_process";
+import { existsSync } from "node:fs";
 import { mkdir, mkdtemp, readFile, rm, symlink, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
@@ -7,8 +8,10 @@ import { describe, test } from "node:test";
 import { fileURLToPath } from "node:url";
 import { normalizeContext, type Message, type Model } from "@earendil-works/pi-ai";
 import { convertResponsesMessages } from "@earendil-works/pi-ai/api/openai-responses-shared";
-import { ChildRunError, emptyUsage, runChild, type ChildResult } from "./subprocess.ts";
-import { buildChildPolicy, CHILD_GUARD_EXIT_CODES, MAX_FINAL_BYTES, MAX_PARENT_ERROR_BYTES } from "./shared.ts";
+import { buildChildInvocation, ChildRunError, runChild, type ChildResult } from "./subprocess.ts";
+import { emptyUsage } from "./child-stream.ts";
+import { CHILD_GUARD_EXIT_CODES, MAX_FINAL_BYTES, MAX_PARENT_ERROR_BYTES } from "./shared.ts";
+import { buildChildPolicy } from "./path-policy.ts";
 
 const FAKE_CHILD = fileURLToPath(new URL("./fixtures/fake-child.mjs", import.meta.url));
 const ABRUPT_PARENT = fileURLToPath(new URL("./fixtures/abrupt-parent.mjs", import.meta.url));
@@ -29,7 +32,7 @@ async function withFixture<T>(scenario: string, run: (options: Parameters<typeof
       task: "Inspect the deterministic fixture and return the requested final answer.",
       model: "test/fake",
       thinking: "low",
-      invocationOverride: {
+      launcherOverride: {
         command: process.execPath,
         args: ["--experimental-strip-types", FAKE_CHILD, scenario],
       },
@@ -82,6 +85,13 @@ function modelVisibleOutput(result: ChildResult): string {
   return toolOutput.output;
 }
 
+// The "timeout" fixture publishes its PID once SIGTERM is ignored and records each SIGTERM.
+async function assertIgnoredSigtermEscalated(root: string): Promise<void> {
+  const pid = Number(await readFile(join(root, "sigterm-ignored.pid"), "utf8"));
+  assert.ok(existsSync(join(root, "sigterm-received")), "the child must receive and ignore SIGTERM");
+  assert.throws(() => process.kill(pid, 0), { code: "ESRCH" }, "SIGKILL escalation must end the child");
+}
+
 async function waitForProcessExit(pid: number, timeoutMs = 3_000): Promise<void> {
   const deadline = Date.now() + timeoutMs;
   while (Date.now() < deadline) {
@@ -98,7 +108,7 @@ describe("pi-subagent spawned-child integration", () => {
       const startedAt = performance.now();
       await assert.rejects(() => runChild({
         ...options,
-        invocationOverride: { command: join(options.policy.cwd, "nonexistent-executable"), args: [] },
+        launcherOverride: { command: join(options.policy.cwd, "nonexistent-executable"), args: [] },
         timeoutMs: 30_000,
         killGraceMs,
       }), (error: unknown) => {
@@ -136,7 +146,7 @@ describe("pi-subagent spawned-child integration", () => {
         assert.equal(diagnostics.observations.incomplete, scenario === "protocol");
         assert.ok(diagnostics.observations.lastEventAgeMs >= 0);
         assert.ok(Buffer.byteLength(error.message) <= MAX_PARENT_ERROR_BYTES);
-        assert.doesNotMatch(error.message, /private-|https?:|Objective/);
+        assert.doesNotMatch(error.message, /private-|https?:|Objective|provider authentication|pi-subagent-settings/);
         return true;
       });
     }
@@ -174,6 +184,34 @@ describe("pi-subagent spawned-child integration", () => {
       assert.equal(envelope.answer,
         '[Subagent partial: model_length]\n[Subagent output truncated]\n"},"status":"partial","outputTruncated":true,"answer":"가😀\\');
     }
+  });
+
+  test("the spawned child receives the built Pi arguments unchanged and no session or provider overrides", async () => {
+    const inherited = [
+      "PI_SESSION_ID", "PI_SESSION_FILE", "PI_PROVIDER", "PI_MODEL", "PI_REASONING_LEVEL",
+      "PI_ALLOW_BROWSER_COOKIES", "FEYNMAN_ALLOW_BROWSER_COOKIES",
+    ];
+    const previous = inherited.map((name) => process.env[name]);
+    let received: { piArgs: string[]; inheritedEnv: string[] };
+    let built: string[] = [];
+    try {
+      for (const name of inherited) process.env[name] = "synthetic-parent-value";
+      const result = await withFixture("argv-report", (options) => {
+        // The soft deadline reaches only the environment, not the argument list.
+        built = buildChildInvocation({ ...options, softDeadline: 0 }, { command: "", args: [] }, {}).args;
+        return runChild(options);
+      });
+      received = JSON.parse(JSON.parse(result.output).answer);
+    } finally {
+      inherited.forEach((name, index) => {
+        if (previous[index] === undefined) delete process.env[name];
+        else process.env[name] = previous[index];
+      });
+    }
+    const { piArgs, inheritedEnv } = received;
+    // The unit tests pin the argument contract; this pins its delivery to the spawned child.
+    assert.deepEqual(piArgs, built, "runChild must pass the built Pi arguments unchanged");
+    assert.deepEqual(inheritedEnv, []);
   });
 
   test("local grep ignores inherited rg config without changing the parent environment", {
@@ -337,20 +375,52 @@ describe("pi-subagent spawned-child integration", () => {
     assert.match(message, /"stopReason":"error"/);
   });
 
-  test("discards child stderr on process failure", async () => {
-    await assert.rejects(
-      () => withFixture("process-error", (options) => runChild(options)),
-      (error: unknown) => {
-        const message = error instanceof Error ? error.message : String(error);
-        assert.match(message, /Subagent exited with code 7/);
-        assert.match(message, /"phase":"process"/);
-        assert.match(message, /"guardReady":true/);
-        assert.doesNotMatch(message, /exitSignal/);
-        assert.doesNotMatch(message, /private child stderr/);
+  for (const scenario of ["process-error", "ready-startup-error"]) {
+    test(`adds a fixed, non-diagnostic startup hint for ${scenario} without forwarding child content`, async () => {
+      await assert.rejects(
+        () => withFixture(scenario, (options) => runChild({
+          ...options, task: "private-task-sentinel", model: "private-provider/private-model",
+        })),
+        (error: unknown) => {
+          assert.ok(error instanceof ChildRunError);
+          const message = error.message;
+          assert.match(message, new RegExp(`Subagent exited with code ${scenario === "ready-startup-error" ? 1 : 7}`));
+          assert.match(message, /No investigation activity was observed; the cause is unknown/);
+          assert.match(message, /selected preset's provider authentication and model access/);
+          assert.match(message, /pi-subagent-settings/);
+          assert.match(message, /"phase":"process"/);
+          assert.match(message, /"guardReady":true/);
+          assert.match(message, /"assistantMessages":0/);
+          assert.doesNotMatch(message, /exitSignal|private|stderr|policy\.json|guard\.ready|pi-subagent-integration-/);
+          assert.ok(Buffer.byteLength(message) <= MAX_PARENT_ERROR_BYTES);
+          assert.deepEqual(error.usage, emptyUsage());
+          return true;
+        },
+      );
+    });
+  }
+
+  for (const activity of ["turn", "incomplete", "tool", "assistant", "tool-error"]) {
+    test(`does not add a startup hint after ${activity} activity`, async () => {
+      await assert.rejects(() => withFixture(`process-error-${activity}`, (options) => runChild(options)), (error: unknown) => {
+        assert.ok(error instanceof ChildRunError);
+        assert.match(error.message, /Subagent exited with code 7/);
+        assert.match(error.message, /"phase":"process"/);
+        assert.match(error.message, /"guardReady":true/);
+        assert.doesNotMatch(error.message, /provider authentication|pi-subagent-settings|cause is unknown|private-/);
+        const diagnostics = JSON.parse(error.message.split("[Subagent diagnostics ")[1]!.slice(0, -1));
+        assert.equal(diagnostics.assistantMessages, activity === "assistant" ? 1 : 0);
+        assert.equal(diagnostics.toolErrors, activity === "tool-error" ? 1 : 0);
+        assert.equal(diagnostics.observations.incomplete, activity === "incomplete");
+        assert.equal(diagnostics.observations.receipts.turn_start, ["turn", "incomplete"].includes(activity) ? 1 : 0);
+        assert.equal(diagnostics.observations.counts.turn_start, activity === "turn" ? 1 : 0);
+        assert.equal(diagnostics.observations.counts.tool_execution_start, activity === "tool" ? 1 : 0);
+        assert.equal(error.usage.totalTokens, ["assistant", "tool-error"].includes(activity) ? 16 : 0);
+        assert.ok(Buffer.byteLength(error.message) <= MAX_PARENT_ERROR_BYTES);
         return true;
-      },
-    );
-  });
+      });
+    });
+  }
 
   for (const scenario of ["startup-error", "invalid-ready-error", "startup-signal", "ready-signal"]) {
     test(`reports content-free process diagnostics for ${scenario}`, async () => {
@@ -369,7 +439,7 @@ describe("pi-subagent spawned-child integration", () => {
             assert.match(message, new RegExp(`"exitCode":${scenario === "startup-error" ? 1 : 7}`));
             assert.doesNotMatch(message, /exitSignal/);
           }
-          assert.doesNotMatch(message, /private|stderr|guard\.ready|policy\.json/);
+          assert.doesNotMatch(message, /private|stderr|guard\.ready|policy\.json|provider authentication|pi-subagent-settings/);
           assert.ok(Buffer.byteLength(message, "utf8") <= MAX_PARENT_ERROR_BYTES);
           return true;
         },
@@ -386,7 +456,7 @@ describe("pi-subagent spawned-child integration", () => {
           assert.match(error.message, new RegExp(`Subagent guard failed: ${reason}`));
           assert.match(error.message, new RegExp(`"exitCode":${CHILD_GUARD_EXIT_CODES[reason]}`));
           assert.match(error.message, new RegExp(`"guardReady":${reason === "runtime"}`));
-          assert.doesNotMatch(error.message, /private|initialization detail|policy\.json|guard\.ready/);
+          assert.doesNotMatch(error.message, /private|initialization detail|policy\.json|guard\.ready|provider authentication|pi-subagent-settings/);
           return true;
         },
       );
@@ -415,17 +485,19 @@ describe("pi-subagent spawned-child integration", () => {
   });
 
   test("terminates a child process that ignores the timeout SIGTERM", async () => {
-    const startedAt = Date.now();
-    await assert.rejects(
-      () => withFixture("timeout", (options) => runChild({ ...options, timeoutMs: 50, killGraceMs: 50 })),
-      (error: unknown) => {
-        const message = error instanceof Error ? error.message : String(error);
-        assert.match(message, /timed out after 50 milliseconds/);
-        assert.match(message, /"phase":"timeout"/);
-        return true;
-      },
-    );
-    assert.ok(Date.now() - startedAt < 2_000);
+    await withFixture("timeout", async (options) => {
+      // Leave time for the fixture to install its SIGTERM handler before the deadline.
+      await assert.rejects(
+        () => runChild({ ...options, timeoutMs: 1_500, killGraceMs: 50 }),
+        (error: unknown) => {
+          const message = error instanceof Error ? error.message : String(error);
+          assert.match(message, /timed out after 1500 milliseconds/);
+          assert.match(message, /"phase":"timeout"/);
+          return true;
+        },
+      );
+      await assertIgnoredSigtermEscalated(options.policy.cwd);
+    });
   });
 
   test("preserves reported usage when a started child later times out", async () => {
@@ -443,17 +515,25 @@ describe("pi-subagent spawned-child integration", () => {
   });
 
   test("terminates a running child when the parent aborts", async () => {
-    const controller = new AbortController();
-    setTimeout(() => controller.abort(), 50);
-    await assert.rejects(
-      () => withFixture("timeout", (options) => runChild({ ...options, signal: controller.signal })),
-      (error: unknown) => {
-        const message = error instanceof Error ? error.message : String(error);
-        assert.match(message, /cancelled/);
-        assert.match(message, /"phase":"cancelled"/);
-        return true;
-      },
-    );
+    await withFixture("timeout", async (options) => {
+      const controller = new AbortController();
+      const running = runChild({ ...options, timeoutMs: 10_000, killGraceMs: 50, signal: controller.signal })
+        .then(() => undefined, (error: unknown) => error);
+      try {
+        const marker = join(options.policy.cwd, "sigterm-ignored.pid");
+        const deadline = Date.now() + 3_000;
+        while (!existsSync(marker) && Date.now() < deadline) await new Promise((resolve) => setTimeout(resolve, 10));
+        assert.ok(existsSync(marker), "the child must be running before cancellation");
+        controller.abort();
+        const error = await running;
+        assert.ok(error instanceof ChildRunError, "a started child, not a pre-start cancellation");
+        assert.match(error.message, /"phase":"cancelled"/);
+        await assertIgnoredSigtermEscalated(options.policy.cwd);
+      } finally {
+        controller.abort();
+        await running;
+      }
+    });
   });
 
   test("finishes cancellation before the grace deadline when the whole group exits", {
@@ -503,10 +583,11 @@ describe("pi-subagent spawned-child integration", () => {
     await assert.rejects(
       () => withFixture("success", (options) => runChild({
         ...options,
-        invocationOverride: {
+        launcherOverride: {
           command: process.execPath,
           // No newline: the protocol error is discovered by finish() after close.
-          args: ["-e", 'process.stdout.write(\'{"type":"message_end",broken}\');'],
+          // "--" passes the appended Pi arguments to the script, not to Node.
+          args: ["-e", 'process.stdout.write(\'{"type":"message_end",broken}\');', "--"],
         },
       })),
       /"phase":"protocol"/,
@@ -524,7 +605,7 @@ describe("pi-subagent spawned-child integration", () => {
       await withFixture(`orphan-${reason}`, async (options) => {
         const controller = new AbortController();
         const killGraceMs = 150;
-        let pids: { childPid: number; descendantPid: number } | undefined;
+        let pids: { childPid: number; descendantPid: number; leaderReady: boolean } | undefined;
         let updates = 0;
         const running = runChild({
           ...options,
@@ -547,6 +628,7 @@ describe("pi-subagent spawned-child integration", () => {
             }
           }
           assert.ok(pids, "descendant must install its SIGTERM handler before stopping");
+          assert.equal(pids.leaderReady, true, "leader must install its SIGTERM handler before publishing readiness");
           if (reason === "abort") controller.abort();
           const error = await running;
           assert.ok(error instanceof ChildRunError);

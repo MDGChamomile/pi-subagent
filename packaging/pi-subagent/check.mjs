@@ -1,6 +1,6 @@
 import assert from "node:assert/strict";
 import { spawnSync } from "node:child_process";
-import { cp, mkdir, mkdtemp, readFile, rm, stat, writeFile } from "node:fs/promises";
+import { cp, mkdir, mkdtemp, readFile, realpath, rm, stat, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { dirname, join, resolve } from "node:path";
 import { fileURLToPath } from "node:url";
@@ -36,10 +36,10 @@ const inlineLinks = '![Preview](extensions/pi-subagent/assets/pi-subagent-automa
 assert.equal(renderPackageReadme(inlineLinks, futureVersion),
   `![Preview](${rawRoot}/v${futureVersion}/extensions/pi-subagent/assets/pi-subagent-automatic.gif)\n[Guide](https://github.com/MDGChamomile/pi-subagent/blob/v${futureVersion}/extensions/pi-subagent/README.md#presets)\n[Here](#presets)\n[Remote](https://example.com/guide)\n[Mail](mailto:help@example.com)`);
 
-const guideLinks = '![Demo](assets/pi-subagent-automatic.gif)\n[![Architecture](assets/pi-subagent-architecture.png)](assets/pi-subagent-architecture.png)\n[Skill](../../skills/pi-subagent/README.md)\n[Here](#presets)\n[Remote](https://example.com/image.png)';
+const guideLinks = '[Development](DEVELOPMENT.md)\n[Verification](DEVELOPMENT.md#verification)\n![Demo](assets/pi-subagent-automatic.gif)\n[![Architecture](assets/pi-subagent-architecture.png)](assets/pi-subagent-architecture.png)\n[Skill](../../skills/pi-subagent/README.md)\n[Here](#presets)\n[Remote](https://example.com/image.png)';
 const futureAssets = `${rawRoot}/v${futureVersion}/extensions/pi-subagent/assets/`;
 assert.equal(renderExtensionReadme(guideLinks, futureVersion),
-  `![Demo](${futureAssets}pi-subagent-automatic.gif)\n[![Architecture](${futureAssets}pi-subagent-architecture.png)](${futureAssets}pi-subagent-architecture.png)\n[Skill](../../skills/pi-subagent/README.md)\n[Here](#presets)\n[Remote](https://example.com/image.png)`);
+  `[Development](https://github.com/MDGChamomile/pi-subagent/blob/v${futureVersion}/extensions/pi-subagent/DEVELOPMENT.md)\n[Verification](https://github.com/MDGChamomile/pi-subagent/blob/v${futureVersion}/extensions/pi-subagent/DEVELOPMENT.md#verification)\n![Demo](${futureAssets}pi-subagent-automatic.gif)\n[![Architecture](${futureAssets}pi-subagent-architecture.png)](${futureAssets}pi-subagent-architecture.png)\n[Skill](../../skills/pi-subagent/README.md)\n[Here](#presets)\n[Remote](https://example.com/image.png)`);
 const futureExtensionReadme = renderExtensionReadme(sourceExtensionReadme, futureVersion);
 assert.equal(renderExtensionReadme(futureExtensionReadme, futureVersion), futureExtensionReadme);
 assert.throws(() => renderExtensionReadme(sourceExtensionReadme, "1.0.0-beta.1"), /stable release version/);
@@ -69,34 +69,39 @@ assert.equal(
 const bundledExtensionReadme = await readFile(join(stagingDirectory, extensionReadmePath), "utf8");
 assert.equal(bundledExtensionReadme, renderExtensionReadme(sourceExtensionReadme, manifest.version));
 assert.equal(
-  bundledExtensionReadme.replaceAll(`${rawRoot}/v${manifest.version}/extensions/pi-subagent/`, ""),
+  bundledExtensionReadme
+    .replaceAll(`${rawRoot}/v${manifest.version}/extensions/pi-subagent/`, "")
+    .replaceAll(`https://github.com/MDGChamomile/pi-subagent/blob/v${manifest.version}/extensions/pi-subagent/DEVELOPMENT.md`, "DEVELOPMENT.md"),
   sourceExtensionReadme,
-  "bundled extension guide must preserve its body and document links, rebasing only asset links",
+  "bundled extension guide must preserve its body, rebasing only assets and the source-only development guide",
 );
-for (const asset of ["pi-subagent-automatic.gif", "pi-subagent-architecture.png"]) {
+for (const [asset, readmes] of [
+  ["pi-subagent-automatic.gif", [topLevelReadme]],
+  ["pi-subagent-architecture.png", [topLevelReadme, bundledExtensionReadme]],
+  ["pi-subagent-cover.png", [topLevelReadme]],
+]) {
   assert.equal((await stat(join(sourceRoot, "extensions/pi-subagent/assets", asset))).isFile(), true,
     "repository assets must remain available for tagged URLs");
-  assert.ok(bundledExtensionReadme.includes(`${rawRoot}/v${manifest.version}/extensions/pi-subagent/assets/${asset}`));
+  for (const readme of readmes) {
+    assert.ok(readme.includes(`${rawRoot}/v${manifest.version}/extensions/pi-subagent/assets/${asset}`));
+  }
 }
-assert.equal((await stat(join(sourceRoot, "extensions/pi-subagent/assets/pi-subagent-cover.png"))).isFile(), true,
-  "the README cover and gallery image must remain available for tagged URLs");
 
 // Documentation must state the runtime's web minimum, not a separately maintained copy.
 const webMinimum = MIN_WEB_EXTENSION_VERSION.replaceAll(".", "\\.");
-const sharedRequirementPatterns = [
+const canonicalRequirementPatterns = [
   ["minimum Pi version", /Pi 1\.0\.0 or later/],
   ["provider authentication requirement", /authentication for the configured child provider/],
   ["minimum web extension version", new RegExp(`pi-web-access\` v${webMinimum} or later`)],
   ["npm installation command", /pi install npm:@mdgchamomile\/pi-subagent/],
 ];
-for (const [description, pattern] of sharedRequirementPatterns) {
+for (const [description, pattern] of canonicalRequirementPatterns) {
   assert.match(sourceReadme, pattern, `source README is missing ${description}`);
 }
-for (const path of ["extensions/pi-subagent/README.md", "skills/pi-subagent/README.md", "skills/pi-subagent/SKILL.md"]) {
-  const guide = await readFile(join(sourceRoot, path), "utf8");
-  assert.match(guide, /Pi 1\.0\.0 or later/, `${path} has an outdated Pi minimum`);
-  assert.match(guide, new RegExp(`pi-web-access(?:\`)? v${webMinimum} or later`), `${path} has an outdated web minimum`);
-}
+// The model-loaded workflow still declares compatibility; human guides link to the README.
+const skill = await readFile(join(sourceRoot, "skills/pi-subagent/SKILL.md"), "utf8");
+assert.match(skill, /Pi 1\.0\.0 or later/, "SKILL.md has an outdated Pi minimum");
+assert.match(skill, new RegExp(`pi-web-access(?:\`)? v${webMinimum} or later`), "SKILL.md has an outdated web minimum");
 
 const presetRows = (markdown) => {
   const section = markdown.split("\n## Presets\n")[1]?.split(/\n## /)[0] ?? "";
@@ -180,6 +185,8 @@ assert.equal(actualFiles.some((path) => path.startsWith("extensions/pi-subagent/
 
 for (const [markdownPath, root] of [
   ["README.md", sourceRoot],
+  ["extensions/pi-subagent/README.md", sourceRoot],
+  ["extensions/pi-subagent/DEVELOPMENT.md", sourceRoot],
   ...actualFiles.filter((path) => path.endsWith(".md")).map((path) => [path, stagingDirectory]),
 ]) {
   const markdown = await readFile(join(root, markdownPath), "utf8");
@@ -192,7 +199,7 @@ for (const [markdownPath, root] of [
   }
 }
 
-const temporaryConfig = await mkdtemp(join(tmpdir(), "pi-subagent-package-check-"));
+const temporaryConfig = await realpath(await mkdtemp(join(tmpdir(), "pi-subagent-package-check-")));
 try {
   // Exercise a version-only change through the real builder in a disposable tree.
   const fixtureRoot = join(temporaryConfig, "version-only");
@@ -258,6 +265,12 @@ try {
       const child = join(directory, "extensions/pi-subagent/child-guard.ts");
       await writeFile(child, 'import "./missing-child-dependency.ts";\n' + await readFile(child, "utf8"));
     }, /Pi child extension loading failed/],
+    ["missing-path-policy", async (directory) => {
+      await rm(join(directory, "extensions/pi-subagent/path-policy.ts"));
+    }, /Pi extension loading failed/],
+    ["missing-web-provenance", async (directory) => {
+      await rm(join(directory, "extensions/pi-subagent/web-provenance.ts"));
+    }, /Pi extension loading failed/],
     ["missing-tool", async (directory) => {
       await writeFile(join(directory, "index.ts"), "export default function () {}\n");
     }, /expected pi_subagent tool registration/],
@@ -279,4 +292,4 @@ try {
   await rm(temporaryConfig, { recursive: true, force: true });
 }
 
-console.log(`${manifest.name}@${manifest.version}: ${actualFiles.length} package files, Pi parent/child discovery, and 4 negative controls verified`);
+console.log(`${manifest.name}@${manifest.version}: ${actualFiles.length} package files, Pi parent/child discovery, and 6 negative controls verified`);

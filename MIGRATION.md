@@ -1,5 +1,28 @@
 # Migration
 
+## v0.8.3
+
+### Budget persistence and failure guidance
+
+If the child guard cannot persist budget telemetry, it now disables tools and
+invalidates its policy before propagating the error. Later tool calls are
+blocked, and the next provider request exits with the runtime guard code. The
+call fails instead of returning a complete or partial result based on stale
+budget telemetry. Startup and tool-source verification failures also provide
+more specific guidance.
+
+### Maintenance and verification
+
+Runtime responsibilities are split into focused modules without changing tool
+schemas, preset arguments, settings, successful or partial result envelopes,
+or resource limits. Offline coverage now includes SDK tool-input mutation,
+web request schema compatibility, process termination escalation, and macOS 15
+arm64 validation. These checks do not establish live provider compatibility.
+Installation and first-use guidance are consolidated in the root README.
+
+No user action is required. Pi 1.0.0 or later and pi-web-access 0.33.0 or later
+remain the minimum supported versions.
+
 ## v0.8.2
 
 ### Failure diagnostics

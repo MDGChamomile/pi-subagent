@@ -1,18 +1,19 @@
 import assert from "node:assert/strict";
-import { mkdtemp, mkdir, rm, writeFile } from "node:fs/promises";
+import { mkdtemp, mkdir, realpath, rm, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { fileURLToPath } from "node:url";
 import { test } from "node:test";
 import type { AgentSession } from "@earendil-works/pi-coding-agent";
-import { ALLOWED_WEB_TOOLS, resolveWebExtensionPath, TOOL_NAME } from "./shared.ts";
+import { ALLOWED_WEB_TOOLS, TOOL_NAME } from "./shared.ts";
+import { resolveWebExtensionPath } from "./web-provenance.ts";
 
 // The configured test loader selects the bundled SDK when available.
 import { createAgentSession, DefaultResourceLoader, ModelRuntime, SessionManager, SettingsManager } from "@earendil-works/pi-coding-agent";
 
 for (const filtered of [false, true]) {
   test(`real Pi web smoke registry: CLI allowlist=${filtered}`, { timeout: 15_000 }, async () => {
-    const root = await mkdtemp(join(tmpdir(), "pi-subagent-web-registry-"));
+    const root = await realpath(await mkdtemp(join(tmpdir(), "pi-subagent-web-registry-")));
     let session: AgentSession | undefined;
     try {
       const pkg = join(root, "web-package");

@@ -6,11 +6,9 @@ import { validatePresetSelection, type PresetSelection } from "./config.ts";
 import {
   ALLOWED_FILE_TOOLS,
   ALLOWED_WEB_TOOLS,
-  authorizeReadPath,
   BUDGET_TELEMETRY_ENV,
   CHILD_GUARD_EXIT_CODES,
   DEFAULT_WEB_RESULTS_PER_QUERY,
-  isWithin,
   LIFETIME_TOOL_CALL_LIMITS,
   LIFETIME_WEB_FETCH_TARGET_LIMIT,
   LIFETIME_WEB_FETCH_TARGET_SOFT_LIMIT,
@@ -32,6 +30,7 @@ import {
   type BudgetTelemetry,
   type ChildPolicy,
 } from "./shared.ts";
+import { authorizeReadPath, isWithin } from "./path-policy.ts";
 
 const FILE_TOOLS = new Set<string>(ALLOWED_FILE_TOOLS);
 const WEB_TOOLS = new Set<string>(ALLOWED_WEB_TOOLS);
@@ -193,7 +192,7 @@ function validateBoundedQueries(toolName: string, input: Record<string, unknown>
   return undefined;
 }
 
-export function webResourceCost(
+function webResourceCost(
   toolName: string,
   input: Record<string, unknown>,
 ): { queries: number; fetchTargets: number } {
@@ -221,12 +220,7 @@ function validateWebCall(toolName: string, input: Record<string, unknown>): stri
     return `${toolName} input ${unknown.sort().join(", ")} is not allowed in the subagent`;
   }
 
-  if (toolName === "web_search") {
-    const boundedError = validateBoundedQueries(toolName, input);
-    if (boundedError) return boundedError;
-    return undefined;
-  }
-  if (toolName === "source_check") return validateBoundedQueries(toolName, input);
+  if (toolName === "web_search" || toolName === "source_check") return validateBoundedQueries(toolName, input);
   if (toolName === "get_search_content") return undefined;
   if (toolName !== "fetch_content") return `${toolName} is not supported in the subagent`;
   if (input.mode !== undefined && input.mode !== "readable") {
@@ -312,7 +306,14 @@ export default function childGuard(
     if (!budgetTelemetryPath) return;
     const snapshot = JSON.stringify(budget);
     if (snapshot === lastPersistedBudget) return;
-    writeFileSync(budgetTelemetryPath, snapshot, { encoding: "utf8", mode: 0o600 });
+    try {
+      writeFileSync(budgetTelemetryPath, snapshot, { encoding: "utf8", mode: 0o600 });
+    } catch (error) {
+      // The parent derives tool_budget status only from this file. Pi may continue
+      // after a hook error, so a stale snapshot must not let the child finish normally.
+      failClosed(`could not persist budget telemetry: ${error instanceof Error ? error.message : String(error)}`);
+      throw error;
+    }
     // Record only successful writes; changed reservations and terminal state must
     // still be persisted synchronously at their existing event boundaries.
     lastPersistedBudget = snapshot;
@@ -477,7 +478,7 @@ export default function childGuard(
     guardReady = true;
   });
 
-  pi.on("tool_execution_start", (event) => {
+  pi.on("tool_execution_start", () => {
     budget.toolCallsAttempted += 1;
     if (policy) {
       const limits = LIFETIME_TOOL_CALL_LIMITS[policy.capability];

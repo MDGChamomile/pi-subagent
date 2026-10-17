@@ -113,7 +113,7 @@ if (scenario.startsWith("observations-")) {
   // Import the native tool module directly; Pi 1.0.0's SDK barrel would also work.
   const grepModule = new URL("./core/tools/grep.js", import.meta.resolve("@earendil-works/pi-coding-agent"));
   const { createGrepTool } = await import(grepModule.href);
-  const { authorizeReadPath } = await import("../shared.ts");
+  const { authorizeReadPath } = await import("../path-policy.ts");
   const policy = JSON.parse(readFileSync(process.env.PI_SUBAGENT_POLICY_FILE, "utf8"));
   const path = await authorizeReadPath(policy, "allowed");
   const result = await createGrepTool(policy.cwd).execute("grep-scope", {
@@ -133,16 +133,29 @@ if (scenario.startsWith("observations-")) {
   ], { stdio: ["ignore", "ignore", "ignore", "ipc"] });
   await once(descendant, "message");
   descendant.disconnect();
-  writeFileSync(join(process.cwd(), "pids.json"), JSON.stringify({ childPid: process.pid, descendantPid: descendant.pid }));
   process.on("SIGTERM", () => {
     writeFileSync(join(process.cwd(), "leader-stopped"), String(Date.now()));
     process.exit(0);
   });
+  // Publish readiness only after both processes can handle cancellation.
+  writeFileSync(join(process.cwd(), "pids.json"), JSON.stringify({
+    childPid: process.pid, descendantPid: descendant.pid,
+    leaderReady: process.listenerCount("SIGTERM") > 0,
+  }));
   if (scenario === "orphan-protocol") process.stdout.write("malformed JSON\n");
   if (scenario === "orphan-progress-output") {
     emit({ role: "assistant", content: [{ type: "text", text: "Synthetic investigation progress." }], usage, stopReason: "toolUse" });
   }
   setInterval(() => {}, 1_000);
+} else if (scenario === "argv-report") {
+  const received = {
+    piArgs: process.argv.slice(3),
+    inheritedEnv: [
+      "PI_SESSION_ID", "PI_SESSION_FILE", "PI_PROVIDER", "PI_MODEL", "PI_REASONING_LEVEL",
+      "PI_ALLOW_BROWSER_COOKIES", "FEYNMAN_ALLOW_BROWSER_COOKIES",
+    ].filter((name) => name in process.env),
+  };
+  emit({ role: "assistant", content: [{ type: "text", text: JSON.stringify(received) }], usage, stopReason: "stop" });
 } else if (scenario === "empty-output") {
   emit({
     role: "assistant",
@@ -211,9 +224,24 @@ if (scenario.startsWith("observations-")) {
     usage,
     stopReason: "stop",
   });
-} else if (scenario === "process-error" || scenario === "invalid-ready-error") {
-  process.stderr.write("private child stderr must not reach the parent\n");
+} else if (scenario.startsWith("process-error-")) {
+  if (scenario === "process-error-turn") {
+    process.stdout.write(`${JSON.stringify({ type: "turn_start" })}\n`);
+  } else if (scenario === "process-error-incomplete") {
+    process.stdout.write(`${JSON.stringify({ type: "turn_start", private: "x".repeat(5_000) })}\n`);
+  } else if (scenario === "process-error-tool") {
+    process.stdout.write(`${JSON.stringify({ type: "tool_execution_start", toolCallId: "private-id", toolName: "read", args: { path: "/private-path" } })}\n`);
+  } else if (scenario === "process-error-assistant") {
+    emit({ role: "assistant", content: [{ type: "text", text: "private-answer" }], usage, stopReason: "stop" });
+  } else if (scenario === "process-error-tool-error") {
+    emit({ role: "toolResult", toolName: "read", content: [{ type: "text", text: "private-tool-error" }], usage, isError: true });
+  } else {
+    throw new Error("Unknown process-error fixture");
+  }
   process.exitCode = 7;
+} else if (scenario === "process-error" || scenario === "invalid-ready-error" || scenario === "ready-startup-error") {
+  process.stderr.write("private child stderr must not reach the parent\n");
+  process.exitCode = scenario === "ready-startup-error" ? 1 : 7;
 } else if (scenario === "timeout" || scenario === "timeout-after-usage") {
   if (scenario === "timeout-after-usage") {
     emit({
@@ -223,7 +251,9 @@ if (scenario.startsWith("observations-")) {
       stopReason: "toolUse",
     });
   }
-  process.on("SIGTERM", () => {});
+  // Ignore SIGTERM but record it, then publish that the handler is installed.
+  process.on("SIGTERM", () => { writeFileSync(join(process.cwd(), "sigterm-received"), ""); });
+  writeFileSync(join(process.cwd(), "sigterm-ignored.pid"), String(process.pid));
   setInterval(() => {}, 1_000);
 } else if (scenario === "parent-death") {
   const pidFile = process.argv[3];

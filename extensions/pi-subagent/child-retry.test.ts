@@ -1,13 +1,14 @@
 import assert from "node:assert/strict";
-import { mkdtemp, readFile, rm, writeFile } from "node:fs/promises";
+import { mkdtemp, readFile, realpath, rm, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { test } from "node:test";
 import { createAssistantMessageEventStream, getCurrentTools, type AssistantMessage, type Model } from "@earendil-works/pi-ai";
 import type { AgentSession } from "@earendil-works/pi-coding-agent";
 import childGuard from "./child-guard.ts";
-import { emptyUsage } from "./subprocess.ts";
-import { ALLOWED_FILE_TOOLS, BUDGET_TELEMETRY_ENV, buildChildPolicy, POLICY_ENV, READY_ENV, SOFT_DEADLINE_ENV } from "./shared.ts";
+import { emptyUsage } from "./child-stream.ts";
+import { ALLOWED_FILE_TOOLS, BUDGET_TELEMETRY_ENV, POLICY_ENV, READY_ENV, SOFT_DEADLINE_ENV } from "./shared.ts";
+import { buildChildPolicy } from "./path-policy.ts";
 
 // The configured test loader selects the bundled SDK when available.
 import { createAgentSession, DefaultResourceLoader, ModelRuntime, SessionManager, SettingsManager } from "@earendil-works/pi-coding-agent";
@@ -21,7 +22,7 @@ const model: Model<"openai-completions"> = {
 // Exercise Pi's real post-agent retry/continuation handling, not a copied event loop.
 for (const scenario of ["retry", "length"] as const) {
   test(`real Pi session preserves guard lifecycle across ${scenario}`, { timeout: 15_000 }, async () => {
-    const root = await mkdtemp(join(tmpdir(), "pi-subagent-retry-"));
+    const root = await realpath(await mkdtemp(join(tmpdir(), "pi-subagent-retry-")));
     const env = {
       [POLICY_ENV]: join(root, "policy.json"),
       [READY_ENV]: join(root, "guard.ready"),

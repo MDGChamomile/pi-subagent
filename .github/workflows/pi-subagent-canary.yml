@@ -9,6 +9,25 @@ permissions:
   contents: read
 
 jobs:
+  latest-web:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 10
+    defaults:
+      run:
+        working-directory: extensions/pi-subagent
+    steps:
+      - uses: actions/checkout@v6
+      - uses: actions/setup-node@v6
+        with:
+          node-version: "22.22.0"
+          cache: npm
+          cache-dependency-path: extensions/pi-subagent/package-lock.json
+      - run: npm ci --ignore-scripts
+      - name: Select latest stable web extension (test-only)
+        run: npm install --no-save --package-lock=false --ignore-scripts pi-web-access@latest
+      - name: Check upstream web request schemas without executing tools
+        run: npm run test:web-schema
+
   latest-pi:
     runs-on: ubuntu-24.04
     timeout-minutes: 10

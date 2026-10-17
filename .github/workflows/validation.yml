@@ -41,3 +41,42 @@ jobs:
       - run: npm run typecheck
       - run: npm test
       - run: npm run package:check
+
+  # Keep the existing required check names intact. This job proves the declared
+  # macOS target; it does not expand provider/live-test or architecture coverage.
+  subagent-macos:
+    runs-on: macos-15
+    timeout-minutes: 15
+    defaults:
+      run:
+        working-directory: extensions/pi-subagent
+    steps:
+      - uses: actions/checkout@v6
+      - uses: actions/setup-node@v6
+        with:
+          node-version: "22.22.0"
+          cache: npm
+          cache-dependency-path: extensions/pi-subagent/package-lock.json
+      - uses: actions/setup-python@v6
+        with:
+          python-version: "3.10"
+      - name: Verify macOS support target
+        run: |
+          sw_vers
+          test "$(sw_vers -productVersion | cut -d . -f1)" = "15"
+          node -e 'const a = require("node:assert/strict"); a.equal(process.platform, "darwin"); a.equal(process.arch, "arm64")'
+      - name: Ensure native search test dependency
+        env:
+          HOMEBREW_NO_AUTO_UPDATE: "1"
+        run: command -v rg >/dev/null || brew install ripgrep
+      - run: npm ci --include=dev --ignore-scripts
+      - run: npm run typecheck
+      - name: Test runtime and packaging through a symlinked temporary directory
+        run: |
+          test_root=$(mktemp -d)
+          trap 'rm -rf "$test_root"' EXIT
+          mkdir "$test_root/real"
+          ln -s "$test_root/real" "$test_root/alias"
+          export TMPDIR="$test_root/alias"
+          npm test
+          npm run package:check

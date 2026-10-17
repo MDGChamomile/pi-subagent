@@ -4,10 +4,10 @@ import { dirname } from "node:path";
 import { getSupportedThinkingLevels } from "@earendil-works/pi-ai";
 import type { ExtensionAPI, ExtensionCommandContext } from "@earendil-works/pi-coding-agent";
 import {
-  isValidProviderModel, parsePresetSettings, readPresetSettingsSnapshot, THINKING_LEVELS, validatePresetSelection,
+  isValidProviderModel, parsePresetSettings, readPresetSettingsSnapshot, validatePresetSelection,
   type PresetSettings, type SettingsSnapshot,
 } from "./config.ts";
-import { PRESET_NAMES, type Preset, type Thinking } from "./shared.ts";
+import { PRESET_NAMES, THINKING_LEVELS, type Preset, type Thinking } from "./shared.ts";
 import { pickSetting } from "./settings-picker.ts";
 
 // A short synchronous transaction serializes commands across Pi processes. Never

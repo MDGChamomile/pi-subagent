@@ -6,24 +6,23 @@ import { StringEnum } from "@earendil-works/pi-ai";
 import { Text, TruncatedText, truncateToWidth } from "@earendil-works/pi-tui";
 import { Type } from "typebox";
 import {
-  boundedParentError,
-  buildChildPolicy,
   MAX_SCOPE_ROOTS,
-  invocationLimitBlock,
-  makeCanonicalTempDirectory,
-  MAX_SUBAGENT_CALLS,
-  ModelInvocationGate,
   PRESET_NAMES,
-  resolveWebExtensionPath,
   sanitizeDisplayText,
   TOOL_NAME,
   type Capability,
   type ChildPolicy,
   type Preset,
 } from "./shared.ts";
+import { buildChildPolicy, makeCanonicalTempDirectory } from "./path-policy.ts";
+import { resolveWebExtensionPath } from "./web-provenance.ts";
+import { invocationLimitBlock, MAX_SUBAGENT_CALLS, ModelInvocationGate } from "./invocation-gate.ts";
+import { boundedParentError } from "./diagnostics.ts";
 import { ChildRunError, formatResultSummary, runChild } from "./subprocess.ts";
 import { loadPresetSettings, validatePresetSelection, type PresetSelection } from "./config.ts";
 import { registerSubagentSettingsCommand } from "./settings-command.ts";
+
+const TOOL_SOURCE_FAILURE = "pi_subagent tool source could not be verified. Do not retry; continue with successful sibling results or investigate in the parent";
 
 const PresetSchema = StringEnum(PRESET_NAMES, {
   description: "Child model preset: lookup-standard for fact-finding, analysis-standard for synthesis, or review-standard for adversarial review",
@@ -67,9 +66,11 @@ export default function piSubagentExtension(
     async execute(toolCallId, params, signal, onUpdate, ctx) {
       try {
         const currentSource = currentOwnSource();
-        if (!gate.beginPreflight(toolCallId) || !ownSourcePath || currentSource !== ownSourcePath) {
+        const sourceVerified = !!ownSourcePath && currentSource === ownSourcePath;
+        if (!gate.beginPreflight(toolCallId) || !sourceVerified) {
           throw new Error(boundedParentError(
-            `pi_subagent allows at most ${MAX_SUBAGENT_CALLS} model-selected calls per parent agent run`,
+            sourceVerified ? `pi_subagent allows at most ${MAX_SUBAGENT_CALLS} model-selected calls per parent agent run`
+              : TOOL_SOURCE_FAILURE,
             { phase: "preflight" },
           ));
         }
@@ -214,9 +215,10 @@ export default function piSubagentExtension(
   pi.on("tool_call", (event) => {
     if (event.toolName !== TOOL_NAME) return;
     const currentSource = currentOwnSource();
-    if (!ownSourcePath || currentSource !== ownSourcePath || !gate.authorize(event.toolCallId)) {
-      return invocationLimitBlock();
+    if (!ownSourcePath || currentSource !== ownSourcePath) {
+      return { block: true, reason: TOOL_SOURCE_FAILURE };
     }
+    if (!gate.authorize(event.toolCallId)) return invocationLimitBlock();
   });
   pi.on("tool_result", (event) => {
     if (event.toolName !== TOOL_NAME) return;

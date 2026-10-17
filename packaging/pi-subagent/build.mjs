@@ -14,10 +14,16 @@ export const packageFiles = [
   ["LICENSE", "LICENSE"],
   ["extensions/pi-subagent/index.ts", "extensions/pi-subagent/index.ts"],
   ["extensions/pi-subagent/shared.ts", "extensions/pi-subagent/shared.ts"],
+  ["extensions/pi-subagent/path-policy.ts", "extensions/pi-subagent/path-policy.ts"],
+  ["extensions/pi-subagent/web-provenance.ts", "extensions/pi-subagent/web-provenance.ts"],
+  ["extensions/pi-subagent/invocation-gate.ts", "extensions/pi-subagent/invocation-gate.ts"],
+  ["extensions/pi-subagent/envelope.ts", "extensions/pi-subagent/envelope.ts"],
+  ["extensions/pi-subagent/diagnostics.ts", "extensions/pi-subagent/diagnostics.ts"],
   ["extensions/pi-subagent/config.ts", "extensions/pi-subagent/config.ts"],
   ["extensions/pi-subagent/settings-command.ts", "extensions/pi-subagent/settings-command.ts"],
   ["extensions/pi-subagent/settings-picker.ts", "extensions/pi-subagent/settings-picker.ts"],
   ["extensions/pi-subagent/subprocess.ts", "extensions/pi-subagent/subprocess.ts"],
+  ["extensions/pi-subagent/child-stream.ts", "extensions/pi-subagent/child-stream.ts"],
   ["extensions/pi-subagent/child-guard.ts", "extensions/pi-subagent/child-guard.ts"],
   ["extensions/pi-subagent/parent-liveness.ts", "extensions/pi-subagent/parent-liveness.ts"],
   ["extensions/pi-subagent/README.md", "extensions/pi-subagent/README.md"],
@@ -49,13 +55,16 @@ export function renderPackageReadme(source, version) {
     .replace(/(\]\()([^\s)]+)(\))/g, (_, prefix, target, suffix) => `${prefix}${rebase(target, releaseRoot)}${suffix}`);
 }
 
-// Keep the bundled guide's document links local, but serve its images from
-// the same tagged repository assets as the top-level README and gallery.
+// Keep bundled document links local. Source-only developer guidance and images
+// use the matching release rather than shipping contributor procedures in npm.
 export function renderExtensionReadme(source, version) {
   const rawAssets = `https://raw.githubusercontent.com/MDGChamomile/pi-subagent/v${version}/extensions/pi-subagent/`;
   return releaseUrls(source, version).replace(
     /(\]\()(assets\/[^\s)]+)(\))/g,
     (_, prefix, target, suffix) => `${prefix}${rawAssets}${target}${suffix}`,
+  ).replace(
+    /(\]\()(DEVELOPMENT\.md(?:#[^\s)]+)?)(\))/g,
+    (_, prefix, target, suffix) => `${prefix}https://github.com/MDGChamomile/pi-subagent/blob/v${version}/extensions/pi-subagent/${target}${suffix}`,
   );
 }
 
