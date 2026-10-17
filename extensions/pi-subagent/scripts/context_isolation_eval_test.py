@@ -167,6 +167,76 @@ class ResultEnvelopeTests(unittest.TestCase):
         self.assertFalse(row["has_evidence_location"])
 
 
+class ContextEvaluationTests(unittest.TestCase):
+    def run_context(self, messages, arm):
+        case = evaluator.EvalCase("fixture", "lookup", "Synthetic task", (("fact-one",), ("fact-two",)))
+        with patch.object(evaluator, "load_presets", return_value={PRESET: SELECTION}), \
+                patch.object(evaluator, "observe_run", return_value=(
+                    SimpleNamespace(stdout=wire(messages), stderr="", returncode=0), observations())), \
+                patch.object(evaluator.time, "monotonic", side_effect=[10.0, 10.125]):
+            return evaluator.run_pi(cwd=Path("."), main_model="offline/parent", main_thinking="off",
+                                    case=case, arm=arm, timeout_seconds=1)
+
+    def test_direct_metrics_and_scoring_are_preserved(self):
+        answer = "fact-one fixture/incident.log:2"
+        messages = [
+            {"role": "assistant", "usage": {"input": 10, "cacheRead": 5, "cacheWrite": 2},
+             "content": [{"type": "toolCall", "name": "read"}]},
+            {"role": "toolResult", "toolName": "read", "content": [{"type": "text", "text": "가"}]},
+            {"role": "assistant", "usage": {"input": "ignored", "cacheRead": 8, "cacheWrite": 2},
+             "content": [{"type": "text", "text": answer}]},
+        ]
+        self.assertEqual(self.run_context(messages, "direct"), {
+            "case": "fixture", "profile": "lookup", "arm": "direct", "child_preset": None,
+            "child_model": None, "child_thinking": None, "child_status": None, "child_usage": None,
+            "runtime_checks": {}, "result_contract_verified": True, "runtime_configuration_verified": True,
+            "duration_ms": 125, "max_parent_prompt_tokens": 17, "parent_tool_result_bytes": 3,
+            "parent_investigative_tool_result_bytes": 3, "parent_investigative_calls": 1,
+            "post_subagent_investigative_calls": 0, "result_bytes": 0,
+            "final_bytes": len(answer.encode("utf-8")), "expected_facts_matched": 1,
+            "expected_facts_total": 2, "fact_recall": 0.5, "has_evidence_location": True,
+            "has_raw_tool_syntax": False, "subagent_result_received": False, "result_text": "",
+        })
+
+    def test_delegated_metrics_use_child_answer_and_count_followup_investigation(self):
+        answer = "FACT_one; fact-two fixture/incident.log:1"
+        messages = smoke_messages()
+        set_answer(messages, answer)
+        body = messages[1]["content"][0]["text"]
+        messages[0]["usage"] = {"input": 10, "cacheRead": 3, "cacheWrite": 2}
+        messages.extend([
+            {"role": "assistant", "usage": {"input": 20}, "content": [{"type": "toolCall", "name": "grep"}]},
+            {"role": "toolResult", "toolName": "grep", "content": [{"type": "text", "text": "after 한"}]},
+            {"role": "assistant", "usage": {"input": 30, "cacheRead": 4, "cacheWrite": 1},
+             "content": [{"type": "text", "text": "parent-only"}]},
+        ])
+        self.assertEqual(self.run_context(messages, "subagent"), {
+            "case": "fixture", "profile": "lookup", "arm": "subagent", "child_preset": PRESET,
+            "child_model": SELECTION["model"], "child_thinking": SELECTION["thinking"],
+            "child_status": "complete", "child_usage": {"totalTokens": 42},
+            "runtime_checks": {"observed_child_requests": True, "effective_child_model": True,
+                               "effective_child_thinking": True, "wire_child_model": True,
+                               "wire_child_thinking": True, "response_child_model": True},
+            "result_contract_verified": True, "runtime_configuration_verified": True,
+            "duration_ms": 125, "max_parent_prompt_tokens": 35,
+            "parent_tool_result_bytes": len(body.encode("utf-8")) + 9,
+            "parent_investigative_tool_result_bytes": 9, "parent_investigative_calls": 1,
+            "post_subagent_investigative_calls": 1, "result_bytes": len(body.encode("utf-8")),
+            "final_bytes": 11, "expected_facts_matched": 2, "expected_facts_total": 2,
+            "fact_recall": 1.0, "has_evidence_location": True, "has_raw_tool_syntax": False,
+            "subagent_result_received": True, "result_text": body,
+        })
+
+    def test_nonzero_process_exit_preserves_diagnostic_before_evaluation(self):
+        case = evaluator.EvalCase("fixture", "lookup", "Synthetic task", (("fact",),))
+        with patch.object(evaluator, "load_presets", return_value={PRESET: SELECTION}), \
+                patch.object(evaluator, "observe_run", return_value=(
+                    SimpleNamespace(stdout="not JSON", stderr=" first\n  second ", returncode=7), [])), \
+                self.assertRaisesRegex(RuntimeError, "^Pi direct arm exited with 7: first second$"):
+            evaluator.run_pi(cwd=Path("."), main_model="offline/parent", main_thinking="off",
+                             case=case, arm="direct", timeout_seconds=1)
+
+
 class PortableWebSmokeTests(unittest.TestCase):
     def test_web_requires_explicit_existing_entry_before_any_session(self):
         with tempfile.TemporaryDirectory() as directory:

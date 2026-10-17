@@ -204,7 +204,22 @@ def run_pi(
     if completed.returncode != 0:
         diagnostic = re.sub(r"\s+", " ", completed.stderr).strip()[:500]
         raise RuntimeError(f"Pi {arm} arm exited with {completed.returncode}: {diagnostic}")
+    return _evaluate_context_output(
+        completed.stdout, observations, case=case, arm=arm, child_preset=child_preset,
+        selection=selection, duration_ms=duration_ms,
+    )
 
+
+def _evaluate_context_output(
+    output: str,
+    observations: list[dict[str, Any]],
+    *,
+    case: EvalCase,
+    arm: str,
+    child_preset: str,
+    selection: dict[str, str],
+    duration_ms: int,
+) -> dict[str, Any]:
     assistant_prompts: list[int] = []
     tool_result_bytes = 0
     investigative_tool_result_bytes = 0
@@ -214,7 +229,7 @@ def run_pi(
     result_text = ""
     final_text = ""
     child_details: dict[str, Any] = {}
-    for event in json_events(completed.stdout):
+    for event in json_events(output):
         if event.get("type") != "message_end" or not isinstance(event.get("message"), dict):
             continue
         message = event["message"]
@@ -253,9 +268,7 @@ def run_pi(
     envelope = parse_result_envelope(result_text, child_details) if arm == "subagent" else None
     # Never substitute a parent answer for a missing or malformed delegated result.
     quality_text = (envelope["answer"] if envelope is not None else "") if arm == "subagent" else final_text
-    normalize = lambda value: " ".join(re.sub(r"[^0-9a-z가-힣]+", " ", value.casefold()).split())
-    normalized_quality = normalize(quality_text)
-    matched = sum(any(normalize(candidate) in normalized_quality for candidate in group) for group in case.expected_groups)
+    matched = _count_expected_facts(quality_text, case.expected_groups)
     return {
         "case": case.name,
         "profile": case.profile,
@@ -287,6 +300,12 @@ def run_pi(
         "subagent_result_received": bool(result_text),
         "result_text": result_text,
     }
+
+
+def _count_expected_facts(answer: str, expected_groups: tuple[tuple[str, ...], ...]) -> int:
+    normalize = lambda value: " ".join(re.sub(r"[^0-9a-z가-힣]+", " ", value.casefold()).split())
+    normalized_quality = normalize(answer)
+    return sum(any(normalize(candidate) in normalized_quality for candidate in group) for group in expected_groups)
 
 
 def evaluate_smoke(output: str, observations: list[dict[str, Any]], *, capability: str,
