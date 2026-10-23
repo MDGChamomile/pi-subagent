@@ -136,7 +136,7 @@ Parent tool-result `details` retain content-free execution and budget metadata f
 
 ### Local runs
 
-The child guard canonicalizes every requested path, replaces the tool input with that authorized canonical path, and blocks paths outside the explicit scope, including lexical, absolute, and symlink escapes. It independently verifies that every enabled local tool is Pi-owned. Local children do not inherit `RIPGREP_CONFIG_PATH`, preventing user-configured options such as `--follow` from widening recursive grep searches beyond the authorized scope; the parent's environment is unchanged. Local runs do not resolve or load the web extension.
+The child guard canonicalizes every requested path, replaces the tool input with that authorized canonical path, and blocks paths outside the explicit scope, including lexical, absolute, and symlink escapes. Local working directories, scope roots, and per-call canonical paths must remain unchanged by Pi's tool path normalization. Paths containing Unicode spaces introduced by file-URL decoding or symlink resolution are rejected rather than silently targeting a different file; ordinary spaces and Unicode letters remain supported. It independently verifies that every enabled local tool is Pi-owned. Local children do not inherit `RIPGREP_CONFIG_PATH`, preventing user-configured options such as `--follow` from widening recursive grep searches beyond the authorized scope; the parent's environment is unchanged. Local runs do not resolve or load the web extension.
 
 ### Web runs
 
