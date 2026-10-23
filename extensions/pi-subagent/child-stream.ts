@@ -1,5 +1,6 @@
 import { StringDecoder } from "node:string_decoder";
 import type { Usage } from "@earendil-works/pi-ai";
+import { diagnosticToolName } from "./diagnostics.ts";
 import {
   MAX_JSON_LINE_BYTES,
   MAX_OBSERVATION_COUNT,
@@ -278,7 +279,7 @@ export class ChildJsonCollector {
       addUsage(this.usage, message.usage);
       if (message.isError === true) {
         this.toolErrorCount += 1;
-        if (typeof message.toolName === "string") this.lastToolError = message.toolName;
+        this.lastToolError = diagnosticToolName(message.toolName);
       }
       return;
     }
