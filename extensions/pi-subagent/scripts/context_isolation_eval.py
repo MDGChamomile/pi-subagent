@@ -210,6 +210,12 @@ def run_pi(
     )
 
 
+def requested_call_matches(calls: list[Any], *, capability: str, preset: str, scope: list[str]) -> bool:
+    return (len(calls) == 1 and isinstance(calls[0], dict)
+            and calls[0].get("capability") == capability and calls[0].get("preset") == preset
+            and calls[0].get("scope") == scope)
+
+
 def _evaluate_context_output(
     output: str,
     observations: list[dict[str, Any]],
@@ -226,6 +232,9 @@ def _evaluate_context_output(
     investigative_calls = 0
     post_subagent_investigative_calls = 0
     subagent_finished = False
+    subagent_calls: list[Any] = []
+    subagent_results = 0
+    subagent_errors = 0
     result_text = ""
     final_text = ""
     child_details: dict[str, Any] = {}
@@ -248,6 +257,8 @@ def _evaluate_context_output(
                 if not isinstance(block, dict) or block.get("type") != "toolCall":
                     continue
                 name = block.get("name")
+                if name == "pi_subagent":
+                    subagent_calls.append(block.get("arguments"))
                 if name in INVESTIGATION_TOOLS:
                     investigative_calls += 1
                     if subagent_finished:
@@ -260,10 +271,23 @@ def _evaluate_context_output(
                 investigative_tool_result_bytes += size
             if message.get("toolName") == "pi_subagent":
                 subagent_finished = True
+                subagent_results += 1
+                subagent_errors += bool(message.get("isError"))
                 if not message.get("isError"):
                     result_text = body
                     child_details = message.get("details") if isinstance(message.get("details"), dict) else {}
 
+    delegation_checks = {
+        "exactly_one_call": len(subagent_calls) == 1,
+        "requested_preset_and_scope": requested_call_matches(
+            subagent_calls, capability="local", preset=child_preset, scope=["fixture"]),
+        "exactly_one_result": subagent_results == 1,
+        "no_tool_error": subagent_errors == 0,
+        "reported_preset": child_details.get("preset") == child_preset,
+        "reported_capability": child_details.get("capability") == "local",
+    } if arm == "subagent" else {
+        "no_subagent_call_or_result": not subagent_calls and subagent_results == 0,
+    }
     observed_checks = runtime_checks(observations, **selection) if arm == "subagent" else {}
     envelope = parse_result_envelope(result_text, child_details) if arm == "subagent" else None
     # Never substitute a parent answer for a missing or malformed delegated result.
@@ -279,6 +303,8 @@ def _evaluate_context_output(
         "child_status": child_details.get("status"),
         "child_usage": child_details.get("usage"),
         "runtime_checks": observed_checks,
+        "delegation_checks": delegation_checks,
+        "delegation_contract_verified": all(delegation_checks.values()),
         "result_contract_verified": arm == "direct" or envelope is not None,
         "runtime_configuration_verified": arm == "direct" or (
             all(observed_checks.values()) and child_details.get("model") == selection["model"]
@@ -312,7 +338,7 @@ def evaluate_smoke(output: str, observations: list[dict[str, Any]], *, capabilit
                    preset: str, selection: dict[str, str]) -> dict[str, Any]:
     answers: list[str] = []
     errors: list[str] = []
-    calls: list[dict[str, Any]] = []
+    calls: list[Any] = []
     parent_other_calls: list[str] = []
     details: dict[str, Any] = {}
     for event in json_events(output):
@@ -324,7 +350,7 @@ def evaluate_smoke(output: str, observations: list[dict[str, Any]], *, capabilit
                 if not isinstance(block, dict) or block.get("type") != "toolCall":
                     continue
                 if block.get("name") == "pi_subagent":
-                    calls.append(block.get("arguments") or {})
+                    calls.append(block.get("arguments"))
                 else:
                     parent_other_calls.append(str(block.get("name")))
         elif message.get("role") == "toolResult" and message.get("toolName") == "pi_subagent":
@@ -343,8 +369,7 @@ def evaluate_smoke(output: str, observations: list[dict[str, Any]], *, capabilit
     reported_tokens = usage.get("totalTokens")
     checks = {
         "exactly_one_call": len(calls) == 1,
-        "requested_preset_and_scope": len(calls) == 1 and calls[0].get("preset") == preset
-            and calls[0].get("capability") == capability and calls[0].get("scope") == scope,
+        "requested_preset_and_scope": requested_call_matches(calls, capability=capability, preset=preset, scope=scope),
         "exactly_one_result": len(answers) == 1,
         "no_tool_error": not errors,
         "valid_result_envelope": envelope is not None,
@@ -536,7 +561,8 @@ def main() -> int:
         "cases": [case.name for case in selected],
         "repetitions": args.repetitions,
     }, "summary": summarize(results), "results": results}, ensure_ascii=False, indent=2))
-    return 0 if all(row["runtime_configuration_verified"] and row["result_contract_verified"] for row in results) else 1
+    return 0 if all(row["runtime_configuration_verified"] and row["result_contract_verified"]
+                    and row["delegation_contract_verified"] for row in results) else 1
 
 
 if __name__ == "__main__":
