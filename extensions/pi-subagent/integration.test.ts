@@ -543,7 +543,9 @@ describe("pi-subagent spawned-child integration", () => {
 
   test("preserves reported usage when a started child later times out", async () => {
     await assert.rejects(
-      () => withFixture("timeout-after-usage", (options) => runChild({ ...options, timeoutMs: 200, killGraceMs: 50 })),
+      // The assertion concerns usage already reported, not a 200 ms process-start SLA.
+      // Match the adjacent timeout fixture's startup allowance on loaded CI runners.
+      () => withFixture("timeout-after-usage", (options) => runChild({ ...options, timeoutMs: 1_500, killGraceMs: 50 })),
       (error: unknown) => {
         assert.ok(error instanceof ChildRunError);
         assert.equal(error.usage.totalTokens, 16);
