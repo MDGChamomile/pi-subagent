@@ -277,7 +277,6 @@ export default function childGuard(
   let policyError: string | undefined;
   let guardReady = false;
   let startupExitCode: number = CHILD_GUARD_EXIT_CODES.initialization;
-  let stopParentLivenessMonitor: (() => void) | undefined;
   const validatedToolCallIds = new Set<string>();
   const permittedToolCallIds = new Set<string>();
   const deniedToolCallIds = new Set<string>();
@@ -360,7 +359,7 @@ export default function childGuard(
     policyPath = loaded.policyPath;
     readyPath = loadReadyPath(loaded.policyPath);
     budgetTelemetryPath = loadBudgetTelemetryPath(loaded.policyPath);
-    stopParentLivenessMonitor = installLiveness(
+    installLiveness(
       () => cleanupPrivateRuntimeFiles(policyPath, readyPath, budgetTelemetryPath),
     );
     softDeadline = loadSoftDeadline();
@@ -405,7 +404,8 @@ export default function childGuard(
   pi.on("session_shutdown", () => {
     if (softDeadlineTimer) clearTimeout(softDeadlineTimer);
     persistBudget();
-    stopParentLivenessMonitor?.();
+    // Session shutdown can precede process exit while other handles remain.
+    // The unreferenced liveness pipe must stay armed until the process exits.
   });
 
   // Pin the effective selection at the request boundary: Pi may otherwise fuzzy-match

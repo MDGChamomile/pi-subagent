@@ -125,6 +125,18 @@ if (scenario.startsWith("observations-")) {
   process.on("SIGTERM", () => process.exit(0));
   writeFileSync(join(process.cwd(), "child-pid"), String(process.pid));
   setInterval(() => {}, 1_000);
+} else if (scenario.startsWith("natural-exit-")) {
+  const descendant = spawn(process.execPath, [
+    "-e",
+    "const fs = require('node:fs'); process.on('SIGTERM', () => fs.writeFileSync(process.argv[2], 'received')); process.send('ready'); setInterval(() => {}, 1000); setTimeout(() => process.exit(9), 8000);",
+    "unused", join(process.cwd(), "descendant-sigterm"),
+  ], { stdio: ["ignore", scenario.endsWith("inherited") ? 1 : "ignore", scenario.endsWith("inherited") ? 2 : "ignore", "ipc"] });
+  await once(descendant, "message");
+  descendant.disconnect();
+  descendant.unref();
+  writeFileSync(join(process.cwd(), "pids.json"), JSON.stringify({ childPid: process.pid, descendantPid: descendant.pid }));
+  emit({ role: "assistant", content: [{ type: "text", text: "Completed before descendant cleanup." }], usage, stopReason: "stop" });
+  process.exitCode = scenario.includes("failure") ? 7 : 0;
 } else if (scenario.startsWith("orphan-")) {
   // The descendant shares the process group but none of the leader's stdio.
   const descendant = spawn(process.execPath, [
