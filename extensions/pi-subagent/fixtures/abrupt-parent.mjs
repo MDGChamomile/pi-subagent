@@ -13,9 +13,10 @@ const shutdown = process.argv[4] === "shutdown";
 if (!root || !pidFile) process.exit(2);
 
 const policy = await buildChildPolicy(root, ["."], "local");
-const policyFile = join(root, "policy.json");
-const readyFile = join(root, "guard.ready");
-const budgetTelemetryFile = join(root, "budget-telemetry.json");
+// Match the runtime's canonical private paths, including macOS temporary aliases.
+const policyFile = join(policy.cwd, "policy.json");
+const readyFile = join(policy.cwd, "guard.ready");
+const budgetTelemetryFile = join(policy.cwd, "budget-telemetry.json");
 await writeFile(policyFile, JSON.stringify(policy), { encoding: "utf8", mode: 0o600 });
 
 void runChild({
@@ -32,7 +33,10 @@ void runChild({
       ? ["--import", SDK_LOADER, "--experimental-strip-types", SHUTDOWN_CHILD, pidFile]
       : ["--experimental-strip-types", FAKE_CHILD, "parent-death", pidFile],
   },
-}).catch(() => undefined);
+}).catch((error) => {
+  console.error(error);
+  process.exit(4);
+});
 
 for (let attempt = 0; attempt < 500; attempt += 1) {
   try {

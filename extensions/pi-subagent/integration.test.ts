@@ -752,8 +752,12 @@ describe("pi-subagent spawned-child integration", () => {
     test(`terminates the child group when its parent exits${shutdown ? " after session shutdown" : " abruptly"}`, {
       skip: process.platform === "win32",
     }, async () => {
-      const root = await mkdtemp(join(tmpdir(), "pi-subagent-parent-exit-"));
-      const pidFile = join(root, "pids.json");
+      const temporary = await mkdtemp(join(tmpdir(), "pi-subagent-parent-exit-"));
+      const root = join(temporary, "runtime");
+      const alias = join(temporary, "runtime-link");
+      await mkdir(root);
+      await symlink(root, alias, "dir");
+      const pidFile = join(temporary, "pids.json");
       let childPid: number | undefined;
       let descendantPid: number | undefined;
       try {
@@ -762,7 +766,7 @@ describe("pi-subagent spawned-child integration", () => {
           const helper = spawn(process.execPath, [
             "--experimental-strip-types",
             ABRUPT_PARENT,
-            root,
+            alias,
             pidFile,
             ...(shutdown ? ["shutdown"] : []),
           ], { stdio: ["ignore", "ignore", "pipe"] });
@@ -789,7 +793,7 @@ describe("pi-subagent spawned-child integration", () => {
         if (descendantPid) {
           try { process.kill(descendantPid, "SIGKILL"); } catch {}
         }
-        await rm(root, { recursive: true, force: true });
+        await rm(temporary, { recursive: true, force: true });
       }
     });
   }
