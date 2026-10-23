@@ -400,7 +400,7 @@ describe("pi-subagent spawned-child integration", () => {
     });
   }
 
-  for (const activity of ["turn", "incomplete", "tool", "assistant", "tool-error"]) {
+  for (const activity of ["turn", "incomplete", "tool", "assistant", "tool-error", "private-tool"]) {
     test(`does not add a startup hint after ${activity} activity`, async () => {
       await assert.rejects(() => withFixture(`process-error-${activity}`, (options) => runChild(options)), (error: unknown) => {
         assert.ok(error instanceof ChildRunError);
@@ -410,12 +410,14 @@ describe("pi-subagent spawned-child integration", () => {
         assert.doesNotMatch(error.message, /provider authentication|pi-subagent-settings|cause is unknown|private-/);
         const diagnostics = JSON.parse(error.message.split("[Subagent diagnostics ")[1]!.slice(0, -1));
         assert.equal(diagnostics.assistantMessages, activity === "assistant" ? 1 : 0);
-        assert.equal(diagnostics.toolErrors, activity === "tool-error" ? 1 : 0);
+        assert.equal(diagnostics.toolErrors, ["tool-error", "private-tool"].includes(activity) ? 1 : 0);
+        if (activity === "private-tool") assert.equal(diagnostics.lastToolError, "unknown");
+        if (activity === "tool-error") assert.equal(diagnostics.lastToolError, "read");
         assert.equal(diagnostics.observations.incomplete, activity === "incomplete");
         assert.equal(diagnostics.observations.receipts.turn_start, ["turn", "incomplete"].includes(activity) ? 1 : 0);
         assert.equal(diagnostics.observations.counts.turn_start, activity === "turn" ? 1 : 0);
         assert.equal(diagnostics.observations.counts.tool_execution_start, activity === "tool" ? 1 : 0);
-        assert.equal(error.usage.totalTokens, ["assistant", "tool-error"].includes(activity) ? 16 : 0);
+        assert.equal(error.usage.totalTokens, ["assistant", "tool-error", "private-tool"].includes(activity) ? 16 : 0);
         assert.ok(Buffer.byteLength(error.message) <= MAX_PARENT_ERROR_BYTES);
         return true;
       });

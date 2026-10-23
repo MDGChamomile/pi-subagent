@@ -1,6 +1,6 @@
 import assert from "node:assert/strict";
 import { describe, test } from "node:test";
-import { MAX_JSON_LINE_BYTES, MAX_OBSERVATION_COUNT, MAX_PARENT_ERROR_BYTES } from "./shared.ts";
+import { ALLOWED_FILE_TOOLS, ALLOWED_WEB_TOOLS, MAX_JSON_LINE_BYTES, MAX_OBSERVATION_COUNT, MAX_PARENT_ERROR_BYTES } from "./shared.ts";
 import { boundedParentError } from "./diagnostics.ts";
 import { ChildJsonCollector, emptyUsage } from "./child-stream.ts";
 
@@ -391,6 +391,25 @@ describe("child JSON stream collector", () => {
     assert.equal(result.lastToolError, "read");
     assert.equal(result.finalOutput, "Supported final answer.");
     assert.doesNotMatch(result.finalOutput, /private/);
+  });
+
+  test("retains only allowlisted names for the most recent tool error", () => {
+    for (const toolName of [...ALLOWED_FILE_TOOLS, ...ALLOWED_WEB_TOOLS]) {
+      const collector = new ChildJsonCollector();
+      collector.push(`${toolResultEvent(toolName, "private result", { isError: true })}\n`);
+      assert.equal(collector.snapshot().lastToolError, toolName);
+    }
+    for (const toolName of ["private-tool-name", "read-private", "read\u001b[31m", "read\u202e", "private".repeat(10_000), "", null, 42, {}, undefined]) {
+      const collector = new ChildJsonCollector();
+      collector.push(`${toolResultEvent("read", "private result", { isError: true })}\n`);
+      collector.push(`${toolResultEvent("read", "private result", { toolName, isError: true })}\n`);
+      collector.finish();
+      const snapshot = collector.snapshot();
+      assert.equal(snapshot.toolErrorCount, 2);
+      assert.equal(snapshot.lastToolError, "unknown");
+      assert.equal(snapshot.usage.totalTokens, 12);
+      assert.doesNotMatch(JSON.stringify(snapshot), /private/);
+    }
   });
 
   test("clears stale provider errors on each subsequent assistant message", () => {

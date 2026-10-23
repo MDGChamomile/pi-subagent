@@ -245,6 +245,8 @@ if (scenario.startsWith("observations-")) {
     process.stdout.write(`${JSON.stringify({ type: "tool_execution_start", toolCallId: "private-id", toolName: "read", args: { path: "/private-path" } })}\n`);
   } else if (scenario === "process-error-assistant") {
     emit({ role: "assistant", content: [{ type: "text", text: "private-answer" }], usage, stopReason: "stop" });
+  } else if (scenario === "process-error-private-tool") {
+    emit({ role: "toolResult", toolName: `private-tool-name-${"한".repeat(1_000)}`, content: [{ type: "text", text: "private-tool-error" }], usage, isError: true });
   } else if (scenario === "process-error-tool-error") {
     emit({ role: "toolResult", toolName: "read", content: [{ type: "text", text: "private-tool-error" }], usage, isError: true });
   } else {

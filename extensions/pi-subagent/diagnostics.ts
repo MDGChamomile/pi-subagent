@@ -1,4 +1,6 @@
 import {
+  ALLOWED_FILE_TOOLS,
+  ALLOWED_WEB_TOOLS,
   MAX_OBSERVATION_COUNT,
   MAX_PARENT_ERROR_BYTES,
   OBSERVED_CHILD_EVENTS,
@@ -8,6 +10,12 @@ import {
   type ObservedChildEvent,
   type SubagentFailureDiagnostics,
 } from "./shared.ts";
+
+const DIAGNOSTIC_TOOL_NAMES = new Set<string>([...ALLOWED_FILE_TOOLS, ...ALLOWED_WEB_TOOLS]);
+
+export function diagnosticToolName(value: unknown): string {
+  return typeof value === "string" && DIAGNOSTIC_TOOL_NAMES.has(value) ? value : "unknown";
+}
 
 function truncateUtf8WithMarker(
   text: string,
@@ -50,7 +58,7 @@ function failureDiagnosticSuffix(diagnostics: SubagentFailureDiagnostics): strin
     ...(Number.isInteger(diagnostics.assistantMessages) ? { assistantMessages: diagnostics.assistantMessages } : {}),
     ...(diagnostics.lastAssistantMode ? { lastAssistantMode: diagnostics.lastAssistantMode } : {}),
     ...(Number.isInteger(diagnostics.toolErrors) ? { toolErrors: diagnostics.toolErrors } : {}),
-    ...(diagnostics.lastToolError ? { lastToolError: safeDiagnosticText(diagnostics.lastToolError) } : {}),
+    ...(diagnostics.lastToolError ? { lastToolError: diagnosticToolName(diagnostics.lastToolError) } : {}),
     ...(diagnostics.observations ? { observations: safeObservations(diagnostics.observations) } : {}),
   };
   return `\n\n[Subagent diagnostics ${JSON.stringify(safe)}]`;
