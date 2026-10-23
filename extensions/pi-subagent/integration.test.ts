@@ -700,46 +700,95 @@ describe("pi-subagent spawned-child integration", () => {
     });
   }
 
-  test("terminates the child process group when its parent exits abruptly", {
+  for (const failure of [false, true]) {
+    for (const inherited of [false, true]) {
+      test(`cleans descendants after natural ${failure ? "failure" : "success"} with ${inherited ? "inherited" : "closed"} pipes`, {
+        skip: process.platform === "win32",
+      }, async () => {
+        await withFixture(`natural-exit-${failure ? "failure" : "success"}-${inherited ? "inherited" : "closed"}`, async (options) => {
+          let pids: { childPid: number; descendantPid: number } | undefined;
+          try {
+            // Held-open pipes keep close pending past the investigation deadline;
+            // cleanup must preserve the natural outcome instead of timing out.
+            const outcome = await runChild({ ...options, timeoutMs: 1_500, killGraceMs: inherited ? 1_600 : 100 })
+              .then((result) => ({ result, error: undefined }), (error: unknown) => ({ result: undefined, error }));
+            pids = JSON.parse(await readFile(join(options.policy.cwd, "pids.json"), "utf8"));
+            assert.ok(pids);
+            if (failure) {
+              assert.ok(outcome.error instanceof ChildRunError);
+              assert.match(outcome.error.message, /"phase":"process"/);
+              assert.match(outcome.error.message, /"exitCode":7/);
+              assert.equal(outcome.error.usage.totalTokens, 16);
+            } else {
+              assert.equal(outcome.error, undefined);
+              assert.equal(outcome.result?.status, "complete");
+              assert.equal(JSON.parse(outcome.result!.output).answer, "Completed before descendant cleanup.");
+            }
+            assert.ok(existsSync(join(options.policy.cwd, "descendant-sigterm")));
+            await Promise.all([waitForProcessExit(pids.childPid), waitForProcessExit(pids.descendantPid)]);
+          } finally {
+            if (pids) {
+              try { process.kill(-pids.childPid, "SIGKILL"); } catch {}
+              await waitForProcessExit(pids.descendantPid);
+            }
+          }
+        });
+      });
+    }
+  }
+
+  test("normal completion without descendants does not wait the cleanup grace period", {
     skip: process.platform === "win32",
   }, async () => {
-    const root = await mkdtemp(join(tmpdir(), "pi-subagent-parent-exit-"));
-    const pidFile = join(root, "pids.json");
-    let childPid: number | undefined;
-    let descendantPid: number | undefined;
-    try {
-      let stderr = "";
-      const exitCode = await new Promise<number>((resolve, reject) => {
-        const helper = spawn(process.execPath, [
-          "--experimental-strip-types",
-          ABRUPT_PARENT,
-          root,
-          pidFile,
-        ], { stdio: ["ignore", "ignore", "pipe"] });
-        helper.stderr.on("data", (chunk: Buffer) => { stderr += chunk.toString("utf8"); });
-        helper.once("error", reject);
-        helper.once("close", (code) => resolve(code ?? 1));
-      });
-      assert.equal(exitCode, 0, stderr);
-      ({ childPid, descendantPid } = JSON.parse(await readFile(pidFile, "utf8")) as {
-        childPid: number;
-        descendantPid: number;
-      });
-      await Promise.all([
-        waitForProcessExit(childPid),
-        waitForProcessExit(descendantPid),
-      ]);
-      await assert.rejects(readFile(join(root, "policy.json"), "utf8"), { code: "ENOENT" });
-      await assert.rejects(readFile(join(root, "guard.ready"), "utf8"), { code: "ENOENT" });
-      await assert.rejects(readFile(join(root, "budget-telemetry.json"), "utf8"), { code: "ENOENT" });
-    } finally {
-      if (childPid) {
-        try { process.kill(-childPid, "SIGKILL"); } catch {}
-      }
-      if (descendantPid) {
-        try { process.kill(descendantPid, "SIGKILL"); } catch {}
-      }
-      await rm(root, { recursive: true, force: true });
-    }
+    const started = performance.now();
+    const result = await withFixture("success", (options) => runChild({ ...options, timeoutMs: 10_000, killGraceMs: 10_000 }));
+    assert.equal(result.status, "complete");
+    assert.ok(performance.now() - started < 5_000);
   });
+
+  for (const shutdown of [false, true]) {
+    test(`terminates the child group when its parent exits${shutdown ? " after session shutdown" : " abruptly"}`, {
+      skip: process.platform === "win32",
+    }, async () => {
+      const root = await mkdtemp(join(tmpdir(), "pi-subagent-parent-exit-"));
+      const pidFile = join(root, "pids.json");
+      let childPid: number | undefined;
+      let descendantPid: number | undefined;
+      try {
+        let stderr = "";
+        const exitCode = await new Promise<number>((resolve, reject) => {
+          const helper = spawn(process.execPath, [
+            "--experimental-strip-types",
+            ABRUPT_PARENT,
+            root,
+            pidFile,
+            ...(shutdown ? ["shutdown"] : []),
+          ], { stdio: ["ignore", "ignore", "pipe"] });
+          helper.stderr.on("data", (chunk: Buffer) => { stderr += chunk.toString("utf8"); });
+          helper.once("error", reject);
+          helper.once("close", (code) => resolve(code ?? 1));
+        });
+        assert.equal(exitCode, 0, stderr);
+        ({ childPid, descendantPid } = JSON.parse(await readFile(pidFile, "utf8")) as {
+          childPid: number;
+          descendantPid: number;
+        });
+        await Promise.all([
+          waitForProcessExit(childPid),
+          waitForProcessExit(descendantPid),
+        ]);
+        await assert.rejects(readFile(join(root, "policy.json"), "utf8"), { code: "ENOENT" });
+        await assert.rejects(readFile(join(root, "guard.ready"), "utf8"), { code: "ENOENT" });
+        await assert.rejects(readFile(join(root, "budget-telemetry.json"), "utf8"), { code: "ENOENT" });
+      } finally {
+        if (childPid) {
+          try { process.kill(-childPid, "SIGKILL"); } catch {}
+        }
+        if (descendantPid) {
+          try { process.kill(descendantPid, "SIGKILL"); } catch {}
+        }
+        await rm(root, { recursive: true, force: true });
+      }
+    });
+  }
 });

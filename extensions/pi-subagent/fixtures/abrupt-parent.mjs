@@ -5,8 +5,11 @@ import { buildChildPolicy } from "../path-policy.ts";
 import { runChild } from "../subprocess.ts";
 
 const FAKE_CHILD = fileURLToPath(new URL("./fake-child.mjs", import.meta.url));
+const SHUTDOWN_CHILD = fileURLToPath(new URL("./shutdown-child.mjs", import.meta.url));
+const SDK_LOADER = fileURLToPath(new URL("../scripts/pi-sdk-test-loader.mjs", import.meta.url));
 const root = process.argv[2];
 const pidFile = process.argv[3];
+const shutdown = process.argv[4] === "shutdown";
 if (!root || !pidFile) process.exit(2);
 
 const policy = await buildChildPolicy(root, ["."], "local");
@@ -25,11 +28,13 @@ void runChild({
   thinking: "low",
   launcherOverride: {
     command: process.execPath,
-    args: ["--experimental-strip-types", FAKE_CHILD, "parent-death", pidFile],
+    args: shutdown
+      ? ["--import", SDK_LOADER, "--experimental-strip-types", SHUTDOWN_CHILD, pidFile]
+      : ["--experimental-strip-types", FAKE_CHILD, "parent-death", pidFile],
   },
 }).catch(() => undefined);
 
-for (let attempt = 0; attempt < 200; attempt += 1) {
+for (let attempt = 0; attempt < 500; attempt += 1) {
   try {
     await access(pidFile);
     process.exit(0);

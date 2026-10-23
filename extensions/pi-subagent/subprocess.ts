@@ -378,7 +378,7 @@ export async function runChild(options: {
   let stopCleanup: Promise<void> | undefined;
   let progressTimer: ReturnType<typeof setInterval> | undefined;
 
-  const requestStop = (reason: "timeout" | "aborted" | "protocol" | "progress" | "setup") => {
+  const requestStop = (reason: "timeout" | "aborted" | "protocol" | "progress" | "setup" | "exit") => {
     if (reason === "timeout") timedOut = true;
     if (reason === "aborted") aborted = true;
     if (stopping) return;
@@ -436,6 +436,14 @@ export async function runChild(options: {
   // Register completion before initialization can call user code or request a stop.
   const exited = new Promise<number>((resolveExit, reject) => {
     child.once("error", reject);
+    child.once("exit", () => {
+      clearTimeout(timeout);
+      if (progressTimer) clearInterval(progressTimer);
+      // Descendants can outlive a natural exit and even hold stdout/stderr open,
+      // delaying close. Reuse bounded group cleanup without changing the result.
+      // Never signal a possibly reused single PID after exit on native Windows.
+      if (process.platform !== "win32" && !isProcessGroupGone(child.pid)) requestStop("exit");
+    });
     child.once("close", (code, signal) => {
       exitSignal = signal ?? undefined;
       resolveExit(code ?? 1);
