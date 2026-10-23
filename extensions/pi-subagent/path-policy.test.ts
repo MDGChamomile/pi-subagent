@@ -3,6 +3,7 @@ import { describe, test } from "node:test";
 import { mkdir, mkdtemp, realpath, rm, symlink, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { dirname, join } from "node:path";
+import { pathToFileURL } from "node:url";
 import { authorizeReadPath, buildChildPolicy, buildChildPrompt, makeCanonicalTempDirectory, normalizeInputPath } from "./path-policy.ts";
 
 describe("pi-subagent scope policy", () => {
@@ -87,6 +88,39 @@ describe("pi-subagent scope policy", () => {
     } finally {
       await rm(root, { recursive: true, force: true });
     }
+  });
+
+  test("rejects tool-path changes introduced by file URLs and canonical symlink targets", async () => {
+    const root = await realpath(await mkdtemp(join(tmpdir(), "pi-subagent-path-identity-")));
+    try {
+      const spaces = [0x00a0, ...Array.from({ length: 11 }, (_, i) => 0x2000 + i), 0x202f, 0x205f, 0x3000];
+      for (const code of spaces) {
+        const directory = join(root, `allowed${String.fromCodePoint(code)}${code}`);
+        const alias = join(root, `alias-${code}`);
+        await mkdir(directory);
+        await symlink(directory, alias, "dir");
+        await assert.rejects(buildChildPolicy(root, [pathToFileURL(directory).href]), /would change under Pi's tool path normalization/);
+        await assert.rejects(buildChildPolicy(root, [alias]), /would change under Pi's tool path normalization/);
+        await assert.rejects(buildChildPolicy(alias, ["."]), /would change under Pi's tool path normalization/);
+        // Web children do not execute local tools and need not reject this cwd.
+        assert.deepEqual((await buildChildPolicy(alias, [], "web")).roots, []);
+      }
+    } finally { await rm(root, { recursive: true, force: true }); }
+  });
+
+  test("preserves ordinary spaces, Unicode letters, file URLs, and stable aliases", async () => {
+    const root = await realpath(await mkdtemp(join(tmpdir(), "pi-subagent-path-identity-")));
+    try {
+      const directory = join(root, "allowed 자료");
+      await mkdir(directory);
+      const file = join(directory, "evidence.txt");
+      await writeFile(file, "synthetic evidence\n");
+      await symlink(directory, join(root, "alias"), "dir");
+      const policy = await buildChildPolicy(root, [pathToFileURL(directory).href, "alias"]);
+      assert.equal(policy.roots.length, 1);
+      assert.equal(await authorizeReadPath(policy, pathToFileURL(file).href), await realpath(file));
+      assert.equal(await authorizeReadPath(policy, "@alias/evidence.txt"), await realpath(file));
+    } finally { await rm(root, { recursive: true, force: true }); }
   });
 
   test("canonicalizes temporary directories created beneath a symlink base", async () => {

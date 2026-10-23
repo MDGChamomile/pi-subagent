@@ -38,6 +38,14 @@ export function normalizeInputPath(input: string, cwd: string): string {
   return isAbsolute(normalized) ? resolve(normalized) : resolve(cwd, normalized);
 }
 
+function assertStableToolPath(path: string, cwd: string): void {
+  // URL decoding and realpath can introduce characters absent from the input.
+  // Pi normalizes paths again inside its tools; never forward a different target.
+  if (normalizeInputPath(path, cwd) !== path) {
+    throw new Error("Resolved path would change under Pi's tool path normalization");
+  }
+}
+
 export async function buildChildPolicy(
   cwdInput: string,
   scopeInputs: readonly string[],
@@ -56,6 +64,7 @@ export async function buildChildPolicy(
     throw new Error("local capability requires at least one local scope path");
   }
   const cwd = await realpath(resolve(cwdInput));
+  if (capability === "local") assertStableToolPath(cwd, cwd);
   const cwdInfo = await stat(cwd);
   if (!cwdInfo.isDirectory()) throw new Error("Current working directory is not a directory");
 
@@ -66,6 +75,7 @@ export async function buildChildPolicy(
     const canonical = await realpath(logical).catch(() => {
       throw new Error(`Scope path does not exist or cannot be resolved: ${raw}`);
     });
+    assertStableToolPath(canonical, cwd);
     if (!isWithin(cwd, canonical)) {
       throw new Error(`Scope path must stay inside the current working directory: ${raw}`);
     }
@@ -92,6 +102,7 @@ export async function authorizeReadPath(policy: ChildPolicy, rawPath: string): P
     root.kind === "file" ? canonical === root.path : isWithin(root.path, canonical),
   );
   if (!allowed) throw new Error(`Subagent cannot access a path outside its explicit scope: ${rawPath}`);
+  assertStableToolPath(canonical, policy.cwd);
   return canonical;
 }
 
