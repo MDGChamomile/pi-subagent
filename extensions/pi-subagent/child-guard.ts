@@ -1,6 +1,6 @@
 import { lstatSync, readFileSync, realpathSync, writeFileSync } from "node:fs";
 import { dirname, resolve } from "node:path";
-import type { ExtensionAPI } from "@earendil-works/pi-coding-agent";
+import type { ExtensionAPI, ExtensionContext } from "@earendil-works/pi-coding-agent";
 import { cleanupPrivateRuntimeFiles, installParentLivenessMonitor } from "./parent-liveness.ts";
 import { validatePresetSelection, type PresetSelection } from "./config.ts";
 import {
@@ -411,7 +411,7 @@ export default function childGuard(
   // Pin the effective selection at the request boundary: Pi may otherwise fuzzy-match
   // a model ID or clamp thinking when the child's registry differs from the parent's.
   const expectedSelection = process.env[MODEL_SELECTION_ENV];
-  pi.on("before_provider_request", (_event, ctx) => {
+  const requireTransmissionAllowed = (ctx: ExtensionContext) => {
     // Tool disabling alone does not prevent a provider request. Require the
     // complete startup path, including readiness publication, before transmission.
     if (!guardReady || !policy || policyError) {
@@ -431,6 +431,17 @@ export default function childGuard(
       // synchronously instead; the parent observes failure and cleans runtime files.
       process.exit(CHILD_GUARD_EXIT_CODES.modelSelection);
     }
+  };
+  pi.on("before_provider_request", (_event, ctx) => {
+    requireTransmissionAllowed(ctx);
+  });
+  // Pi sends compaction summaries without before_provider_request. The ephemeral
+  // child has no later use for a summary of a run that already answered, and the
+  // parent's hard deadline still covers it, so cancel that one. Other compactions
+  // (before a later request or for overflow recovery) keep the request checks.
+  pi.on("session_before_compact", (_event, ctx) => {
+    if (finalAnswerSeen) return { cancel: true };
+    requireTransmissionAllowed(ctx);
   });
 
   pi.on("session_start", () => {

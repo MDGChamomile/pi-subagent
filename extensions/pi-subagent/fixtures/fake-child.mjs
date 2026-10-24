@@ -222,7 +222,9 @@ if (scenario.startsWith("observations-")) {
     await new Promise((resolve) => setTimeout(resolve, Math.max(0, softDeadline - Date.now()) + 50));
   }
 } else if (scenario === "partial-success") {
-  await new Promise((resolve) => setTimeout(resolve, 300));
+  // Answer just after the parent's soft deadline, independent of child startup time.
+  const softDeadline = Number(process.env.PI_SUBAGENT_SOFT_DEADLINE_EPOCH_MS);
+  await new Promise((resolve) => setTimeout(resolve, Math.max(0, softDeadline - Date.now()) + 50));
   emit({
     role: "assistant",
     content: [{ type: "text", text: "The completed portion remains useful. Coverage is incomplete." }],

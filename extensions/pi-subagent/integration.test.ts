@@ -265,11 +265,7 @@ describe("pi-subagent spawned-child integration", () => {
   });
 
   test("runtime-labels an answer completed after the soft deadline as partial", async () => {
-    const result = await withFixture("partial-success", (options) => runChild({
-      ...options,
-      timeoutMs: 500,
-      killGraceMs: 50,
-    }));
+    const result = await withFixture("partial-success", (options) => runChild(options));
     assert.equal(result.status, "partial");
     assert.equal(result.partialReason, "time_limit");
     assert.deepEqual(JSON.parse(modelVisibleOutput(result)), {

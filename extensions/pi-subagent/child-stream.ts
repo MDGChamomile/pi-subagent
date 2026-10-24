@@ -93,12 +93,14 @@ const MAX_OBSERVED_RECORD_BYTES = 4096;
  * Consumes Pi's LF-delimited JSON stream while retaining only the last eligible
  * assistant answer. Intermediate assistant turns and ordinary child tool output are
  * discarded; large aggregate records are dropped from their bounded type prefix.
+ * Usage also includes compaction summaries, which Pi reports only on compaction_end.
  */
 export class ChildJsonCollector {
   private readonly decoder = new StringDecoder("utf8");
   private lineBuffer = "";
   private lineBytes = 0;
   private disposition: "unknown" | "capture" | "observe" | "discard" = "unknown";
+  private capturedType: "message_end" | "compaction_end" | undefined;
   private readonly eventCounts = Object.fromEntries(OBSERVED_CHILD_EVENTS.map((key) => [key, 0])) as Record<ObservedChildEvent, number>;
   private readonly eventReceipts = Object.fromEntries(OBSERVED_CHILD_EVENTS.map((key) => [key, 0])) as Record<ObservedChildEvent, number>;
   private pendingObservedType: ObservedChildEvent | undefined;
@@ -193,7 +195,7 @@ export class ChildJsonCollector {
       }
       const classified = this.disposition === "unknown" ? this.classifyLine() : this.disposition;
       if (classified !== "discard" && this.lineBytes > MAX_JSON_LINE_BYTES) {
-        this.fail(`Subagent JSON message_end record exceeded ${MAX_JSON_LINE_BYTES} bytes`);
+        this.fail(`Subagent JSON ${this.capturedType ?? "message_end"} record exceeded ${MAX_JSON_LINE_BYTES} bytes`);
         return;
       }
     }
@@ -223,8 +225,9 @@ export class ChildJsonCollector {
     if (this.disposition !== "unknown") return this.disposition;
     const match = /^\s*\{\s*"type"\s*:\s*"([^"\\]+)"/.exec(this.lineBuffer);
     if (!match) return this.disposition;
-    if (match[1] === "message_end") {
+    if (match[1] === "message_end" || match[1] === "compaction_end") {
       this.disposition = "capture";
+      this.capturedType = match[1];
     } else if (OBSERVED_CHILD_EVENTS.includes(match[1] as ObservedChildEvent)) {
       this.disposition = "observe";
       this.pendingObservedType = match[1] as ObservedChildEvent;
@@ -254,7 +257,7 @@ export class ChildJsonCollector {
       return;
     }
     if (!event || typeof event !== "object") return;
-    const record = event as { type?: unknown; message?: unknown };
+    const record = event as { type?: unknown; message?: unknown; result?: unknown };
     if (this.pendingObservedType && record.type !== this.pendingObservedType) {
       this.observationsIncomplete = true;
       return;
@@ -263,6 +266,11 @@ export class ChildJsonCollector {
       if (!this.pendingObservedType) this.observeReceipt(record.type as ObservedChildEvent);
       if (Buffer.byteLength(line) <= MAX_OBSERVED_RECORD_BYTES) this.observe(event as Record<string, unknown>);
       else this.observationsIncomplete = true;
+      return;
+    }
+    if (record.type === "compaction_end") {
+      // Summary requests produce no message_end; a failed or cancelled compaction has no result.
+      if (record.result && typeof record.result === "object") addUsage(this.usage, (record.result as { usage?: unknown }).usage);
       return;
     }
     if (record.type !== "message_end" || !record.message || typeof record.message !== "object") return;
@@ -345,6 +353,7 @@ export class ChildJsonCollector {
     this.lineBuffer = "";
     this.lineBytes = 0;
     this.disposition = "unknown";
+    this.capturedType = undefined;
     this.pendingObservedType = undefined;
   }
 }
