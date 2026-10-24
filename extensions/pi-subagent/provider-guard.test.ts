@@ -6,7 +6,7 @@ import { CHILD_GUARD_EXIT_CODES } from "./shared.ts";
 
 const fixture = fileURLToPath(new URL("./fixtures/provider-guard.mjs", import.meta.url));
 const sdkLoader = fileURLToPath(new URL("./scripts/pi-sdk-test-loader.mjs", import.meta.url));
-for (const scenario of ["match", "model-mismatch", "thinking-mismatch", "throwing-hook"]) {
+for (const scenario of ["match", "model-mismatch", "thinking-mismatch", "throwing-hook", "post-answer-compaction"]) {
   test(`built-in Codex SSE provider invokes the SDK guard: ${scenario}`, () => {
     const result = spawnSync(process.execPath, ["--import", sdkLoader, "--experimental-strip-types", fixture, scenario], {
       encoding: "utf8", timeout: 15_000,
@@ -20,12 +20,14 @@ for (const scenario of ["match", "model-mismatch", "thinking-mismatch", "throwin
     const mismatch = scenario.endsWith("-mismatch");
     assert.equal(result.status, mismatch ? CHILD_GUARD_EXIT_CODES.modelSelection : 0);
     assert.deepEqual(output, {
+      // Pi's summary request bypasses onPayload; the guard cancels it after the answer.
       requests: mismatch ? 0 : 1,
       hooks: 1,
       networkAttempts: 0,
       extensionErrors: scenario === "throwing-hook" ? 1 : 0,
       answered: !mismatch,
       guardReady: true,
+      compactionAttempts: scenario === "post-answer-compaction" ? 1 : 0,
     });
   });
 }

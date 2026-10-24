@@ -15,24 +15,28 @@ const failures = {
   "readiness-failure": "readiness", "budget-failure": "readiness",
   "tool-notice-failure": "runtime", "final-answer-failure": "runtime",
 } as const;
-for (const scenario of ["match", ...Object.keys(failures)]) {
-  test(`real Pi request dispatch: ${scenario}`, () => {
-    const result = spawnSync(process.execPath, ["--import", sdkLoader, "--experimental-strip-types", fixture, scenario], {
-      encoding: "utf8", timeout: 15_000,
-      env: { PATH: process.env.PATH, PI_OFFLINE: "1", PI_TELEMETRY: "0" },
+for (const boundary of ["provider", "compaction"]) {
+  for (const scenario of ["match", "answered", ...Object.keys(failures)]) {
+    test(`real Pi ${boundary} request dispatch: ${scenario}`, () => {
+      const result = spawnSync(process.execPath, ["--import", sdkLoader, "--experimental-strip-types", fixture, scenario, boundary], {
+        encoding: "utf8", timeout: 15_000,
+        env: { PATH: process.env.PATH, PI_OFFLINE: "1", PI_TELEMETRY: "0" },
+      });
+      assert.ifError(result.error);
+      assert.equal(result.stderr, "", "guard failures must not be module-loading errors");
+      const output = JSON.parse(result.stdout);
+      if (scenario === "match" || scenario === "answered") {
+        // Only a compaction after the final answer is cancelled; it never reaches the transport.
+        const cancelled = boundary === "compaction" && scenario === "answered";
+        assert.equal(result.status, 0);
+        assert.deepEqual(output, { requests: cancelled ? 0 : 1, guardReady: true, activeTools: [...ALLOWED_FILE_TOOLS], cancelled });
+      } else {
+        const reason = failures[scenario as keyof typeof failures];
+        assert.equal(result.status, CHILD_GUARD_EXIT_CODES[reason]);
+        assert.equal(output.requests, 0, "failure must exit before the transport spy, not throw and continue");
+        assert.equal(output.guardReady, reason === "modelSelection" || reason === "runtime");
+        if (reason !== "modelSelection" && scenario !== "before-session-start") assert.deepEqual(output.activeTools, []);
+      }
     });
-    assert.ifError(result.error);
-    assert.equal(result.stderr, "", "guard failures must not be module-loading errors");
-    const output = JSON.parse(result.stdout);
-    if (scenario === "match") {
-      assert.equal(result.status, 0);
-      assert.deepEqual(output, { requests: 1, guardReady: true, activeTools: [...ALLOWED_FILE_TOOLS] });
-    } else {
-      const reason = failures[scenario as keyof typeof failures];
-      assert.equal(result.status, CHILD_GUARD_EXIT_CODES[reason]);
-      assert.equal(output.requests, 0, "failure must exit before the transport spy, not throw and continue");
-      assert.equal(output.guardReady, reason === "modelSelection" || reason === "runtime");
-      if (reason !== "modelSelection" && scenario !== "before-session-start") assert.deepEqual(output.activeTools, []);
-    }
-  });
+  }
 }
