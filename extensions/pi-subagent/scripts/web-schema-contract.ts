@@ -2,7 +2,7 @@ import assert from "node:assert/strict";
 import type { Tool } from "@earendil-works/pi-ai";
 import { Compile } from "typebox/compile";
 import type { TSchema } from "typebox";
-import { prepareWebCall } from "../child-guard.ts";
+import { prepareWebCall } from "../web-arguments.ts";
 import {
   ALLOWED_WEB_TOOLS, MAX_FETCH_URLS_PER_CALL, MAX_WEB_QUERIES_PER_CALL, MAX_WEB_RESULTS_PER_QUERY, WEB_INPUT_KEYS,
 } from "../shared.ts";

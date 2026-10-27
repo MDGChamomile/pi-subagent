@@ -9,9 +9,9 @@ import {
   type AgentSession,
 } from "@earendil-works/pi-coding-agent";
 import { Type } from "typebox";
-import { prepareWebCall } from "./child-guard.ts";
 import { emptyUsage } from "./child-stream.ts";
 import { authorizeReadPath, buildChildPolicy } from "./path-policy.ts";
+import { prepareWebCall } from "./web-arguments.ts";
 
 const model: Model<"openai-completions"> = {
   id: "offline-input-contract", name: "Offline Input Contract", provider: "offline-test", api: "openai-completions",
