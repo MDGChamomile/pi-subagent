@@ -26,7 +26,7 @@ npm pack --dry-run --json ./packaging/pi-subagent/dist
 
 ## Trusted Publishing setup
 
-The independent release line began at `0.4.0`. Before future releases, verify npm's actual publisher settings and confirm that the selected version is unused. The transition from `pi-agent-kit` required retiring its release workflow and replacing its trusted-publisher connection; a manifest change alone could not transfer that authority. npm connections cannot be edited in place: if a connection needs to change, create the new one and remove the superseded one, retaining only the intended release connection. Historical kit tags were not imported, and the old npm `0.3.0` remains immutable.
+Before each release, verify npm's actual publisher settings and confirm that the selected version is unused. npm connections cannot be edited in place: if a connection needs to change, create the new one and remove the superseded one, retaining only the intended release connection.
 
 The package publishes through `.github/workflows/npm-publish.yml` without an npm token. Configure its single trusted publisher on the npm package settings page with:
 
