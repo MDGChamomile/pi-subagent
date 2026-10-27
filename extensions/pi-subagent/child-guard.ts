@@ -313,8 +313,8 @@ export default function childGuard(
       failClosed(`could not persist budget telemetry: ${error instanceof Error ? error.message : String(error)}`);
       throw error;
     }
-    // Record only successful writes; changed reservations and terminal state must
-    // still be persisted synchronously at their existing event boundaries.
+    // Record only successful writes, so the event that changes a reservation or
+    // terminal state always persists it synchronously.
     lastPersistedBudget = snapshot;
   };
   const timeLimitReached = () => softDeadline !== undefined && Date.now() >= softDeadline;
