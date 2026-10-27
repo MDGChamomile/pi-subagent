@@ -42,8 +42,9 @@ jobs:
       - run: npm test
       - run: npm run package:check
 
-  # Keep the existing required check names intact. This job proves the declared
-  # macOS target; it does not expand provider/live-test or architecture coverage.
+  # A separate job rather than a matrix, so required check names do not change.
+  # This job proves the declared macOS target; it does not expand provider/live-test
+  # or architecture coverage.
   subagent-macos:
     runs-on: macos-15
     timeout-minutes: 15

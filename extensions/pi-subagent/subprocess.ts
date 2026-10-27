@@ -383,8 +383,8 @@ export async function runChild(options: {
     if (reason === "aborted") aborted = true;
     if (stopping) return;
     stopping = true;
-    // A failed spawn has no process group to clean up. Keep the conservative
-    // group probe unchanged for children that actually received a PID.
+    // A failed spawn has no process group to clean up. Every child that received
+    // a PID goes through the conservative group probe below.
     if (child.pid === undefined) return;
     killProcessGroup(child.pid, "SIGTERM");
     // The leader may close while descendants survive. Only confirmed group

@@ -715,7 +715,7 @@ describe("pi-subagent child guard", () => {
       const after = await harness.getBudgetTelemetry();
       assert.equal(after.queryCount, 25);
       assert.equal(after.fetchTargetCount, 39);
-      assert.equal(after.softLimitReached, false); // The existing flag tracks tool attempts only.
+      assert.equal(after.softLimitReached, false); // Tracks tool attempts only, not resource notices.
       assert.equal(after.hardLimitReached, false);
       assert.equal(after.partialReason, undefined);
       assert.deepEqual(Object.keys(after).sort(), Object.keys(before).sort());

@@ -31,8 +31,8 @@ test("canonical authorization preserves identity at the native Pi tool boundary"
         glob: async (_pattern, cwd) => (await readdir(cwd)).map((name) => join(cwd, name)),
       },
     })];
-    // A previously serialized policy must also fail at each call boundary, not
-    // only when the parent now rejects an ambiguous scope during preflight.
+    // buildChildPolicy rejects an ambiguous scope during preflight; a policy that
+    // bypasses it must still fail at each call boundary.
     const legacyPolicy: ChildPolicy = {
       version: 1, cwd: root, capability: "local", roots: [{ path: ambiguous, kind: "directory" }],
     };

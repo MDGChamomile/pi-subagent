@@ -47,8 +47,8 @@ function fetch(emit: (name: string, event: any) => void, id: string, args: any, 
 
 test("provider observer records mismatches without claiming to block transmission", async () => {
   await harness("child", async (emit, rows) => {
-    // Exercise the old throwing branch as well: inherited expectations must not
-    // turn an observation hook into a purported transmission blocker.
+    // Inherited PI_SUBAGENT_EVAL_EXPECT_* values must not turn this observation
+    // hook into a purported transmission blocker; the observer ignores them.
     process.env.PI_SUBAGENT_EVAL_EXPECT_MODEL = "offline/expected";
     process.env.PI_SUBAGENT_EVAL_EXPECT_THINKING = "high";
     assert.doesNotThrow(() => emit("before_provider_request", {
