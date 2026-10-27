@@ -12,12 +12,11 @@ contracts or rollback considerations. Follow [Source and checks](#source-and-che
 for the changed area.
 
 Preserve `main` and `updates`: do not push directly to them, delete them, or
-rewrite their history. The repository currently merges PRs with merge commits.
-For `updates`, the required checks are `skills` and `subagent`, and review
-conversations must be addressed and resolved before merging. A successful check
-or bot run is not review approval; the current rules do not enforce a minimum
-approval count. The actual [GitHub rules](https://github.com/MDGChamomile/pi-subagent/rules)
-and repository merge settings are authoritative, not this description.
+rewrite their history. Address and resolve review conversations before merging;
+a successful check or bot run is not review approval. Required checks, merge
+methods, and approval rules are defined by the
+[GitHub rules](https://github.com/MDGChamomile/pi-subagent/rules) and repository
+merge settings.
 
 When configured automatic review applies, PR content and repository context are
 sent to an external review service. See the [review-only policy](.github/PULLFROG.md).
@@ -107,9 +106,9 @@ python3 -B -m unittest discover -s .github/scripts -p 'test_*.py' -v
 python3 -B .github/scripts/validate_skills.py
 ```
 
-The `subagent-macos` validation job runs the runtime and package checks on macOS 15/arm64 with Node.js 22.22.0 and Python 3.10, including source package discovery, private canonical paths, cancellation, process-group escalation, and abrupt parent exit. It deliberately uses a symlinked `TMPDIR` to exercise macOS-style path aliases. Existing required checks remain `skills` and `subagent`; macOS support changes also require a successful `subagent-macos` result before merge and on the merged commit. No live provider requests are made. Other macOS versions, Intel Macs, and non-Node Pi launchers are not covered by this job.
+The `subagent-macos` validation job runs the runtime and package checks on macOS 15/arm64, using a symlinked `TMPDIR` to exercise macOS-style path aliases. macOS support changes require a successful `subagent-macos` result before merge and on the merged commit. No live provider requests are made. Other macOS versions, Intel Macs, and non-Node Pi launchers are not covered by this job.
 
-The development lockfile and CI pin Pi 1.0.0, the declared minimum; the weekly canary tests current upstream Pi packages separately. An independent `latest-web` canary job installs `pi-web-access@latest` only in its disposable test environment and checks its registered Pi request schemas against the guard's allowlist and representative original/normalized inputs. It never invokes the tools or starts a model session. Regular validation tests the checker with synthetic schemas and breaking-change controls; it does not install the web dependency.
+The development lockfile and CI pin the declared minimum Pi version; the weekly canary tests current upstream Pi packages separately. An independent `latest-web` canary job installs `pi-web-access@latest` only in its disposable test environment and checks its registered Pi request schemas against the guard's allowlist and representative original/normalized inputs. It never invokes the tools or starts a model session. Regular validation tests the checker with synthetic schemas and breaking-change controls; it does not install the web dependency.
 
 To reproduce the web schema canary in a disposable checkout:
 

@@ -15,7 +15,7 @@ See the README's [illustrated walkthrough](../../README.md#see-it-in-action) for
 The README maintains the [requirements and npm installation steps](../../README.md#install), including the [optional web dependency](../../README.md#optional-web-capability). Installing this extension does not grant access to the configured child model.
 
 > [!NOTE]
-> The web guard verifies the dependency's package name, minimum version (>=0.33.0, stable releases only), declared entry point, and tool provenance. Newer stable versions are allowed without an upper bound so updates are not blocked solely by version; this is not a guarantee of compatibility or package safety. Prereleases and malformed versions are rejected. Existing argument allowlists and execution limits remain enforced, but changes to upstream behavior may require maintenance. Another extension exposing the same tool names does not satisfy the provenance check. Without the web dependency, `local` runs remain available. Both local and web children start with `PI_OFFLINE=1`, preventing automatic downloads of missing search binaries. This startup setting does not block model-provider requests or the web capability's search and fetch requests.
+> The web guard verifies the dependency's package name, minimum version ([stated in the README](../../README.md#optional-web-capability), stable releases only), declared entry point, and tool provenance. Newer stable versions are allowed without an upper bound so updates are not blocked solely by version; this is not a guarantee of compatibility or package safety. Prereleases and malformed versions are rejected. Existing argument allowlists and execution limits remain enforced, but changes to upstream behavior may require maintenance. Another extension exposing the same tool names does not satisfy the provenance check. Without the web dependency, `local` runs remain available. Both local and web children start with `PI_OFFLINE=1`, preventing automatic downloads of missing search binaries. This startup setting does not block model-provider requests or the web capability's search and fetch requests.
 
 ### Source and project installation
 
@@ -78,10 +78,10 @@ Only the selected preset is updated; other overrides remain intact and omitted d
   "presets": {
     "lookup-standard": { "thinking": "low" },
     "analysis-standard": {
-      "provider": "anthropic", "model": "claude-sonnet-4-5", "thinking": "high"
+      "provider": "anthropic", "model": "MODEL_ID", "thinking": "high"
     },
     "review-standard": {
-      "provider": "openrouter", "model": "anthropic/claude-sonnet-4.5", "thinking": "high"
+      "provider": "openrouter", "model": "VENDOR/MODEL_ID", "thinking": "high"
     }
   }
 }
@@ -89,7 +89,7 @@ Only the selected preset is updated; other overrides remain intact and omitted d
 
 Omitted presets and fields retain their defaults. To change a model, specify both `provider` and `model`. Provider names start with an ASCII letter or digit and contain at most 128 ASCII letters, digits, `.`, `_`, or `-`. Model IDs may include `@`, slashes (as on OpenRouter), and colons (as on Ollama); they must be nonempty, at most 256 characters, free of control characters, and have no surrounding whitespace, and their spelling is preserved. A thinking-only override is allowed. Accepted thinking names are `off`, `minimal`, `low`, `medium`, `high`, `xhigh`, and `max`; the selected model must support the level according to Pi's metadata. Pi maps these names to each provider's own reasoning controls, so they are not identical token budgets across providers. Unknown fields, malformed settings, unavailable models, and unsupported levels fail during preflight with configuration guidance, not a fallback or silent clamp.
 
-Use exact model IDs present in your Pi registry and authenticate through Pi's usual login/environment configuration. Examples do not guarantee account access. Pi 1.0.0's bundled catalog includes the default `gpt-6-luna` and `gpt-6.1-sol` models, but you still need access to the selected model; configure another available model if necessary. This package does not install models, store credentials, or change the parent model/thinking. Built-in providers such as Anthropic and OpenRouter and user `models.json` configurations are supported; providers requiring parent-only extensions are not, because child extension discovery stays disabled. The child verifies its effective provider/model and thinking before each provider request; disagreement with the selected settings fails closed before transmission.
+Replace the placeholders with exact model IDs present in your Pi registry, and authenticate through Pi's usual login/environment configuration. Default models also require a registry entry and account access; configure another available model if necessary. This package does not install models, store credentials, or change the parent model/thinking. Built-in providers such as Anthropic and OpenRouter and user `models.json` configurations are supported; providers requiring parent-only extensions are not, because child extension discovery stays disabled. The child verifies its effective provider/model and thinking before each provider request; disagreement with the selected settings fails closed before transmission.
 
 Selecting a provider changes where delegated inputs are sent and may incur its charges. Review those settings and your provider permissions before delegating. There is no automatic provider fallback or per-call approval UI. The settings command confirms only the saved defaults, not future provider usage.
 
@@ -167,6 +167,6 @@ The source checkout includes opt-in context evaluation against synthetic fixture
 
 ## Verification
 
-Offline tests cover scoped access, invocation limits, output isolation, budgets, cancellation and process cleanup, provider selection, and package discovery. They do not establish live provider compatibility. The provider transport contract currently exercises the default Codex SSE path using synthetic credentials and responses, not WebSocket or other provider transports. The opt-in live observation harness is also Codex-specific; this is a test limitation, not a restriction on configurable runtime providers.
+Offline tests do not establish live provider compatibility. Provider transport coverage uses synthetic credentials and responses for the default Codex SSE path only, and the opt-in live observation harness is Codex-specific; these are test limitations, not restrictions on configurable runtime providers.
 
-See the [development verification guide](DEVELOPMENT.md#verification) for source-checkout commands, prerequisites, and precise coverage. Live checks require separate authorization for provider usage and input disclosure. Installing the npm package does not require running evaluation scripts or installing development test dependencies.
+See the [development verification guide](DEVELOPMENT.md#verification) for source-checkout commands, prerequisites, and coverage limits. Live checks require separate authorization for provider usage and input disclosure. Installing the npm package does not require running evaluation scripts or installing development test dependencies.

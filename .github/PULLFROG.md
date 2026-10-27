@@ -22,9 +22,8 @@ file does not apply settings automatically:
   the owner's explicit request. An incidental mention in an automated reply
   does not authorize a new paid run. Code pushes stay disabled, so a mention
   cannot make Pullfrog change the branch. The run uses the
-  console-selected model; a `--model=` flag in the comment was not applied in
-  practice, so check the model named in the review footer before treating a
-  run as another model's opinion.
+  console-selected model; check the model named in the review footer before
+  treating a run as another model's opinion.
 - Include external-contributor PRs in automatic reviews under the owner's
   authorization. This does not enable mentions from non-collaborators.
   Exclude draft, bot, and Pullfrog's own PRs.
