@@ -73,8 +73,10 @@ def check(messages=None, observed=None, capability="local"):
 class RuntimeObservationTests(unittest.TestCase):
     def test_runtime_catalog_is_loaded_from_typescript(self):
         presets = load_presets()
-        self.assertEqual(presets[PRESET], SELECTION)
-        self.assertIn("review-standard", presets)
+        self.assertEqual(list(presets), ["lookup-standard", "analysis-standard", "review-standard"])
+        for selection in presets.values():
+            self.assertEqual(set(selection), {"model", "thinking"})
+            self.assertRegex(selection["model"], r"^[^/\s]+/\S+$")
 
     def test_lf_framing_preserves_unicode_line_and_paragraph_separators(self):
         item = {"text": "one\u2028two\u2029three"}

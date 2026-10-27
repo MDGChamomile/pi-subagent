@@ -110,7 +110,6 @@ if (scenario.startsWith("observations-")) {
   });
 } else if (scenario === "scoped-grep") {
   // Exercise Pi's real rg invocation, not a mock of its search arguments.
-  // Import the native tool module directly; Pi 1.0.0's SDK barrel would also work.
   const grepModule = new URL("./core/tools/grep.js", import.meta.resolve("@earendil-works/pi-coding-agent"));
   const { createGrepTool } = await import(grepModule.href);
   const { authorizeReadPath } = await import("../path-policy.ts");

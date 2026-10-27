@@ -427,8 +427,8 @@ export default function childGuard(
       // an exact child registry entry, not just a matching effective ID.
       validatePresetSelection(expected, ctx.modelRegistry);
     } catch {
-      // Pi (through at least 1.0.0) swallows hook exceptions and continues the request. Exit
-      // synchronously instead; the parent observes failure and cleans runtime files.
+      // Pi swallows hook exceptions and continues the request (pinned by provider-guard.test.ts).
+      // Exit synchronously instead; the parent observes failure and cleans runtime files.
       process.exit(CHILD_GUARD_EXIT_CODES.modelSelection);
     }
   };

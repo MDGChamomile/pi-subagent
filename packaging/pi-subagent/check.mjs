@@ -99,10 +99,20 @@ for (const [asset, readmes] of [
   }
 }
 
-// Documentation must state the runtime's web minimum, not a separately maintained copy.
+// Documentation must state the pinned Pi minimum and the runtime's web minimum,
+// not separately maintained copies.
+const devDependencies = JSON.parse(
+  await readFile(join(sourceRoot, "extensions/pi-subagent/package.json"), "utf8"),
+).devDependencies;
+const piMinimum = devDependencies["@earendil-works/pi-coding-agent"];
+assert.match(piMinimum, /^\d+\.\d+\.\d+$/, "development Pi dependency must pin the exact minimum");
+for (const [name, version] of Object.entries(devDependencies)) {
+  if (name.startsWith("@earendil-works/pi-")) assert.equal(version, piMinimum, `${name} must pin the Pi minimum`);
+}
+const piMinimumPattern = new RegExp(`Pi ${piMinimum.replaceAll(".", "\\.")} or later`);
 const webMinimum = MIN_WEB_EXTENSION_VERSION.replaceAll(".", "\\.");
 const canonicalRequirementPatterns = [
-  ["minimum Pi version", /Pi 1\.0\.0 or later/],
+  ["minimum Pi version", piMinimumPattern],
   ["provider authentication requirement", /authentication for the configured child provider/],
   ["minimum web extension version", new RegExp(`pi-web-access\` v${webMinimum} or later`)],
   ["npm installation command", /pi install npm:@mdgchamomile\/pi-subagent/],
@@ -112,7 +122,7 @@ for (const [description, pattern] of canonicalRequirementPatterns) {
 }
 // The model-loaded workflow still declares compatibility; human guides link to the README.
 const skill = await readFile(join(sourceRoot, "skills/pi-subagent/SKILL.md"), "utf8");
-assert.match(skill, /Pi 1\.0\.0 or later/, "SKILL.md has an outdated Pi minimum");
+assert.match(skill, piMinimumPattern, "SKILL.md has an outdated Pi minimum");
 assert.match(skill, new RegExp(`pi-web-access(?:\`)? v${webMinimum} or later`), "SKILL.md has an outdated web minimum");
 
 const presetRows = (markdown) => {
