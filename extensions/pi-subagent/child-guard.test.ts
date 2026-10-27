@@ -5,7 +5,7 @@ import { mkdtemp, mkdir, readFile, realpath, rm, symlink, writeFile } from "node
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { describe, test, type TestContext } from "node:test";
-import childGuard, { prepareWebCall } from "./child-guard.ts";
+import childGuard from "./child-guard.ts";
 import { ChildJsonCollector } from "./child-stream.ts";
 import {
   ALLOWED_FILE_TOOLS,
@@ -20,6 +20,7 @@ import {
 } from "./shared.ts";
 import { buildChildPolicy } from "./path-policy.ts";
 import { readBudgetTelemetry } from "./subprocess.ts";
+import { prepareWebCall } from "./web-arguments.ts";
 
 type Handler = (...args: any[]) => any;
 

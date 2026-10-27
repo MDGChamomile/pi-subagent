@@ -16,6 +16,7 @@ export const packageFiles = [
   ["extensions/pi-subagent/shared.ts", "extensions/pi-subagent/shared.ts"],
   ["extensions/pi-subagent/path-policy.ts", "extensions/pi-subagent/path-policy.ts"],
   ["extensions/pi-subagent/web-provenance.ts", "extensions/pi-subagent/web-provenance.ts"],
+  ["extensions/pi-subagent/web-arguments.ts", "extensions/pi-subagent/web-arguments.ts"],
   ["extensions/pi-subagent/invocation-gate.ts", "extensions/pi-subagent/invocation-gate.ts"],
   ["extensions/pi-subagent/envelope.ts", "extensions/pi-subagent/envelope.ts"],
   ["extensions/pi-subagent/diagnostics.ts", "extensions/pi-subagent/diagnostics.ts"],

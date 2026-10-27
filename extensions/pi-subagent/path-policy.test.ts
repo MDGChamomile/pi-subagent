@@ -4,7 +4,8 @@ import { mkdir, mkdtemp, realpath, rm, symlink, writeFile } from "node:fs/promis
 import { tmpdir } from "node:os";
 import { dirname, join } from "node:path";
 import { pathToFileURL } from "node:url";
-import { authorizeReadPath, buildChildPolicy, buildChildPrompt, makeCanonicalTempDirectory, normalizeInputPath } from "./path-policy.ts";
+import { authorizeReadPath, buildChildPolicy, makeCanonicalTempDirectory, normalizeInputPath } from "./path-policy.ts";
+import { buildChildPrompt } from "./subprocess.ts";
 
 describe("pi-subagent scope policy", () => {
   test("canonicalizes, deduplicates, and authorizes explicit roots", async () => {

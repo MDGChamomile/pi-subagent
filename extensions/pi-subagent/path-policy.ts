@@ -105,20 +105,3 @@ export async function authorizeReadPath(policy: ChildPolicy, rawPath: string): P
   assertStableToolPath(canonical, policy.cwd);
   return canonical;
 }
-
-export function buildChildPrompt(task: string, policy: ChildPolicy): string {
-  const visibleRoots = policy.roots.map((root) => {
-    const rel = relative(policy.cwd, root.path);
-    const portablePath = (rel === "" ? "." : rel).split(sep).join("/");
-    return `- ${JSON.stringify(portablePath)} (${root.kind})`;
-  });
-  return [
-    "Objective",
-    task,
-    "",
-    "Authorized local scope (runtime enforced)",
-    ...(visibleRoots.length > 0 ? visibleRoots : ["- (none; web-only investigation)"]),
-    "",
-    "Stay within this runtime-enforced capability and scope. Return only the requested deliverable.",
-  ].join("\n");
-}
