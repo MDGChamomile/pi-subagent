@@ -1,6 +1,7 @@
 """Shared, content-free runtime observation for opt-in Codex evaluations."""
 from __future__ import annotations
 
+import functools
 import json
 import os
 import shutil
@@ -24,19 +25,36 @@ def json_events(output: str):
             yield event
 
 
-def load_presets() -> dict[str, dict[str, str]]:
+def runtime_exports(*names: str) -> dict[str, Any]:
     completed = subprocess.run([
         "node", "--experimental-strip-types", "--input-type=module", "--eval",
-        "const {SUBAGENT_PRESETS}=await import(process.argv[1]); console.log(JSON.stringify(SUBAGENT_PRESETS));",
-        (EXTENSION_DIR / "shared.ts").as_uri(),
+        "const runtime=await import(process.argv[1]);"
+        " console.log(JSON.stringify(Object.fromEntries(process.argv.slice(2).map((name) => [name, runtime[name]]))));",
+        (EXTENSION_DIR / "shared.ts").as_uri(), *names,
     ], text=True, capture_output=True, check=True, timeout=15)
-    presets = json.loads(completed.stdout)
+    return json.loads(completed.stdout)
+
+
+def load_presets() -> dict[str, dict[str, str]]:
+    presets = runtime_exports("SUBAGENT_PRESETS").get("SUBAGENT_PRESETS")
     if not isinstance(presets, dict) or not presets:
         raise ValueError("Runtime presets are unavailable")
     for value in presets.values():
         if not isinstance(value, dict) or not all(isinstance(value.get(key), str) for key in ("model", "thinking")):
             raise ValueError("Malformed runtime preset")
     return presets
+
+
+@functools.cache
+def investigation_tools() -> frozenset[str]:
+    """Tools a child may use; the same calls in the parent count as direct investigation."""
+    allowlists = runtime_exports("ALLOWED_FILE_TOOLS", "ALLOWED_WEB_TOOLS")
+    if len(allowlists) != 2 or not all(
+        isinstance(tools, list) and tools and all(isinstance(tool, str) for tool in tools)
+        for tools in allowlists.values()
+    ):
+        raise ValueError("Runtime tool allowlists are unavailable")
+    return frozenset(tool for tools in allowlists.values() for tool in tools)
 
 
 def observed_cli(root: Path) -> list[str]:
