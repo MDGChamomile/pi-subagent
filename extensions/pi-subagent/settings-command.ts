@@ -61,7 +61,7 @@ export async function configureSubagentSettings(ctx: ExtensionCommandContext): P
   }
   try {
     const snapshot = await readPresetSettingsSnapshot();
-    const current = parsePresetSettings(snapshot.settings);
+    const current = snapshot.selections;
     // Availability is Pi's local authentication view, not a live access probe.
     const models = ctx.modelRegistry.getAvailable()
       .filter((model) => isValidProviderModel(model.provider, model.id))

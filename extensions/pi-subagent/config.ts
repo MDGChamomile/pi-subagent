@@ -53,7 +53,7 @@ export function parsePresetSettings(value: unknown): PresetSelections {
 export type PresetSettings = {
   presets?: Partial<Record<Preset, { provider?: string; model?: string; thinking?: Thinking }>>;
 };
-export type SettingsSnapshot = { path: string; text: string | null; settings: PresetSettings };
+export type SettingsSnapshot = { path: string; text: string | null; settings: PresetSettings; selections: PresetSelections };
 
 // Only the user's agent directory is consulted, never project files or tool arguments.
 export function presetSettingsPath(agentDir = getAgentDir()): string {
@@ -68,17 +68,18 @@ export async function readPresetSettingsSnapshot(path = presetSettingsPath()): P
   try {
     text = await readFile(path, "utf8");
   } catch (error) {
-    if ((error as NodeJS.ErrnoException).code === "ENOENT") return { path, text: null, settings: {} };
+    if ((error as NodeJS.ErrnoException).code === "ENOENT") {
+      return { path, text: null, settings: {}, selections: parsePresetSettings({}) };
+    }
     throw new Error(`Could not read subagent settings. ${HELP}`);
   }
   let value: unknown;
   try { value = JSON.parse(text); } catch { throw new Error(`Invalid subagent settings JSON. ${HELP}`); }
-  parsePresetSettings(value);
-  return { path, text, settings: value as PresetSettings };
+  return { path, text, settings: value as PresetSettings, selections: parsePresetSettings(value) };
 }
 
 export async function loadPresetSettings(agentDir = getAgentDir()): Promise<PresetSelections> {
-  return parsePresetSettings((await readPresetSettingsSnapshot(presetSettingsPath(agentDir))).settings);
+  return (await readPresetSettingsSnapshot(presetSettingsPath(agentDir))).selections;
 }
 
 export function validatePresetSelection(
