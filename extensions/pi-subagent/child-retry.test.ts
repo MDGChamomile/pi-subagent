@@ -7,7 +7,9 @@ import { createAssistantMessageEventStream, getCurrentTools, type AssistantMessa
 import type { AgentSession } from "@earendil-works/pi-coding-agent";
 import childGuard from "./child-guard.ts";
 import { emptyUsage } from "./child-stream.ts";
-import { ALLOWED_FILE_TOOLS, BUDGET_TELEMETRY_ENV, POLICY_ENV, READY_ENV, SOFT_DEADLINE_ENV } from "./shared.ts";
+import {
+  ALLOWED_FILE_TOOLS, BUDGET_TELEMETRY_ENV, POLICY_ENV, READY_ENV, runtimeFilesIn, SOFT_DEADLINE_ENV,
+} from "./shared.ts";
 import { buildChildPolicy } from "./path-policy.ts";
 
 // The configured test loader selects the bundled SDK when available.
@@ -23,10 +25,11 @@ const model: Model<"openai-completions"> = {
 for (const scenario of ["retry", "length"] as const) {
   test(`real Pi session preserves guard lifecycle across ${scenario}`, { timeout: 15_000 }, async () => {
     const root = await realpath(await mkdtemp(join(tmpdir(), "pi-subagent-retry-")));
+    const files = runtimeFilesIn(root);
     const env = {
-      [POLICY_ENV]: join(root, "policy.json"),
-      [READY_ENV]: join(root, "guard.ready"),
-      [BUDGET_TELEMETRY_ENV]: join(root, "budget.json"),
+      [POLICY_ENV]: files.policy,
+      [READY_ENV]: files.ready,
+      [BUDGET_TELEMETRY_ENV]: files.budgetTelemetry,
       [SOFT_DEADLINE_ENV]: String(Date.now() + 60_000),
     };
     const previous = Object.fromEntries(Object.keys(env).map((key) => [key, process.env[key]]));

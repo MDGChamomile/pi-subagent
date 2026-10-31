@@ -30,6 +30,7 @@ import {
   type ChildPolicy,
   type PartialReason,
   type ResultStatus,
+  type RuntimeFiles,
   type SubagentFailureDiagnostics,
   type SubagentFailurePhase,
   type Thinking,
@@ -205,9 +206,7 @@ function getPiLauncher(): ChildLauncher {
 export function buildChildInvocation(
   options: {
     policy: ChildPolicy;
-    policyFile: string;
-    readyFile: string;
-    budgetTelemetryFile: string;
+    files: RuntimeFiles;
     webExtensionPath?: string;
     model: string;
     thinking: Thinking;
@@ -239,9 +238,9 @@ export function buildChildInvocation(
     PI_OFFLINE: "1",
     [MODEL_SELECTION_ENV]: JSON.stringify({ model: options.model, thinking: options.thinking }),
     [PARENT_LIVENESS_ENV]: String(PARENT_LIVENESS_FD),
-    [POLICY_ENV]: options.policyFile,
-    [READY_ENV]: options.readyFile,
-    [BUDGET_TELEMETRY_ENV]: options.budgetTelemetryFile,
+    [POLICY_ENV]: options.files.policy,
+    [READY_ENV]: options.files.ready,
+    [BUDGET_TELEMETRY_ENV]: options.files.budgetTelemetry,
     [SOFT_DEADLINE_ENV]: String(options.softDeadline),
   };
   // Pi's native grep inherits rg's config; --follow there can escape scoped roots.
@@ -327,9 +326,7 @@ export function selectPartialReason(input: {
 
 export async function runChild(options: {
   policy: ChildPolicy;
-  policyFile: string;
-  readyFile: string;
-  budgetTelemetryFile: string;
+  files: RuntimeFiles;
   webExtensionPath?: string;
   task: string;
   model: string;
@@ -357,9 +354,7 @@ export async function runChild(options: {
   const softDeadline = hardDeadline - finalizationGraceMs;
   const invocation = buildChildInvocation({
     policy: options.policy,
-    policyFile: options.policyFile,
-    readyFile: options.readyFile,
-    budgetTelemetryFile: options.budgetTelemetryFile,
+    files: options.files,
     webExtensionPath: options.webExtensionPath,
     model: options.model,
     thinking: options.thinking,
@@ -506,7 +501,7 @@ export async function runChild(options: {
   );
   if (exitCode !== 0) {
     // Readiness is an observation, not a diagnosis of why startup failed.
-    const guardReady = await assertChildReady(options.readyFile).then(() => true, () => false);
+    const guardReady = await assertChildReady(options.files.ready).then(() => true, () => false);
     throw childFailure(
       describeChildExit(exitCode, exitSignal, guardReady, snapshot),
       "process",
@@ -518,8 +513,8 @@ export async function runChild(options: {
   }
   let budget: BudgetTelemetry;
   try {
-    await assertChildReady(options.readyFile);
-    budget = await readBudgetTelemetry(options.budgetTelemetryFile);
+    await assertChildReady(options.files.ready);
+    budget = await readBudgetTelemetry(options.files.budgetTelemetry);
   } catch (error) {
     throw childFailure(error, "readiness", snapshot, startedAt, exitCode);
   }

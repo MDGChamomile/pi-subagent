@@ -23,6 +23,7 @@ import {
   WEB_EXTENSION_ENV,
   type BudgetTelemetry,
   type ChildPolicy,
+  type RuntimeFiles,
 } from "./shared.ts";
 import { authorizeReadPath, isWithin } from "./path-policy.ts";
 import { prepareWebCall } from "./web-arguments.ts";
@@ -72,12 +73,12 @@ function loadCompanionPath(policyPath: string, envName: string, label: string): 
   return resolved;
 }
 
-function loadReadyPath(policyPath: string): string {
-  return loadCompanionPath(policyPath, READY_ENV, "readiness");
-}
-
-function loadBudgetTelemetryPath(policyPath: string): string {
-  return loadCompanionPath(policyPath, BUDGET_TELEMETRY_ENV, "budget telemetry");
+function loadRuntimeFiles(policyPath: string): RuntimeFiles {
+  return {
+    policy: policyPath,
+    ready: loadCompanionPath(policyPath, READY_ENV, "readiness"),
+    budgetTelemetry: loadCompanionPath(policyPath, BUDGET_TELEMETRY_ENV, "budget telemetry"),
+  };
 }
 
 function loadSoftDeadline(): number | undefined {
@@ -121,9 +122,7 @@ export default function childGuard(
   installLiveness = installParentLivenessMonitor,
 ): void {
   let policy: ChildPolicy | undefined;
-  let policyPath: string | undefined;
-  let readyPath: string | undefined;
-  let budgetTelemetryPath: string | undefined;
+  let runtimeFiles: RuntimeFiles | undefined;
   let webExtensionPath: string | undefined;
   let softDeadline: number | undefined;
   let softDeadlineTimer: ReturnType<typeof setTimeout> | undefined;
@@ -157,11 +156,11 @@ export default function childGuard(
   };
   let lastPersistedBudget: string | undefined;
   const persistBudget = () => {
-    if (!budgetTelemetryPath) return;
+    if (!runtimeFiles) return;
     const snapshot = JSON.stringify(budget);
     if (snapshot === lastPersistedBudget) return;
     try {
-      writeFileSync(budgetTelemetryPath, snapshot, { encoding: "utf8", mode: 0o600 });
+      writeFileSync(runtimeFiles.budgetTelemetry, snapshot, { encoding: "utf8", mode: 0o600 });
     } catch (error) {
       // The parent derives tool_budget status only from this file. Pi may continue
       // after a hook error, so a stale snapshot must not let the child finish normally.
@@ -211,12 +210,9 @@ export default function childGuard(
   try {
     const loaded = loadPolicy();
     policy = loaded.policy;
-    policyPath = loaded.policyPath;
-    readyPath = loadReadyPath(loaded.policyPath);
-    budgetTelemetryPath = loadBudgetTelemetryPath(loaded.policyPath);
-    installLiveness(
-      () => cleanupPrivateRuntimeFiles(policyPath, readyPath, budgetTelemetryPath),
-    );
+    const files = loadRuntimeFiles(loaded.policyPath);
+    runtimeFiles = files;
+    installLiveness(() => cleanupPrivateRuntimeFiles(files));
     softDeadline = loadSoftDeadline();
     if (policy.capability === "web") webExtensionPath = loadWebExtensionPath();
   } catch (error) {
@@ -300,7 +296,7 @@ export default function childGuard(
   });
 
   pi.on("session_start", () => {
-    if (!policy || policyError || !readyPath || !budgetTelemetryPath || (policy.capability === "web" && !webExtensionPath)) {
+    if (!policy || policyError || !runtimeFiles || (policy.capability === "web" && !webExtensionPath)) {
       pi.setActiveTools([]);
       return;
     }
@@ -329,9 +325,9 @@ export default function childGuard(
     startupExitCode = CHILD_GUARD_EXIT_CODES.readiness;
     try {
       const snapshot = JSON.stringify(budget);
-      writeFileSync(budgetTelemetryPath!, snapshot, { encoding: "utf8", mode: 0o600, flag: "wx" });
+      writeFileSync(runtimeFiles.budgetTelemetry, snapshot, { encoding: "utf8", mode: 0o600, flag: "wx" });
       lastPersistedBudget = snapshot;
-      writeFileSync(readyPath, READY_MARKER, { encoding: "utf8", mode: 0o600, flag: "wx" });
+      writeFileSync(runtimeFiles.ready, READY_MARKER, { encoding: "utf8", mode: 0o600, flag: "wx" });
     } catch (error) {
       failClosed(`could not publish guard readiness: ${error instanceof Error ? error.message : String(error)}`);
       return;

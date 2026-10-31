@@ -15,6 +15,7 @@ import {
   POLICY_ENV,
   READY_ENV,
   READY_MARKER,
+  runtimeFilesIn,
   SOFT_DEADLINE_ENV,
   WEB_EXTENSION_ENV,
 } from "./shared.ts";
@@ -35,11 +36,9 @@ async function createHarness(
   await writeFile(join(workspace, "allowed", "inside.txt"), "inside\n");
   await writeFile(join(workspace, "outside.txt"), "outside\n");
   const policy = await buildChildPolicy(workspace, scope, capability);
-  const policyFile = join(root, "policy.json");
-  await writeFile(policyFile, JSON.stringify(policy), { mode: 0o600 });
+  const files = runtimeFilesIn(root);
+  await writeFile(files.policy, JSON.stringify(policy), { mode: 0o600 });
   const webExtension = join(root, "web-extension.ts");
-  const readyFile = join(root, "guard.ready");
-  const budgetTelemetryFile = join(root, "budget-telemetry.json");
   await writeFile(webExtension, "export default () => {};\n", { mode: 0o600 });
 
   const previousPolicy = process.env[POLICY_ENV];
@@ -47,9 +46,9 @@ async function createHarness(
   const previousBudgetTelemetry = process.env[BUDGET_TELEMETRY_ENV];
   const previousWeb = process.env[WEB_EXTENSION_ENV];
   const previousDeadline = process.env[SOFT_DEADLINE_ENV];
-  process.env[POLICY_ENV] = policyFile;
-  process.env[READY_ENV] = readyFile;
-  process.env[BUDGET_TELEMETRY_ENV] = budgetTelemetryFile;
+  process.env[POLICY_ENV] = files.policy;
+  process.env[READY_ENV] = files.ready;
+  process.env[BUDGET_TELEMETRY_ENV] = files.budgetTelemetry;
   process.env[WEB_EXTENSION_ENV] = webExtension;
   process.env[SOFT_DEADLINE_ENV] = String(softDeadline);
 
@@ -104,7 +103,7 @@ async function createHarness(
   return {
     root,
     workspace,
-    readyFile,
+    readyFile: files.ready,
     tools,
     emit,
     callTool,
@@ -113,7 +112,7 @@ async function createHarness(
     getLifecycle: () => lifecycle,
     getSentUserMessages: () => sentUserMessages,
     failUserMessages: () => { messageError = new Error("synthetic notice failure"); },
-    getBudgetTelemetry: async () => JSON.parse(await readFile(budgetTelemetryFile, "utf8")) as Record<string, unknown>,
+    getBudgetTelemetry: async () => JSON.parse(await readFile(files.budgetTelemetry, "utf8")) as Record<string, unknown>,
     async cleanup() {
       await emit("session_shutdown");
       if (previousPolicy === undefined) delete process.env[POLICY_ENV];
@@ -133,7 +132,7 @@ async function createHarness(
 
 test("parent reads the guard's initial, admitted, denied, and exhausted telemetry unchanged", async () => {
   const harness = await createHarness(["allowed"], "local");
-  const telemetryFile = join(harness.root, "budget-telemetry.json");
+  const telemetryFile = runtimeFilesIn(harness.root).budgetTelemetry;
   try {
     await harness.emit("session_start");
     const initial = {

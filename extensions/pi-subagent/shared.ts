@@ -1,3 +1,5 @@
+import { join } from "node:path";
+
 export const TOOL_NAME = "pi_subagent";
 export const ALLOWED_FILE_TOOLS = ["read", "grep", "find", "ls"] as const;
 export const ALLOWED_WEB_TOOLS = ["web_search", "source_check", "fetch_content", "get_search_content"] as const;
@@ -75,6 +77,7 @@ export type BudgetTelemetry = {
 };
 export type ScopeRoot = { path: string; kind: "file" | "directory" };
 export type ChildPolicy = { version: 1; cwd: string; capability: Capability; roots: ScopeRoot[] };
+export type RuntimeFiles = { policy: string; ready: string; budgetTelemetry: string };
 
 export type SubagentFailurePhase =
   | "preflight"
@@ -123,6 +126,15 @@ export type SubagentFailureDiagnostics = {
 
 export function toolsForCapability(capability: Capability): string[] {
   return capability === "local" ? [...ALLOWED_FILE_TOOLS] : [...ALLOWED_WEB_TOOLS];
+}
+
+/** Private per-run files; the guard accepts companion files only beside the policy file. */
+export function runtimeFilesIn(directory: string): RuntimeFiles {
+  return {
+    policy: join(directory, "policy.json"),
+    ready: join(directory, "guard.ready"),
+    budgetTelemetry: join(directory, "budget-telemetry.json"),
+  };
 }
 
 export function sanitizeDisplayText(text: string): string {

@@ -1,7 +1,7 @@
 import { access, writeFile } from "node:fs/promises";
-import { join } from "node:path";
 import { fileURLToPath } from "node:url";
 import { buildChildPolicy } from "../path-policy.ts";
+import { runtimeFilesIn } from "../shared.ts";
 import { runChild } from "../subprocess.ts";
 
 const FAKE_CHILD = fileURLToPath(new URL("./fake-child.mjs", import.meta.url));
@@ -14,16 +14,12 @@ if (!root || !pidFile) process.exit(2);
 
 const policy = await buildChildPolicy(root, ["."], "local");
 // Match the runtime's canonical private paths, including macOS temporary aliases.
-const policyFile = join(policy.cwd, "policy.json");
-const readyFile = join(policy.cwd, "guard.ready");
-const budgetTelemetryFile = join(policy.cwd, "budget-telemetry.json");
-await writeFile(policyFile, JSON.stringify(policy), { encoding: "utf8", mode: 0o600 });
+const files = runtimeFilesIn(policy.cwd);
+await writeFile(files.policy, JSON.stringify(policy), { encoding: "utf8", mode: 0o600 });
 
 void runChild({
   policy,
-  policyFile,
-  readyFile,
-  budgetTelemetryFile,
+  files,
   task: "Wait for the deterministic parent-death fixture.",
   model: "test/fake",
   thinking: "low",

@@ -10,7 +10,7 @@ import { normalizeContext, type Message, type Model } from "@earendil-works/pi-a
 import { convertResponsesMessages } from "@earendil-works/pi-ai/api/openai-responses-shared";
 import { buildChildInvocation, ChildRunError, runChild, type ChildResult } from "./subprocess.ts";
 import { emptyUsage } from "./child-stream.ts";
-import { CHILD_GUARD_EXIT_CODES, MAX_FINAL_BYTES, MAX_PARENT_ERROR_BYTES } from "./shared.ts";
+import { CHILD_GUARD_EXIT_CODES, MAX_FINAL_BYTES, MAX_PARENT_ERROR_BYTES, runtimeFilesIn } from "./shared.ts";
 import { buildChildPolicy } from "./path-policy.ts";
 
 const FAKE_CHILD = fileURLToPath(new URL("./fixtures/fake-child.mjs", import.meta.url));
@@ -20,15 +20,11 @@ async function withFixture<T>(scenario: string, run: (options: Parameters<typeof
   const root = await mkdtemp(join(tmpdir(), "pi-subagent-integration-"));
   try {
     const policy = await buildChildPolicy(root, ["."], "local");
-    const policyFile = join(root, "policy.json");
-    const readyFile = join(root, "guard.ready");
-    const budgetTelemetryFile = join(root, "budget-telemetry.json");
-    await writeFile(policyFile, JSON.stringify(policy), { encoding: "utf8", mode: 0o600 });
+    const files = runtimeFilesIn(root);
+    await writeFile(files.policy, JSON.stringify(policy), { encoding: "utf8", mode: 0o600 });
     return await run({
       policy,
-      policyFile,
-      readyFile,
-      budgetTelemetryFile,
+      files,
       task: "Inspect the deterministic fixture and return the requested final answer.",
       model: "test/fake",
       thinking: "low",
@@ -232,7 +228,7 @@ describe("pi-subagent spawned-child integration", () => {
           if (inheritConfig) process.env.RIPGREP_CONFIG_PATH = config;
           else delete process.env.RIPGREP_CONFIG_PATH;
           const policy = await buildChildPolicy(root, ["allowed"], "local");
-          await writeFile(options.policyFile, JSON.stringify(policy), { mode: 0o600 });
+          await writeFile(options.files.policy, JSON.stringify(policy), { mode: 0o600 });
 
           const result = await runChild({ ...options, policy, timeoutMs: 10_000 });
           assert.match(result.output, /SYNTHETIC_SCOPE_MARKER_INSIDE/);
@@ -781,9 +777,9 @@ describe("pi-subagent spawned-child integration", () => {
           waitForProcessExit(childPid),
           waitForProcessExit(descendantPid),
         ]);
-        await assert.rejects(readFile(join(root, "policy.json"), "utf8"), { code: "ENOENT" });
-        await assert.rejects(readFile(join(root, "guard.ready"), "utf8"), { code: "ENOENT" });
-        await assert.rejects(readFile(join(root, "budget-telemetry.json"), "utf8"), { code: "ENOENT" });
+        for (const path of Object.values(runtimeFilesIn(root))) {
+          await assert.rejects(readFile(path, "utf8"), { code: "ENOENT" });
+        }
       } finally {
         if (childPid) {
           try { process.kill(-childPid, "SIGKILL"); } catch {}

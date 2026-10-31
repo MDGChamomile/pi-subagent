@@ -11,7 +11,7 @@ import childGuard from "./child-guard.ts";
 import { emptyUsage } from "./child-stream.ts";
 import {
   ALLOWED_FILE_TOOLS, BUDGET_TELEMETRY_ENV, CHILD_GUARD_EXIT_CODES, LIFETIME_TOOL_CALL_LIMITS,
-  MODEL_SELECTION_ENV, POLICY_ENV, READY_ENV, SOFT_DEADLINE_ENV,
+  MODEL_SELECTION_ENV, POLICY_ENV, READY_ENV, runtimeFilesIn, SOFT_DEADLINE_ENV,
 } from "./shared.ts";
 import { buildChildPolicy } from "./path-policy.ts";
 
@@ -30,10 +30,11 @@ const model: Model<"openai-completions"> = {
 for (const failure of ["once", "persistent"] as const) {
   test(`real Pi session cannot finish after a ${failure} hard-limit telemetry write failure`, { timeout: 30_000 }, async (t) => {
     const root = await realpath(await mkdtemp(join(tmpdir(), "pi-subagent-budget-")));
+    const files = runtimeFilesIn(root);
     const env = {
-      [POLICY_ENV]: join(root, "policy.json"),
-      [READY_ENV]: join(root, "guard.ready"),
-      [BUDGET_TELEMETRY_ENV]: join(root, "budget.json"),
+      [POLICY_ENV]: files.policy,
+      [READY_ENV]: files.ready,
+      [BUDGET_TELEMETRY_ENV]: files.budgetTelemetry,
       [SOFT_DEADLINE_ENV]: String(Date.now() + 60_000),
       [MODEL_SELECTION_ENV]: JSON.stringify({ model: `${model.provider}/${model.id}`, thinking: "off" }),
     };

@@ -14,7 +14,7 @@ import {
   readBudgetTelemetry,
   selectPartialReason,
 } from "./subprocess.ts";
-import { READY_MARKER, type ChildPolicy, type PartialReason } from "./shared.ts";
+import { READY_MARKER, runtimeFilesIn, type ChildPolicy, type PartialReason } from "./shared.ts";
 
 describe("child completion boundary", () => {
   test("formats live progress with elapsed time, model, thinking, and reported tokens", () => {
@@ -48,7 +48,7 @@ describe("child completion boundary", () => {
   test("requires the exact guard readiness marker", async () => {
     const root = await mkdtemp(join(tmpdir(), "pi-subagent-ready-test-"));
     try {
-      const readyFile = join(root, "guard.ready");
+      const readyFile = runtimeFilesIn(root).ready;
       await assert.rejects(() => assertChildReady(readyFile), /did not become ready/);
       await writeFile(readyFile, "wrong\n");
       await assert.rejects(() => assertChildReady(readyFile), /marker is invalid/);
@@ -62,7 +62,7 @@ describe("child completion boundary", () => {
   test("accepts only content-free budget telemetry fields", async () => {
     const root = await mkdtemp(join(tmpdir(), "pi-subagent-budget-test-"));
     try {
-      const telemetryFile = join(root, "budget.json");
+      const telemetryFile = runtimeFilesIn(root).budgetTelemetry;
       const telemetry = {
         version: 1,
         toolCallsAttempted: 12,
@@ -92,7 +92,7 @@ describe("child completion boundary", () => {
 
   test("preserves telemetry validation boundaries and read errors", async () => {
     const root = await mkdtemp(join(tmpdir(), "pi-subagent-telemetry-contract-"));
-    const path = join(root, "budget.json");
+    const path = runtimeFilesIn(root).budgetTelemetry;
     const telemetry = {
       version: 1, toolCallsAttempted: 0, toolCallsExecuted: 0, deniedCalls: 0,
       queryCount: 0, fetchTargetCount: 0, softLimitReached: false, hardLimitReached: false,
@@ -132,9 +132,7 @@ describe("child invocation", () => {
   });
   const build = (capability: "local" | "web", parentEnv: NodeJS.ProcessEnv) => buildChildInvocation({
     policy: policy(capability),
-    policyFile: "/synthetic/run/policy.json",
-    readyFile: "/synthetic/run/guard.ready",
-    budgetTelemetryFile: "/synthetic/run/budget-telemetry.json",
+    files: runtimeFilesIn("/synthetic/run"),
     webExtensionPath: capability === "web" ? "/synthetic/pi-web-access/index.ts" : undefined,
     model: "provider/model",
     thinking: "high",
@@ -217,7 +215,7 @@ describe("child invocation", () => {
   test("defaults to the current process environment without mutating it", () => {
     const before = { ...process.env };
     buildChildInvocation({
-      policy: policy("local"), policyFile: "p", readyFile: "r", budgetTelemetryFile: "b",
+      policy: policy("local"), files: { policy: "p", ready: "r", budgetTelemetry: "b" },
       model: "provider/model", thinking: "off", softDeadline: 1,
     });
     assert.deepEqual({ ...process.env }, before);
