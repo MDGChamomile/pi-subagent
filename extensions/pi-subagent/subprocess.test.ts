@@ -4,8 +4,24 @@ import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { describe, test } from "node:test";
 import { fileURLToPath } from "node:url";
-import { assertChildReady, buildChildInvocation, selectPartialReason } from "./subprocess.ts";
+import { assertChildReady, buildChildInvocation, buildChildPrompt, selectPartialReason } from "./subprocess.ts";
 import { READY_MARKER, runtimeFilesIn, type ChildPolicy, type PartialReason } from "./shared.ts";
+
+describe("child prompt", () => {
+  test("lists scope roots relative to the working directory without absolute paths", () => {
+    const prompt = buildChildPrompt("Inspect the module", {
+      version: 1, cwd: "/synthetic/project", capability: "local",
+      roots: [{ path: "/synthetic/project/src", kind: "directory" }],
+    });
+    assert.match(prompt, /"src" \(directory\)/);
+    assert.doesNotMatch(prompt, /\/synthetic\/project/);
+  });
+
+  test("marks a web-only investigation as having no local scope", () => {
+    const prompt = buildChildPrompt("Research a public API", { version: 1, cwd: "/synthetic/project", capability: "web", roots: [] });
+    assert.match(prompt, /none; web-only investigation/);
+  });
+});
 
 describe("child readiness", () => {
   test("requires the exact guard readiness marker", async () => {
