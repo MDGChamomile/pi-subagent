@@ -8,7 +8,7 @@ import {
   type PresetSettings, type SettingsSnapshot,
 } from "./config.ts";
 import { modelRef, PRESET_NAMES, splitModelRef, THINKING_LEVELS, type Preset, type Thinking } from "./shared.ts";
-import { pickSetting } from "./settings-picker.ts";
+import { pickSetting, type PickerOptions } from "./settings-picker.ts";
 
 // A short synchronous transaction serializes commands across Pi processes. Never
 // hold a lock while waiting for UI, and never reclaim another process's lock.
@@ -70,60 +70,62 @@ export async function configureSubagentSettings(ctx: ExtensionCommandContext): P
       ctx.ui.notify("No available models. Authenticate a provider in Pi or edit pi-subagent.json for a registered model.", "warning");
       return;
     }
-    let stage = 0;
     let preset: Preset = PRESET_NAMES[0];
     let provider: string | undefined;
     let model = models[0];
     let thinking: Thinking = "off";
-    while (true) {
-      if (stage === 0) {
-        const value = await pickSetting(ctx, {
-          title: "Subagent defaults · Preset · 1/5", context: "Choose the default to configure",
-          selected: preset,
-          items: PRESET_NAMES.map((name) => ({ value: name, label: name, description: `${current[name].model} (${current[name].thinking})` })),
-        });
-        if (value == null) return;
+    const thinkingLevels = () => getSupportedThinkingLevels(model).filter((level) => THINKING_LEVELS.includes(level));
+    const steps: { picker: () => PickerOptions; choose: (value: string) => void | false }[] = [{
+      picker: () => ({
+        title: "Subagent defaults · Preset · 1/5", context: "Choose the default to configure",
+        selected: preset,
+        items: PRESET_NAMES.map((name) => ({ value: name, label: name, description: `${current[name].model} (${current[name].thinking})` })),
+      }),
+      choose: (value) => {
         if (preset !== value) provider = undefined;
         preset = value as Preset;
-      } else if (stage === 1) {
-        const value = await pickSetting(ctx, {
-          title: "Subagent defaults · Provider · 2/5", context: `${preset} · Current: ${current[preset].model}`,
-          current: splitModelRef(current[preset].model).provider, selected: provider,
-          items: [...new Set(models.map((m) => m.provider))].map((name) => ({ value: name, label: name,
-            description: "Authentication detected; model access and child availability are not guaranteed." })),
-        });
-        if (value === null) return;
-        if (value === undefined) { stage--; continue; }
-        if (provider !== value) {
-          provider = value;
-          model = models.find((m) => m.provider === provider && modelRef(m) === current[preset].model)
-            ?? models.find((m) => m.provider === provider)!;
-        }
-      } else if (stage === 2) {
-        const value = await pickSetting(ctx, {
-          title: "Subagent defaults · Model · 3/5", context: `${preset} · ${provider} · Current: ${current[preset].model}`,
-          current: current[preset].model, selected: modelRef(model),
-          items: models.filter((m) => m.provider === provider).map((m) => ({ value: modelRef(m), label: m.id, description: m.name })),
-        });
-        if (value === null) return;
-        if (value === undefined) { stage--; continue; }
-        model = models.find((m) => modelRef(m) === value)!;
-      } else {
-        const levels = getSupportedThinkingLevels(model).filter((level) => THINKING_LEVELS.includes(level));
-        const value = await pickSetting(ctx, {
-          title: "Subagent defaults · Thinking · 4/5", context: `${preset} · ${modelRef(model)}`,
-          current: current[preset].thinking,
-          items: levels.map((level) => ({ value: level, label: level })),
-        });
-        if (value === null) return;
-        if (value === undefined) { stage--; continue; }
-        if (!levels.includes(value as Thinking)) return;
-        thinking = value as Thinking;
-        break;
-      }
-      stage++;
+      },
+    }, {
+      picker: () => ({
+        title: "Subagent defaults · Provider · 2/5", context: `${preset} · Current: ${current[preset].model}`,
+        current: splitModelRef(current[preset].model).provider, selected: provider,
+        items: [...new Set(models.map((m) => m.provider))].map((name) => ({ value: name, label: name,
+          description: "Authentication detected; model access and child availability are not guaranteed." })),
+      }),
+      choose: (value) => {
+        if (provider === value) return;
+        provider = value;
+        model = models.find((m) => m.provider === provider && modelRef(m) === current[preset].model)
+          ?? models.find((m) => m.provider === provider)!;
+      },
+    }, {
+      picker: () => ({
+        title: "Subagent defaults · Model · 3/5", context: `${preset} · ${provider} · Current: ${current[preset].model}`,
+        current: current[preset].model, selected: modelRef(model),
+        items: models.filter((m) => m.provider === provider).map((m) => ({ value: modelRef(m), label: m.id, description: m.name })),
+      }),
+      choose: (value) => { model = models.find((m) => modelRef(m) === value)!; },
+    }, {
+      picker: () => ({
+        title: "Subagent defaults · Thinking · 4/5", context: `${preset} · ${modelRef(model)}`,
+        current: current[preset].thinking,
+        items: thinkingLevels().map((level) => ({ value: level, label: level })),
+      }),
+      choose: (value) => {
+        const level = thinkingLevels().find((candidate) => candidate === value);
+        if (!level) return false;
+        thinking = level;
+      },
+    }];
+    let step = 0;
+    while (step < steps.length) {
+      const value = await pickSetting(ctx, steps[step].picker());
+      if (value === null || (value === undefined && step === 0)) return;
+      if (value === undefined) { step--; continue; }
+      if (steps[step].choose(value) === false) return;
+      step++;
     }
-    const selection = { model: modelRef(model), thinking: thinking as Thinking };
+    const selection = { model: modelRef(model), thinking };
     validatePresetSelection(selection, ctx.modelRegistry);
     if (!await ctx.ui.confirm("Save subagent defaults? · 5/5", [
       preset,
