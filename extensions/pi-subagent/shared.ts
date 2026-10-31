@@ -1,6 +1,7 @@
 export const TOOL_NAME = "pi_subagent";
 export const ALLOWED_FILE_TOOLS = ["read", "grep", "find", "ls"] as const;
 export const ALLOWED_WEB_TOOLS = ["web_search", "source_check", "fetch_content", "get_search_content"] as const;
+export type WebTool = (typeof ALLOWED_WEB_TOOLS)[number];
 export const WEB_INPUT_KEYS = {
   web_search: ["query", "queries", "numResults", "recencyFilter", "domainFilter", "workflow"],
   source_check: ["claim", "queries", "numResults", "fetchContent", "recencyFilter", "domainFilter"],
@@ -8,7 +9,7 @@ export const WEB_INPUT_KEYS = {
   get_search_content: [
     "responseId", "query", "queryIndex", "url", "urlIndex", "offset", "limit", "findText", "findMode",
   ],
-} as const satisfies Record<(typeof ALLOWED_WEB_TOOLS)[number], readonly string[]>;
+} as const satisfies Record<WebTool, readonly string[]>;
 export const MAX_WEB_QUERIES_PER_CALL = 4;
 export const DEFAULT_WEB_RESULTS_PER_QUERY = 5;
 export const MAX_WEB_RESULTS_PER_QUERY = 10;

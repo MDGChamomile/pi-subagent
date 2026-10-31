@@ -360,6 +360,14 @@ describe("pi-subagent child guard", () => {
     }
   });
 
+  test("rejects non-web and prototype-named tools as unsupported web calls", () => {
+    for (const tool of ["read", "constructor", "__proto__", "toString", "hasOwnProperty"]) {
+      assert.deepEqual(prepareWebCall(tool, { url: "https://example.com" }), {
+        violation: `${tool} is not supported in the subagent`,
+      });
+    }
+  });
+
   test("activates only the owned web tool allowlist", async () => {
     const harness = await createHarness([], "web");
     try {
