@@ -136,6 +136,10 @@ export function runtimeFilesIn(directory: string): RuntimeFiles {
   };
 }
 
+export function errorMessage(error: unknown): string {
+  return error instanceof Error ? error.message : String(error);
+}
+
 export function sanitizeDisplayText(text: string): string {
   return text.replace(/[\u0000-\u0008\u000b-\u001f\u007f-\u009f\u202a-\u202e\u2066-\u2069]/g, "?");
 }

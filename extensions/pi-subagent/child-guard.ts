@@ -8,6 +8,7 @@ import {
   ALLOWED_WEB_TOOLS,
   BUDGET_TELEMETRY_ENV,
   CHILD_GUARD_EXIT_CODES,
+  errorMessage,
   LIFETIME_TOOL_CALL_LIMITS,
   LIFETIME_WEB_FETCH_TARGET_LIMIT,
   LIFETIME_WEB_FETCH_TARGET_SOFT_LIMIT,
@@ -172,7 +173,7 @@ export default function childGuard(
     } catch (error) {
       // The parent derives tool_budget status only from this file. Pi may continue
       // after a hook error, so a stale snapshot must not let the child finish normally.
-      failClosed(`could not persist budget telemetry: ${error instanceof Error ? error.message : String(error)}`);
+      failClosed(`could not persist budget telemetry: ${errorMessage(error)}`);
       throw error;
     }
     // Record only successful writes, so the event that changes a reservation or
@@ -188,7 +189,7 @@ export default function childGuard(
       pi.sendUserMessage(`${content}\n\nDo not call tools. Return the concise final answer as ordinary assistant text.`, { deliverAs });
     } catch (error) {
       // Tools were disabled before delivery; retain that ordering on failure.
-      invalidatePolicy(`could not request the final answer: ${error instanceof Error ? error.message : String(error)}`);
+      invalidatePolicy(`could not request the final answer: ${errorMessage(error)}`);
     }
   };
   const requestPartialAnswer = () => {
@@ -211,7 +212,7 @@ export default function childGuard(
     try {
       pi.sendUserMessage(content, { deliverAs: "steer" });
     } catch (error) {
-      failClosed(`could not send the tool budget warning: ${error instanceof Error ? error.message : String(error)}`);
+      failClosed(`could not send the tool budget warning: ${errorMessage(error)}`);
     }
   };
 
@@ -224,7 +225,7 @@ export default function childGuard(
     softDeadline = loadSoftDeadline();
     if (policy.capability === "web") webExtensionPath = loadWebExtensionPath();
   } catch (error) {
-    policyError = error instanceof Error ? error.message : String(error);
+    policyError = errorMessage(error);
   }
 
   pi.on("turn_end", (event) => {
@@ -325,7 +326,7 @@ export default function childGuard(
       lastPersistedBudget = snapshot;
       writeFileSync(runtimeFiles.ready, READY_MARKER, { encoding: "utf8", mode: 0o600, flag: "wx" });
     } catch (error) {
-      failClosed(`could not publish guard readiness: ${error instanceof Error ? error.message : String(error)}`);
+      failClosed(`could not publish guard readiness: ${errorMessage(error)}`);
       return;
     }
     pi.setActiveTools(activeTools);
@@ -390,7 +391,7 @@ export default function childGuard(
       try {
         (event.input as Record<string, unknown>).path = await authorizeReadPath(policy, path);
       } catch (error) {
-        return block(error instanceof Error ? error.message : String(error));
+        return block(errorMessage(error));
       }
       permit();
       return;
