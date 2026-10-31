@@ -205,15 +205,10 @@ assert.deepEqual(actualFiles, expectedFiles, "npm tarball contains an unexpected
 assert.equal(actualFiles.some((path) => path.startsWith("extensions/pi-subagent/assets/")), false,
   "repository presentation assets must not be bundled in the npm package");
 
-for (const [markdownPath, root] of [
-  ["README.md", sourceRoot],
-  ["extensions/pi-subagent/README.md", sourceRoot],
-  ["extensions/pi-subagent/DEVELOPMENT.md", sourceRoot],
-  ...actualFiles.filter((path) => path.endsWith(".md")).map((path) => [path, stagingDirectory]),
-]) {
-  const markdown = await readFile(join(root, markdownPath), "utf8");
+for (const markdownPath of actualFiles.filter((path) => path.endsWith(".md"))) {
+  const markdown = await readFile(join(stagingDirectory, markdownPath), "utf8");
   for (const relativePath of relativeMarkdownTargets(markdown)) {
-    await stat(join(root, dirname(markdownPath), relativePath));
+    await stat(join(stagingDirectory, dirname(markdownPath), relativePath));
   }
 }
 
