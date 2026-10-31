@@ -1,6 +1,7 @@
 import assert from "node:assert/strict";
-import { join } from "node:path";
-import { createAssistantMessageEventStream, type AssistantMessage, type Model } from "@earendil-works/pi-ai";
+import {
+  createAssistantMessageEventStream, InMemoryCredentialStore, type AssistantMessage, type Model,
+} from "@earendil-works/pi-ai";
 // The configured test loader selects the bundled SDK when available.
 import {
   createAgentSession,
@@ -58,8 +59,7 @@ export async function createOfflineSession(options: {
   await resourceLoader.reload();
   assert.deepEqual(resourceLoader.getExtensions().errors, []);
   const modelRuntime = await ModelRuntime.create({
-    authPath: join(root, "auth.json"), modelsPath: join(root, "models.json"),
-    modelsStorePath: join(root, "model-store.json"), allowModelNetwork: false,
+    credentials: new InMemoryCredentialStore(), modelsPath: null, allowModelNetwork: false,
   });
   if (model) {
     modelRuntime.registerProvider(model.provider, {
