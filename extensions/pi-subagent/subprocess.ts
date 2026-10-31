@@ -23,6 +23,7 @@ import {
   READY_ENV,
   READY_MARKER,
   SOFT_DEADLINE_ENV,
+  splitModelRef,
   toolsForCapability,
   WEB_EXTENSION_ENV,
   WEB_INPUT_KEYS,
@@ -105,8 +106,7 @@ export function formatElapsed(durationMs: number): string {
 }
 
 export function formatProgress(model: string, thinking: Thinking, durationMs: number, reportedTokens: number): string {
-  const separator = model.indexOf("/");
-  const displayModel = separator >= 0 ? model.slice(separator + 1) : model;
+  const displayModel = splitModelRef(model).id;
   const tokens = Math.max(0, Math.trunc(reportedTokens)).toLocaleString("en-US");
   return `${formatElapsed(durationMs)} · ${displayModel} (${thinking}) running · ${tokens} reported tokens`;
 }

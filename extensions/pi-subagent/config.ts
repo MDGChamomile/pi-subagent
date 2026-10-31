@@ -3,7 +3,9 @@ import { join } from "node:path";
 import { homedir } from "node:os";
 import { getAgentDir } from "@earendil-works/pi-coding-agent";
 import { getSupportedThinkingLevels, type Api, type Model } from "@earendil-works/pi-ai";
-import { PRESET_NAMES, SUBAGENT_PRESETS, THINKING_LEVELS, type Preset, type Thinking } from "./shared.ts";
+import {
+  modelRef, PRESET_NAMES, splitModelRef, SUBAGENT_PRESETS, THINKING_LEVELS, type Preset, type Thinking,
+} from "./shared.ts";
 
 export type PresetSelection = { model: string; thinking: Thinking };
 export type PresetSelections = Record<Preset, PresetSelection>;
@@ -36,7 +38,7 @@ export function parsePresetSettings(value: unknown): PresetSelections {
       if (!isValidProviderModel(override.provider, override.model)) {
         throw new Error(`Invalid subagent provider/model settings. ${HELP}`);
       }
-      selections[name].model = `${override.provider}/${override.model}`;
+      selections[name].model = modelRef({ provider: override.provider as string, id: override.model as string });
     }
     if (override.thinking !== undefined) {
       if (!THINKING_LEVELS.includes(override.thinking as Thinking)) {
@@ -83,8 +85,8 @@ export function validatePresetSelection(
   selection: PresetSelection,
   registry: { find(provider: string, model: string): Model<Api> | undefined },
 ): void {
-  const separator = selection.model.indexOf("/");
-  const model = registry.find(selection.model.slice(0, separator), selection.model.slice(separator + 1));
+  const { provider, id } = splitModelRef(selection.model);
+  const model = registry.find(provider, id);
   if (!model) throw new Error(`Configured subagent model is unavailable. ${HELP}`);
   if (!getSupportedThinkingLevels(model).includes(selection.thinking)) {
     throw new Error(`Configured subagent thinking level is unsupported. ${HELP}`);

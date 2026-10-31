@@ -14,6 +14,7 @@ import {
   LIFETIME_WEB_QUERY_LIMIT,
   LIFETIME_WEB_QUERY_SOFT_LIMIT,
   MAX_SCOPE_ROOTS,
+  modelRef,
   POLICY_ENV,
   MODEL_SELECTION_ENV,
   READY_ENV,
@@ -271,7 +272,7 @@ export default function childGuard(
     try {
       const expected = JSON.parse(expectedSelection ?? "null") as PresetSelection | null;
       if (!expected || typeof expected.model !== "string" || typeof expected.thinking !== "string" ||
-        `${ctx.model?.provider}/${ctx.model?.id}` !== expected.model || ctx.thinkingLevel !== expected.thinking) {
+        !ctx.model || modelRef(ctx.model) !== expected.model || ctx.thinkingLevel !== expected.thinking) {
         throw new Error("Subagent model/thinking selection mismatch");
       }
       // The CLI can synthesize an unknown ID from a same-provider model. Require

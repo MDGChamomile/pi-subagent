@@ -128,6 +128,16 @@ export function toolsForCapability(capability: Capability): string[] {
   return capability === "local" ? [...ALLOWED_FILE_TOOLS] : [...ALLOWED_WEB_TOOLS];
 }
 
+/** Model references are "provider/model"; model IDs may contain further slashes. */
+export function modelRef(model: { provider: string; id: string }): string {
+  return `${model.provider}/${model.id}`;
+}
+
+export function splitModelRef(ref: string): { provider: string; id: string } {
+  const separator = ref.indexOf("/");
+  return separator < 0 ? { provider: "", id: ref } : { provider: ref.slice(0, separator), id: ref.slice(separator + 1) };
+}
+
 /** Private per-run files; the guard accepts companion files only beside the policy file. */
 export function runtimeFilesIn(directory: string): RuntimeFiles {
   return {
