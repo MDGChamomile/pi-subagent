@@ -378,6 +378,25 @@ describe("pi-subagent child guard", () => {
     }
   });
 
+  test("terminates when a local tool stops being a Pi built-in after startup", async () => {
+    const harness = await createHarness(["allowed"]);
+    try {
+      await harness.emit("session_start");
+      assert.deepEqual(harness.getActiveTools(), [...ALLOWED_FILE_TOOLS]);
+      harness.tools.find((tool) => tool.name === "read")!.sourceInfo.source = "local";
+      const changedOwner = await harness.emit("tool_call", {
+        toolName: "read",
+        toolCallId: "changed",
+        input: { path: "allowed/inside.txt" },
+      });
+      assert.equal(changedOwner.block, true);
+      assert.equal(changedOwner.terminate, true);
+      assert.match(changedOwner.reason, /ownership changed/);
+    } finally {
+      await harness.cleanup();
+    }
+  });
+
   test("does not publish readiness when tool ownership validation fails", async () => {
     const harness = await createHarness([], "web");
     try {

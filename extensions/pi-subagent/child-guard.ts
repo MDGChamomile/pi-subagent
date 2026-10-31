@@ -1,6 +1,6 @@
 import { lstatSync, readFileSync, realpathSync, writeFileSync } from "node:fs";
 import { dirname, resolve } from "node:path";
-import type { ExtensionAPI, ExtensionContext } from "@earendil-works/pi-coding-agent";
+import type { ExtensionAPI, ExtensionContext, ToolInfo } from "@earendil-works/pi-coding-agent";
 import { cleanupPrivateRuntimeFiles, installParentLivenessMonitor } from "./parent-liveness.ts";
 import { validatePresetSelection, type PresetSelection } from "./config.ts";
 import {
@@ -147,6 +147,13 @@ export default function childGuard(
     hardLimitReached: false,
   };
 
+  // Local tools must be Pi built-ins; web tools must come from the explicitly loaded extension file.
+  const ownsTool = (name: string, tools: ToolInfo[]) => {
+    const tool = tools.find((candidate) => candidate.name === name);
+    if (FILE_TOOLS.has(name)) return tool?.sourceInfo?.source === "builtin";
+    return WEB_TOOLS.has(name) && webExtensionPath !== undefined
+      && canonicalSourcePath(tool?.sourceInfo?.path) === webExtensionPath;
+  };
   const invalidatePolicy = (message: string) => {
     policy = undefined;
     policyError = message;
@@ -304,23 +311,11 @@ export default function childGuard(
     const tools = pi.getAllTools();
     const activeTools = toolsForCapability(policy.capability);
     startupExitCode = CHILD_GUARD_EXIT_CODES.toolOwnership;
-    if (policy.capability === "local") {
-      for (const name of ALLOWED_FILE_TOOLS) {
-        const tool = tools.find((candidate) => candidate.name === name);
-        if (!tool || tool.sourceInfo?.source !== "builtin") {
-          failClosed(`${name} is not owned by Pi's built-in tool set`);
-          return;
-        }
-      }
-    }
-    if (policy.capability === "web") {
-      for (const name of ALLOWED_WEB_TOOLS) {
-        const tool = tools.find((candidate) => candidate.name === name);
-        const sourcePath = canonicalSourcePath(tool?.sourceInfo?.path);
-        if (!tool || sourcePath !== webExtensionPath) {
-          failClosed(`${name} is not owned by the explicitly loaded web extension`);
-          return;
-        }
+    for (const name of activeTools) {
+      if (!ownsTool(name, tools)) {
+        const owner = policy.capability === "local" ? "Pi's built-in tool set" : "the explicitly loaded web extension";
+        failClosed(`${name} is not owned by ${owner}`);
+        return;
       }
     }
     startupExitCode = CHILD_GUARD_EXIT_CODES.readiness;
@@ -369,10 +364,9 @@ export default function childGuard(
       permittedToolCallIds.add(event.toolCallId);
       persistBudget();
     };
+    const policyUnavailable = () => block(`Subagent policy is unavailable: ${policyError ?? "unknown error"}`, true);
 
-    if (!policy || (policy.capability === "web" && !webExtensionPath)) {
-      return block(`Subagent policy is unavailable: ${policyError ?? "unknown error"}`, true);
-    }
+    if (!policy || (policy.capability === "web" && !webExtensionPath)) return policyUnavailable();
     const deadlineExpired = timeLimitReached();
     if (deadlineExpired) requestPartialAnswer();
     if (deadlineExpired || finalizationRequested) {
@@ -387,11 +381,10 @@ export default function childGuard(
       return block(`Tool ${event.toolName} is not allowed in the subagent. Use an available tool or return the final answer`);
     }
 
-    const tool = pi.getAllTools().find((candidate) => candidate.name === event.toolName);
+    if (!ownsTool(event.toolName, pi.getAllTools())) {
+      return block(`Tool ${event.toolName} ownership changed`, true);
+    }
     if (FILE_TOOLS.has(event.toolName)) {
-      if (tool?.sourceInfo?.source !== "builtin") {
-        return block(`Tool ${event.toolName} ownership changed`, true);
-      }
       const path = requestedPath(event.toolName, event.input);
       if (path === undefined) return block(`${event.toolName} requires a path`);
       try {
@@ -404,9 +397,6 @@ export default function childGuard(
     }
 
     if (WEB_TOOLS.has(event.toolName)) {
-      if (canonicalSourcePath(tool?.sourceInfo?.path) !== webExtensionPath) {
-        return block(`Tool ${event.toolName} ownership changed`, true);
-      }
       const input = event.input && typeof event.input === "object" ? event.input as Record<string, unknown> : {};
       const prepared = prepareWebCall(event.toolName, input);
       if ("violation" in prepared) {
@@ -433,7 +423,7 @@ export default function childGuard(
           sendSoftBudgetNotice(
             `The child lifetime web ${resource} soft limit has been reached: ${reserved}/${hard} reserved, ${hard - reserved} remaining. Use further calls only for essential missing evidence, then return the concise final answer.`,
           );
-          if (!policy) return block(`Subagent policy is unavailable: ${policyError ?? "unknown error"}`, true);
+          if (!policy) return policyUnavailable();
         }
       }
       permit();
