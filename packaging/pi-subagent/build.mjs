@@ -24,6 +24,8 @@ export const packageFiles = [
   ["extensions/pi-subagent/settings-command.ts", "extensions/pi-subagent/settings-command.ts"],
   ["extensions/pi-subagent/settings-picker.ts", "extensions/pi-subagent/settings-picker.ts"],
   ["extensions/pi-subagent/subprocess.ts", "extensions/pi-subagent/subprocess.ts"],
+  ["extensions/pi-subagent/call-display.ts", "extensions/pi-subagent/call-display.ts"],
+  ["extensions/pi-subagent/budget-telemetry.ts", "extensions/pi-subagent/budget-telemetry.ts"],
   ["extensions/pi-subagent/child-stream.ts", "extensions/pi-subagent/child-stream.ts"],
   ["extensions/pi-subagent/child-guard.ts", "extensions/pi-subagent/child-guard.ts"],
   ["extensions/pi-subagent/parent-liveness.ts", "extensions/pi-subagent/parent-liveness.ts"],

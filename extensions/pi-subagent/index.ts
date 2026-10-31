@@ -19,7 +19,8 @@ import { buildChildPolicy, makeCanonicalTempDirectory } from "./path-policy.ts";
 import { resolveWebExtensionPath } from "./web-provenance.ts";
 import { invocationLimitBlock, MAX_SUBAGENT_CALLS, ModelInvocationGate } from "./invocation-gate.ts";
 import { boundedParentError } from "./diagnostics.ts";
-import { ChildRunError, formatResultSummary, runChild } from "./subprocess.ts";
+import { formatResultSummary } from "./call-display.ts";
+import { ChildRunError, runChild } from "./subprocess.ts";
 import { loadPresetSettings, validatePresetSelection, type PresetSelection } from "./config.ts";
 import { registerSubagentSettingsCommand } from "./settings-command.ts";
 

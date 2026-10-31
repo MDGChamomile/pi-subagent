@@ -23,11 +23,9 @@ import {
   READY_ENV,
   READY_MARKER,
   SOFT_DEADLINE_ENV,
-  splitModelRef,
   toolsForCapability,
   WEB_EXTENSION_ENV,
   WEB_INPUT_KEYS,
-  type BudgetTelemetry,
   type ChildPolicy,
   type PartialReason,
   type ResultStatus,
@@ -36,6 +34,8 @@ import {
   type SubagentFailurePhase,
   type Thinking,
 } from "./shared.ts";
+import { readBudgetTelemetry, type BudgetTelemetry } from "./budget-telemetry.ts";
+import { estimateContextTokens, formatProgress } from "./call-display.ts";
 import { formatChildOutput } from "./envelope.ts";
 import { boundedParentError } from "./diagnostics.ts";
 import { ChildJsonCollector, type ChildJsonSnapshot } from "./child-stream.ts";
@@ -96,32 +96,6 @@ export class ChildRunError extends Error {
     this.name = "ChildRunError";
     this.usage = usage;
   }
-}
-
-export function formatElapsed(durationMs: number): string {
-  const totalSeconds = Math.max(0, Math.floor(durationMs / 1000));
-  const minutes = Math.floor(totalSeconds / 60).toString().padStart(2, "0");
-  const seconds = (totalSeconds % 60).toString().padStart(2, "0");
-  return `${minutes}:${seconds}`;
-}
-
-export function formatProgress(model: string, thinking: Thinking, durationMs: number, reportedTokens: number): string {
-  const displayModel = splitModelRef(model).id;
-  const tokens = Math.max(0, Math.trunc(reportedTokens)).toLocaleString("en-US");
-  return `${formatElapsed(durationMs)} · ${displayModel} (${thinking}) running · ${tokens} reported tokens`;
-}
-
-export function estimateContextTokens(text: string): number {
-  // Model-independent size heuristic, not tokenizer-measured usage.
-  return Math.ceil(Buffer.byteLength(text, "utf8") / 4);
-}
-
-export function formatResultSummary(status: ResultStatus, durationMs: number, contextTokens: number): string {
-  const marker = status === "partial" ? "⚠" : "✓";
-  const label = status === "partial" ? "Partial" : "Complete";
-  const duration = durationMs < 60_000 ? `${(Math.max(0, durationMs) / 1000).toFixed(1)}s` : formatElapsed(durationMs);
-  const tokens = Math.max(0, Math.trunc(contextTokens)).toLocaleString("en-US");
-  return `${marker} ${label} · ${duration} · Context injected: ~${tokens} tokens`;
 }
 
 function childFailure(
@@ -269,41 +243,6 @@ export async function assertChildReady(readyFile: string): Promise<void> {
     throw new Error("Subagent guard did not become ready");
   }
   if (marker !== READY_MARKER) throw new Error("Subagent guard readiness marker is invalid");
-}
-
-export async function readBudgetTelemetry(path: string): Promise<BudgetTelemetry> {
-  let parsed: unknown;
-  try {
-    parsed = JSON.parse(await readFile(path, "utf8"));
-  } catch {
-    throw new Error("Subagent budget telemetry is unavailable or malformed");
-  }
-  return parseBudgetTelemetry(parsed);
-}
-
-function parseBudgetTelemetry(parsed: unknown): BudgetTelemetry {
-  if (!parsed || typeof parsed !== "object" || Array.isArray(parsed)) {
-    throw new Error("Subagent budget telemetry is malformed");
-  }
-  const value = parsed as Record<string, unknown>;
-  const allowedKeys = new Set<string>([
-    "version", "toolCallsAttempted", "toolCallsExecuted", "deniedCalls", "queryCount", "fetchTargetCount",
-    "softLimitReached", "hardLimitReached", "partialReason",
-  ] satisfies (keyof BudgetTelemetry)[]);
-  const integerKeys = [
-    "toolCallsAttempted", "toolCallsExecuted", "deniedCalls", "queryCount", "fetchTargetCount",
-  ] as const satisfies readonly (keyof BudgetTelemetry)[];
-  if (
-    Object.keys(value).some((key) => !allowedKeys.has(key))
-    || value.version !== 1
-    || integerKeys.some((key) => !Number.isSafeInteger(value[key]) || (value[key] as number) < 0)
-    || typeof value.softLimitReached !== "boolean"
-    || typeof value.hardLimitReached !== "boolean"
-    || (value.partialReason !== undefined && value.partialReason !== "tool_budget")
-  ) {
-    throw new Error("Subagent budget telemetry is malformed");
-  }
-  return value as BudgetTelemetry;
 }
 
 /**

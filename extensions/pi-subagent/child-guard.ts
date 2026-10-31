@@ -22,10 +22,10 @@ import {
   SOFT_DEADLINE_ENV,
   toolsForCapability,
   WEB_EXTENSION_ENV,
-  type BudgetTelemetry,
   type ChildPolicy,
   type RuntimeFiles,
 } from "./shared.ts";
+import type { BudgetTelemetry } from "./budget-telemetry.ts";
 import { authorizeReadPath, isWithin } from "./path-policy.ts";
 import { prepareWebCall } from "./web-arguments.ts";
 

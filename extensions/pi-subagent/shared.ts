@@ -64,17 +64,6 @@ export const PRESET_NAMES = Object.keys(SUBAGENT_PRESETS) as Preset[];
 export type Capability = "local" | "web";
 export type ResultStatus = "complete" | "partial";
 export type PartialReason = "tool_budget" | "time_limit" | "model_length";
-export type BudgetTelemetry = {
-  version: 1;
-  toolCallsAttempted: number;
-  toolCallsExecuted: number;
-  deniedCalls: number;
-  queryCount: number;
-  fetchTargetCount: number;
-  softLimitReached: boolean;
-  hardLimitReached: boolean;
-  partialReason?: "tool_budget";
-};
 export type ScopeRoot = { path: string; kind: "file" | "directory" };
 export type ChildPolicy = { version: 1; cwd: string; capability: Capability; roots: ScopeRoot[] };
 export type RuntimeFiles = { policy: string; ready: string; budgetTelemetry: string };

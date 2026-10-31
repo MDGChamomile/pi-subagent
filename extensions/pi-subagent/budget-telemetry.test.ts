@@ -7,6 +7,7 @@ import { join } from "node:path";
 import { test } from "node:test";
 import { getCurrentTools } from "@earendil-works/pi-ai";
 import type { AgentSession } from "@earendil-works/pi-coding-agent";
+import { readBudgetTelemetry } from "./budget-telemetry.ts";
 import childGuard from "./child-guard.ts";
 import {
   ALLOWED_FILE_TOOLS, BUDGET_TELEMETRY_ENV, CHILD_GUARD_EXIT_CODES, LIFETIME_TOOL_CALL_LIMITS,
@@ -98,3 +99,66 @@ for (const failure of ["once", "persistent"] as const) {
     }
   });
 }
+
+test("accepts only content-free budget telemetry fields", async () => {
+  const root = await mkdtemp(join(tmpdir(), "pi-subagent-budget-test-"));
+  try {
+    const telemetryFile = runtimeFilesIn(root).budgetTelemetry;
+    const telemetry = {
+      version: 1,
+      toolCallsAttempted: 12,
+      toolCallsExecuted: 10,
+      deniedCalls: 2,
+      queryCount: 4,
+      fetchTargetCount: 5,
+      softLimitReached: false,
+      hardLimitReached: true,
+      partialReason: "tool_budget",
+    };
+    await writeFile(telemetryFile, JSON.stringify(telemetry));
+    assert.deepEqual(await readBudgetTelemetry(telemetryFile), telemetry);
+
+    await writeFile(telemetryFile, JSON.stringify({ ...telemetry, task: "private task" }));
+    await assert.rejects(() => readBudgetTelemetry(telemetryFile), /malformed/);
+    await writeFile(telemetryFile, JSON.stringify({ ...telemetry, queryCount: -1 }));
+    await assert.rejects(() => readBudgetTelemetry(telemetryFile), /malformed/);
+    for (const partialReason of ["time_limit", "model_length"]) {
+      await writeFile(telemetryFile, JSON.stringify({ ...telemetry, partialReason }));
+      await assert.rejects(() => readBudgetTelemetry(telemetryFile), /malformed/);
+    }
+  } finally {
+    await rm(root, { recursive: true, force: true });
+  }
+});
+
+test("preserves telemetry validation boundaries and read errors", async () => {
+  const root = await mkdtemp(join(tmpdir(), "pi-subagent-telemetry-contract-"));
+  const path = runtimeFilesIn(root).budgetTelemetry;
+  const telemetry = {
+    version: 1, toolCallsAttempted: 0, toolCallsExecuted: 0, deniedCalls: 0,
+    queryCount: 0, fetchTargetCount: 0, softLimitReached: false, hardLimitReached: false,
+  };
+  try {
+    await assert.rejects(() => readBudgetTelemetry(path), { message: "Subagent budget telemetry is unavailable or malformed" });
+    await writeFile(path, "{");
+    await assert.rejects(() => readBudgetTelemetry(path), { message: "Subagent budget telemetry is unavailable or malformed" });
+    for (const value of [null, [], true, 1, "text", {}, { ...telemetry, version: 2 },
+      { ...telemetry, softLimitReached: 0 }, { ...telemetry, hardLimitReached: "false" },
+      { ...telemetry, partialReason: null }, { ...telemetry, unexpected: 0 }]) {
+      await writeFile(path, JSON.stringify(value));
+      await assert.rejects(() => readBudgetTelemetry(path), { message: "Subagent budget telemetry is malformed" });
+    }
+    for (const key of ["toolCallsAttempted", "toolCallsExecuted", "deniedCalls", "queryCount", "fetchTargetCount"]) {
+      for (const value of [undefined, null, -1, 0.5, Number.MAX_SAFE_INTEGER + 1, "1", true]) {
+        await writeFile(path, JSON.stringify({ ...telemetry, [key]: value }));
+        await assert.rejects(() => readBudgetTelemetry(path), { message: "Subagent budget telemetry is malformed" });
+      }
+      await writeFile(path, JSON.stringify({ ...telemetry, [key]: Number.MAX_SAFE_INTEGER }));
+      assert.deepEqual(await readBudgetTelemetry(path), { ...telemetry, [key]: Number.MAX_SAFE_INTEGER });
+    }
+    await writeFile(path, JSON.stringify(telemetry));
+    assert.deepEqual(await readBudgetTelemetry(path), telemetry);
+  } finally {
+    await rm(root, { recursive: true, force: true });
+  }
+});

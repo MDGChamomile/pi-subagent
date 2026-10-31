@@ -20,7 +20,7 @@ import {
   WEB_EXTENSION_ENV,
 } from "./shared.ts";
 import { buildChildPolicy } from "./path-policy.ts";
-import { readBudgetTelemetry } from "./subprocess.ts";
+import { readBudgetTelemetry } from "./budget-telemetry.ts";
 import { setEnv } from "./test-support.ts";
 import { prepareWebCall } from "./web-arguments.ts";
 
