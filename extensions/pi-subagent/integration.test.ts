@@ -12,6 +12,7 @@ import { buildChildInvocation, ChildRunError, runChild, type ChildResult } from 
 import { emptyUsage } from "./child-stream.ts";
 import { CHILD_GUARD_EXIT_CODES, MAX_FINAL_BYTES, MAX_PARENT_ERROR_BYTES, runtimeFilesIn } from "./shared.ts";
 import { buildChildPolicy } from "./path-policy.ts";
+import { setEnv } from "./test-support.ts";
 
 const FAKE_CHILD = fileURLToPath(new URL("./fixtures/fake-child.mjs", import.meta.url));
 const ABRUPT_PARENT = fileURLToPath(new URL("./fixtures/abrupt-parent.mjs", import.meta.url));
@@ -187,11 +188,10 @@ describe("pi-subagent spawned-child integration", () => {
       "PI_SESSION_ID", "PI_SESSION_FILE", "PI_PROVIDER", "PI_MODEL", "PI_REASONING_LEVEL",
       "PI_ALLOW_BROWSER_COOKIES", "FEYNMAN_ALLOW_BROWSER_COOKIES",
     ];
-    const previous = inherited.map((name) => process.env[name]);
+    const restoreEnv = setEnv(Object.fromEntries(inherited.map((name) => [name, "synthetic-parent-value"])));
     let received: { piArgs: string[]; inheritedEnv: string[] };
     let built: string[] = [];
     try {
-      for (const name of inherited) process.env[name] = "synthetic-parent-value";
       const result = await withFixture("argv-report", (options) => {
         // The soft deadline reaches only the environment, not the argument list.
         built = buildChildInvocation({ ...options, softDeadline: 0 }, { command: "", args: [] }, {}).args;
@@ -199,10 +199,7 @@ describe("pi-subagent spawned-child integration", () => {
       });
       received = JSON.parse(JSON.parse(result.output).answer);
     } finally {
-      inherited.forEach((name, index) => {
-        if (previous[index] === undefined) delete process.env[name];
-        else process.env[name] = previous[index];
-      });
+      restoreEnv();
     }
     const { piArgs, inheritedEnv } = received;
     // The unit tests pin the argument contract; this pins its delivery to the spawned child.

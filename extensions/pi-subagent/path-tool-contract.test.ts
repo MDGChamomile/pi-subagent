@@ -7,16 +7,14 @@ import { pathToFileURL } from "node:url";
 import { createFindTool, createGrepTool, createLsTool, createReadTool } from "@earendil-works/pi-coding-agent";
 import { authorizeReadPath, buildChildPolicy } from "./path-policy.ts";
 import type { ChildPolicy } from "./shared.ts";
+import { setEnv } from "./test-support.ts";
 
 // Exercise Pi's actual tool path resolution, not a probe that merely echoes the
 // guard's argument. Only find's directory enumeration is substituted to avoid
 // downloading fd; its SDK path resolution still runs unchanged.
 test("canonical authorization preserves identity at the native Pi tool boundary", async () => {
   const root = await realpath(await mkdtemp(join(tmpdir(), "pi-subagent-tool-path-")));
-  const previousOffline = process.env.PI_OFFLINE;
-  const previousRgConfig = process.env.RIPGREP_CONFIG_PATH;
-  process.env.PI_OFFLINE = "1";
-  delete process.env.RIPGREP_CONFIG_PATH;
+  const restoreEnv = setEnv({ PI_OFFLINE: "1", RIPGREP_CONFIG_PATH: undefined });
   try {
     const stable = join(root, "allowed dir");
     const ambiguous = join(root, "allowed\u00a0dir");
@@ -55,10 +53,7 @@ test("canonical authorization preserves identity at the native Pi tool boundary"
       assert.doesNotMatch(output, /SYNTHETIC_MARKER_UNICODE/);
     }
   } finally {
-    if (previousOffline === undefined) delete process.env.PI_OFFLINE;
-    else process.env.PI_OFFLINE = previousOffline;
-    if (previousRgConfig === undefined) delete process.env.RIPGREP_CONFIG_PATH;
-    else process.env.RIPGREP_CONFIG_PATH = previousRgConfig;
+    restoreEnv();
     await rm(root, { recursive: true, force: true });
   }
 });

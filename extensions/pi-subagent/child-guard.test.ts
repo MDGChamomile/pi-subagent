@@ -21,6 +21,7 @@ import {
 } from "./shared.ts";
 import { buildChildPolicy } from "./path-policy.ts";
 import { readBudgetTelemetry } from "./subprocess.ts";
+import { setEnv } from "./test-support.ts";
 import { prepareWebCall } from "./web-arguments.ts";
 
 type Handler = (...args: any[]) => any;
@@ -41,16 +42,13 @@ async function createHarness(
   const webExtension = join(root, "web-extension.ts");
   await writeFile(webExtension, "export default () => {};\n", { mode: 0o600 });
 
-  const previousPolicy = process.env[POLICY_ENV];
-  const previousReady = process.env[READY_ENV];
-  const previousBudgetTelemetry = process.env[BUDGET_TELEMETRY_ENV];
-  const previousWeb = process.env[WEB_EXTENSION_ENV];
-  const previousDeadline = process.env[SOFT_DEADLINE_ENV];
-  process.env[POLICY_ENV] = files.policy;
-  process.env[READY_ENV] = files.ready;
-  process.env[BUDGET_TELEMETRY_ENV] = files.budgetTelemetry;
-  process.env[WEB_EXTENSION_ENV] = webExtension;
-  process.env[SOFT_DEADLINE_ENV] = String(softDeadline);
+  const restoreEnv = setEnv({
+    [POLICY_ENV]: files.policy,
+    [READY_ENV]: files.ready,
+    [BUDGET_TELEMETRY_ENV]: files.budgetTelemetry,
+    [WEB_EXTENSION_ENV]: webExtension,
+    [SOFT_DEADLINE_ENV]: String(softDeadline),
+  });
 
   const handlers = new Map<string, Handler[]>();
   const sentUserMessages: Array<{ content: string; options: unknown }> = [];
@@ -115,16 +113,7 @@ async function createHarness(
     getBudgetTelemetry: async () => JSON.parse(await readFile(files.budgetTelemetry, "utf8")) as Record<string, unknown>,
     async cleanup() {
       await emit("session_shutdown");
-      if (previousPolicy === undefined) delete process.env[POLICY_ENV];
-      else process.env[POLICY_ENV] = previousPolicy;
-      if (previousReady === undefined) delete process.env[READY_ENV];
-      else process.env[READY_ENV] = previousReady;
-      if (previousBudgetTelemetry === undefined) delete process.env[BUDGET_TELEMETRY_ENV];
-      else process.env[BUDGET_TELEMETRY_ENV] = previousBudgetTelemetry;
-      if (previousWeb === undefined) delete process.env[WEB_EXTENSION_ENV];
-      else process.env[WEB_EXTENSION_ENV] = previousWeb;
-      if (previousDeadline === undefined) delete process.env[SOFT_DEADLINE_ENV];
-      else process.env[SOFT_DEADLINE_ENV] = previousDeadline;
+      restoreEnv();
       await rm(root, { recursive: true, force: true });
     },
   };

@@ -4,6 +4,7 @@ import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { test } from "node:test";
 import observeRuntime from "./scripts/observe-runtime.ts";
+import { setEnv } from "./test-support.ts";
 
 const TARGET = "https://fixture.invalid/expected";
 const PRIVATE = "synthetic-private-content";
@@ -12,14 +13,15 @@ async function harness(actor: "child" | "parent", run: (emit: (name: string, eve
   rows: () => Promise<any[]>) => Promise<void>) {
   const root = await mkdtemp(join(tmpdir(), "pi-subagent-observer-test-"));
   const trace = join(root, "trace.jsonl");
-  const keys = ["PI_SUBAGENT_EVAL_TRACE_FILE", "PI_SUBAGENT_EVAL_FETCH_URL", "PI_SUBAGENT_POLICY_FILE",
-    "PI_SUBAGENT_EVAL_EXPECT_MODEL", "PI_SUBAGENT_EVAL_EXPECT_THINKING"];
-  const previous = keys.map((key) => process.env[key]);
+  const restoreEnv = setEnv({
+    PI_SUBAGENT_EVAL_TRACE_FILE: trace,
+    PI_SUBAGENT_EVAL_FETCH_URL: TARGET,
+    PI_SUBAGENT_POLICY_FILE: actor === "child" ? "synthetic-policy" : undefined,
+    // Tests set expectations explicitly; ambient values must not leak in.
+    PI_SUBAGENT_EVAL_EXPECT_MODEL: undefined,
+    PI_SUBAGENT_EVAL_EXPECT_THINKING: undefined,
+  });
   try {
-    process.env.PI_SUBAGENT_EVAL_TRACE_FILE = trace;
-    process.env.PI_SUBAGENT_EVAL_FETCH_URL = TARGET;
-    if (actor === "child") process.env.PI_SUBAGENT_POLICY_FILE = "synthetic-policy";
-    else delete process.env.PI_SUBAGENT_POLICY_FILE;
     const handlers = new Map<string, (event: any, ctx?: any) => void>();
     observeRuntime({ on(name: string, handler: (event: any, ctx?: any) => void) { handlers.set(name, handler); } } as any);
     await run((name, event, ctx) => handlers.get(name)?.(event, ctx), async () => {
@@ -27,10 +29,7 @@ async function harness(actor: "child" | "parent", run: (emit: (name: string, eve
       catch (error) { if ((error as NodeJS.ErrnoException).code === "ENOENT") return []; throw error; }
     });
   } finally {
-    keys.forEach((key, index) => {
-      if (previous[index] === undefined) delete process.env[key];
-      else process.env[key] = previous[index];
-    });
+    restoreEnv();
     await rm(root, { recursive: true, force: true });
   }
 }
