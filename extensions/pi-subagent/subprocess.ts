@@ -4,7 +4,7 @@ import { readFile } from "node:fs/promises";
 import { basename, relative, sep } from "node:path";
 import { setTimeout as delay } from "node:timers/promises";
 import { fileURLToPath } from "node:url";
-import type { Usage as PiUsage } from "@earendil-works/pi-ai";
+import type { Usage } from "@earendil-works/pi-ai";
 import { isProcessGroupGone, killProcessGroup, PARENT_LIVENESS_ENV, PARENT_LIVENESS_FD } from "./parent-liveness.ts";
 import {
   BUDGET_TELEMETRY_ENV,
@@ -26,14 +26,16 @@ import {
   toolsForCapability,
   WEB_EXTENSION_ENV,
   WEB_INPUT_KEYS,
-  type BudgetTelemetry,
   type ChildPolicy,
   type PartialReason,
   type ResultStatus,
+  type RuntimeFiles,
   type SubagentFailureDiagnostics,
   type SubagentFailurePhase,
   type Thinking,
 } from "./shared.ts";
+import { readBudgetTelemetry, type BudgetTelemetry } from "./budget-telemetry.ts";
+import { estimateContextTokens, formatProgress } from "./call-display.ts";
 import { formatChildOutput } from "./envelope.ts";
 import { boundedParentError } from "./diagnostics.ts";
 import { ChildJsonCollector, type ChildJsonSnapshot } from "./child-stream.ts";
@@ -70,8 +72,6 @@ export function buildChildPrompt(task: string, policy: ChildPolicy): string {
   ].join("\n");
 }
 
-export type Usage = PiUsage;
-
 export type ChildResult = {
   /** Parent-visible JSON envelope with runtime status and an untrusted answer string. */
   output: string;
@@ -94,33 +94,6 @@ export class ChildRunError extends Error {
     this.name = "ChildRunError";
     this.usage = usage;
   }
-}
-
-export function formatElapsed(durationMs: number): string {
-  const totalSeconds = Math.max(0, Math.floor(durationMs / 1000));
-  const minutes = Math.floor(totalSeconds / 60).toString().padStart(2, "0");
-  const seconds = (totalSeconds % 60).toString().padStart(2, "0");
-  return `${minutes}:${seconds}`;
-}
-
-export function formatProgress(model: string, thinking: Thinking, durationMs: number, reportedTokens: number): string {
-  const separator = model.indexOf("/");
-  const displayModel = separator >= 0 ? model.slice(separator + 1) : model;
-  const tokens = Math.max(0, Math.trunc(reportedTokens)).toLocaleString("en-US");
-  return `${formatElapsed(durationMs)} · ${displayModel} (${thinking}) running · ${tokens} reported tokens`;
-}
-
-export function estimateContextTokens(text: string): number {
-  // Model-independent size heuristic, not tokenizer-measured usage.
-  return Math.ceil(Buffer.byteLength(text, "utf8") / 4);
-}
-
-export function formatResultSummary(status: ResultStatus, durationMs: number, contextTokens: number): string {
-  const marker = status === "partial" ? "⚠" : "✓";
-  const label = status === "partial" ? "Partial" : "Complete";
-  const duration = durationMs < 60_000 ? `${(Math.max(0, durationMs) / 1000).toFixed(1)}s` : formatElapsed(durationMs);
-  const tokens = Math.max(0, Math.trunc(contextTokens)).toLocaleString("en-US");
-  return `${marker} ${label} · ${duration} · Context injected: ~${tokens} tokens`;
 }
 
 function childFailure(
@@ -205,9 +178,7 @@ function getPiLauncher(): ChildLauncher {
 export function buildChildInvocation(
   options: {
     policy: ChildPolicy;
-    policyFile: string;
-    readyFile: string;
-    budgetTelemetryFile: string;
+    files: RuntimeFiles;
     webExtensionPath?: string;
     model: string;
     thinking: Thinking;
@@ -239,9 +210,9 @@ export function buildChildInvocation(
     PI_OFFLINE: "1",
     [MODEL_SELECTION_ENV]: JSON.stringify({ model: options.model, thinking: options.thinking }),
     [PARENT_LIVENESS_ENV]: String(PARENT_LIVENESS_FD),
-    [POLICY_ENV]: options.policyFile,
-    [READY_ENV]: options.readyFile,
-    [BUDGET_TELEMETRY_ENV]: options.budgetTelemetryFile,
+    [POLICY_ENV]: options.files.policy,
+    [READY_ENV]: options.files.ready,
+    [BUDGET_TELEMETRY_ENV]: options.files.budgetTelemetry,
     [SOFT_DEADLINE_ENV]: String(options.softDeadline),
   };
   // Pi's native grep inherits rg's config; --follow there can escape scoped roots.
@@ -272,41 +243,6 @@ export async function assertChildReady(readyFile: string): Promise<void> {
   if (marker !== READY_MARKER) throw new Error("Subagent guard readiness marker is invalid");
 }
 
-export async function readBudgetTelemetry(path: string): Promise<BudgetTelemetry> {
-  let parsed: unknown;
-  try {
-    parsed = JSON.parse(await readFile(path, "utf8"));
-  } catch {
-    throw new Error("Subagent budget telemetry is unavailable or malformed");
-  }
-  return parseBudgetTelemetry(parsed);
-}
-
-function parseBudgetTelemetry(parsed: unknown): BudgetTelemetry {
-  if (!parsed || typeof parsed !== "object" || Array.isArray(parsed)) {
-    throw new Error("Subagent budget telemetry is malformed");
-  }
-  const value = parsed as Record<string, unknown>;
-  const allowedKeys = new Set<string>([
-    "version", "toolCallsAttempted", "toolCallsExecuted", "deniedCalls", "queryCount", "fetchTargetCount",
-    "softLimitReached", "hardLimitReached", "partialReason",
-  ] satisfies (keyof BudgetTelemetry)[]);
-  const integerKeys = [
-    "toolCallsAttempted", "toolCallsExecuted", "deniedCalls", "queryCount", "fetchTargetCount",
-  ] as const satisfies readonly (keyof BudgetTelemetry)[];
-  if (
-    Object.keys(value).some((key) => !allowedKeys.has(key))
-    || value.version !== 1
-    || integerKeys.some((key) => !Number.isSafeInteger(value[key]) || (value[key] as number) < 0)
-    || typeof value.softLimitReached !== "boolean"
-    || typeof value.hardLimitReached !== "boolean"
-    || (value.partialReason !== undefined && value.partialReason !== "tool_budget")
-  ) {
-    throw new Error("Subagent budget telemetry is malformed");
-  }
-  return value as BudgetTelemetry;
-}
-
 /**
  * Precedence is model_length > tool_budget > time_limit. Decide only after process-group
  * cleanup: time_limit uses the parent's answer receipt time, else the post-cleanup time.
@@ -327,9 +263,7 @@ export function selectPartialReason(input: {
 
 export async function runChild(options: {
   policy: ChildPolicy;
-  policyFile: string;
-  readyFile: string;
-  budgetTelemetryFile: string;
+  files: RuntimeFiles;
   webExtensionPath?: string;
   task: string;
   model: string;
@@ -357,9 +291,7 @@ export async function runChild(options: {
   const softDeadline = hardDeadline - finalizationGraceMs;
   const invocation = buildChildInvocation({
     policy: options.policy,
-    policyFile: options.policyFile,
-    readyFile: options.readyFile,
-    budgetTelemetryFile: options.budgetTelemetryFile,
+    files: options.files,
     webExtensionPath: options.webExtensionPath,
     model: options.model,
     thinking: options.thinking,
@@ -506,7 +438,7 @@ export async function runChild(options: {
   );
   if (exitCode !== 0) {
     // Readiness is an observation, not a diagnosis of why startup failed.
-    const guardReady = await assertChildReady(options.readyFile).then(() => true, () => false);
+    const guardReady = await assertChildReady(options.files.ready).then(() => true, () => false);
     throw childFailure(
       describeChildExit(exitCode, exitSignal, guardReady, snapshot),
       "process",
@@ -518,8 +450,8 @@ export async function runChild(options: {
   }
   let budget: BudgetTelemetry;
   try {
-    await assertChildReady(options.readyFile);
-    budget = await readBudgetTelemetry(options.budgetTelemetryFile);
+    await assertChildReady(options.files.ready);
+    budget = await readBudgetTelemetry(options.files.budgetTelemetry);
   } catch (error) {
     throw childFailure(error, "readiness", snapshot, startedAt, exitCode);
   }

@@ -6,7 +6,7 @@ import childGuard from "../child-guard.ts";
 import {
   ALLOWED_FILE_TOOLS, ALLOWED_WEB_TOOLS, BUDGET_TELEMETRY_ENV, LIFETIME_TOOL_CALL_LIMITS,
   MODEL_SELECTION_ENV, POLICY_ENV, READY_ENV, READY_MARKER,
-  SOFT_DEADLINE_ENV, WEB_EXTENSION_ENV,
+  runtimeFilesIn, SOFT_DEADLINE_ENV, WEB_EXTENSION_ENV,
 } from "../shared.ts";
 // The spawning test preloads the SDK mapper.
 const { ExtensionRunner } = await import("@earendil-works/pi-coding-agent");
@@ -24,9 +24,7 @@ process.on("exit", () => {
   rmSync(root, { recursive: true, force: true });
 });
 const web = scenario === "web-owner" || scenario === "missing-web-extension";
-const policyFile = join(root, "policy.json");
-const readyFile = join(root, "guard.ready");
-const budgetFile = join(root, "budget.json");
+const { policy: policyFile, ready: readyFile, budgetTelemetry: budgetFile } = runtimeFilesIn(root);
 process.env[POLICY_ENV] = policyFile;
 process.env[READY_ENV] = readyFile;
 process.env[BUDGET_TELEMETRY_ENV] = budgetFile;

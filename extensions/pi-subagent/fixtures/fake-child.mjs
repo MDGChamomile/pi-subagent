@@ -5,11 +5,11 @@ import { join } from "node:path";
 import { cleanupPrivateRuntimeFiles, installParentLivenessMonitor } from "../parent-liveness.ts";
 import { CHILD_GUARD_EXIT_CODES } from "../shared.ts";
 
-installParentLivenessMonitor(() => cleanupPrivateRuntimeFiles(
-  process.env.PI_SUBAGENT_POLICY_FILE,
-  process.env.PI_SUBAGENT_READY_FILE,
-  process.env.PI_SUBAGENT_BUDGET_TELEMETRY_FILE,
-));
+installParentLivenessMonitor(() => cleanupPrivateRuntimeFiles({
+  policy: process.env.PI_SUBAGENT_POLICY_FILE,
+  ready: process.env.PI_SUBAGENT_READY_FILE,
+  budgetTelemetry: process.env.PI_SUBAGENT_BUDGET_TELEMETRY_FILE,
+}));
 
 const READY_MARKER = "pi-subagent-guard-ready-v1\n";
 const scenario = process.argv[2] ?? "success";

@@ -1,6 +1,6 @@
 import { lstatSync, readFileSync, realpathSync, writeFileSync } from "node:fs";
 import { dirname, resolve } from "node:path";
-import type { ExtensionAPI, ExtensionContext } from "@earendil-works/pi-coding-agent";
+import type { ExtensionAPI, ExtensionContext, ToolInfo } from "@earendil-works/pi-coding-agent";
 import { cleanupPrivateRuntimeFiles, installParentLivenessMonitor } from "./parent-liveness.ts";
 import { validatePresetSelection, type PresetSelection } from "./config.ts";
 import {
@@ -8,12 +8,14 @@ import {
   ALLOWED_WEB_TOOLS,
   BUDGET_TELEMETRY_ENV,
   CHILD_GUARD_EXIT_CODES,
+  errorMessage,
   LIFETIME_TOOL_CALL_LIMITS,
   LIFETIME_WEB_FETCH_TARGET_LIMIT,
   LIFETIME_WEB_FETCH_TARGET_SOFT_LIMIT,
   LIFETIME_WEB_QUERY_LIMIT,
   LIFETIME_WEB_QUERY_SOFT_LIMIT,
   MAX_SCOPE_ROOTS,
+  modelRef,
   POLICY_ENV,
   MODEL_SELECTION_ENV,
   READY_ENV,
@@ -21,9 +23,10 @@ import {
   SOFT_DEADLINE_ENV,
   toolsForCapability,
   WEB_EXTENSION_ENV,
-  type BudgetTelemetry,
   type ChildPolicy,
+  type RuntimeFiles,
 } from "./shared.ts";
+import type { BudgetTelemetry } from "./budget-telemetry.ts";
 import { authorizeReadPath, isWithin } from "./path-policy.ts";
 import { prepareWebCall } from "./web-arguments.ts";
 
@@ -72,12 +75,12 @@ function loadCompanionPath(policyPath: string, envName: string, label: string): 
   return resolved;
 }
 
-function loadReadyPath(policyPath: string): string {
-  return loadCompanionPath(policyPath, READY_ENV, "readiness");
-}
-
-function loadBudgetTelemetryPath(policyPath: string): string {
-  return loadCompanionPath(policyPath, BUDGET_TELEMETRY_ENV, "budget telemetry");
+function loadRuntimeFiles(policyPath: string): RuntimeFiles {
+  return {
+    policy: policyPath,
+    ready: loadCompanionPath(policyPath, READY_ENV, "readiness"),
+    budgetTelemetry: loadCompanionPath(policyPath, BUDGET_TELEMETRY_ENV, "budget telemetry"),
+  };
 }
 
 function loadSoftDeadline(): number | undefined {
@@ -121,9 +124,7 @@ export default function childGuard(
   installLiveness = installParentLivenessMonitor,
 ): void {
   let policy: ChildPolicy | undefined;
-  let policyPath: string | undefined;
-  let readyPath: string | undefined;
-  let budgetTelemetryPath: string | undefined;
+  let runtimeFiles: RuntimeFiles | undefined;
   let webExtensionPath: string | undefined;
   let softDeadline: number | undefined;
   let softDeadlineTimer: ReturnType<typeof setTimeout> | undefined;
@@ -147,6 +148,13 @@ export default function childGuard(
     hardLimitReached: false,
   };
 
+  // Local tools must be Pi built-ins; web tools must come from the explicitly loaded extension file.
+  const ownsTool = (name: string, tools: ToolInfo[]) => {
+    const tool = tools.find((candidate) => candidate.name === name);
+    if (FILE_TOOLS.has(name)) return tool?.sourceInfo?.source === "builtin";
+    return WEB_TOOLS.has(name) && webExtensionPath !== undefined
+      && canonicalSourcePath(tool?.sourceInfo?.path) === webExtensionPath;
+  };
   const invalidatePolicy = (message: string) => {
     policy = undefined;
     policyError = message;
@@ -157,15 +165,15 @@ export default function childGuard(
   };
   let lastPersistedBudget: string | undefined;
   const persistBudget = () => {
-    if (!budgetTelemetryPath) return;
+    if (!runtimeFiles) return;
     const snapshot = JSON.stringify(budget);
     if (snapshot === lastPersistedBudget) return;
     try {
-      writeFileSync(budgetTelemetryPath, snapshot, { encoding: "utf8", mode: 0o600 });
+      writeFileSync(runtimeFiles.budgetTelemetry, snapshot, { encoding: "utf8", mode: 0o600 });
     } catch (error) {
       // The parent derives tool_budget status only from this file. Pi may continue
       // after a hook error, so a stale snapshot must not let the child finish normally.
-      failClosed(`could not persist budget telemetry: ${error instanceof Error ? error.message : String(error)}`);
+      failClosed(`could not persist budget telemetry: ${errorMessage(error)}`);
       throw error;
     }
     // Record only successful writes, so the event that changes a reservation or
@@ -181,7 +189,7 @@ export default function childGuard(
       pi.sendUserMessage(`${content}\n\nDo not call tools. Return the concise final answer as ordinary assistant text.`, { deliverAs });
     } catch (error) {
       // Tools were disabled before delivery; retain that ordering on failure.
-      invalidatePolicy(`could not request the final answer: ${error instanceof Error ? error.message : String(error)}`);
+      invalidatePolicy(`could not request the final answer: ${errorMessage(error)}`);
     }
   };
   const requestPartialAnswer = () => {
@@ -204,23 +212,20 @@ export default function childGuard(
     try {
       pi.sendUserMessage(content, { deliverAs: "steer" });
     } catch (error) {
-      failClosed(`could not send the tool budget warning: ${error instanceof Error ? error.message : String(error)}`);
+      failClosed(`could not send the tool budget warning: ${errorMessage(error)}`);
     }
   };
 
   try {
     const loaded = loadPolicy();
     policy = loaded.policy;
-    policyPath = loaded.policyPath;
-    readyPath = loadReadyPath(loaded.policyPath);
-    budgetTelemetryPath = loadBudgetTelemetryPath(loaded.policyPath);
-    installLiveness(
-      () => cleanupPrivateRuntimeFiles(policyPath, readyPath, budgetTelemetryPath),
-    );
+    const files = loadRuntimeFiles(loaded.policyPath);
+    runtimeFiles = files;
+    installLiveness(() => cleanupPrivateRuntimeFiles(files));
     softDeadline = loadSoftDeadline();
     if (policy.capability === "web") webExtensionPath = loadWebExtensionPath();
   } catch (error) {
-    policyError = error instanceof Error ? error.message : String(error);
+    policyError = errorMessage(error);
   }
 
   pi.on("turn_end", (event) => {
@@ -275,7 +280,7 @@ export default function childGuard(
     try {
       const expected = JSON.parse(expectedSelection ?? "null") as PresetSelection | null;
       if (!expected || typeof expected.model !== "string" || typeof expected.thinking !== "string" ||
-        `${ctx.model?.provider}/${ctx.model?.id}` !== expected.model || ctx.thinkingLevel !== expected.thinking) {
+        !ctx.model || modelRef(ctx.model) !== expected.model || ctx.thinkingLevel !== expected.thinking) {
         throw new Error("Subagent model/thinking selection mismatch");
       }
       // The CLI can synthesize an unknown ID from a same-provider model. Require
@@ -300,40 +305,28 @@ export default function childGuard(
   });
 
   pi.on("session_start", () => {
-    if (!policy || policyError || !readyPath || !budgetTelemetryPath || (policy.capability === "web" && !webExtensionPath)) {
+    if (!policy || policyError || !runtimeFiles || (policy.capability === "web" && !webExtensionPath)) {
       pi.setActiveTools([]);
       return;
     }
     const tools = pi.getAllTools();
     const activeTools = toolsForCapability(policy.capability);
     startupExitCode = CHILD_GUARD_EXIT_CODES.toolOwnership;
-    if (policy.capability === "local") {
-      for (const name of ALLOWED_FILE_TOOLS) {
-        const tool = tools.find((candidate) => candidate.name === name);
-        if (!tool || tool.sourceInfo?.source !== "builtin") {
-          failClosed(`${name} is not owned by Pi's built-in tool set`);
-          return;
-        }
-      }
-    }
-    if (policy.capability === "web") {
-      for (const name of ALLOWED_WEB_TOOLS) {
-        const tool = tools.find((candidate) => candidate.name === name);
-        const sourcePath = canonicalSourcePath(tool?.sourceInfo?.path);
-        if (!tool || sourcePath !== webExtensionPath) {
-          failClosed(`${name} is not owned by the explicitly loaded web extension`);
-          return;
-        }
+    for (const name of activeTools) {
+      if (!ownsTool(name, tools)) {
+        const owner = policy.capability === "local" ? "Pi's built-in tool set" : "the explicitly loaded web extension";
+        failClosed(`${name} is not owned by ${owner}`);
+        return;
       }
     }
     startupExitCode = CHILD_GUARD_EXIT_CODES.readiness;
     try {
       const snapshot = JSON.stringify(budget);
-      writeFileSync(budgetTelemetryPath!, snapshot, { encoding: "utf8", mode: 0o600, flag: "wx" });
+      writeFileSync(runtimeFiles.budgetTelemetry, snapshot, { encoding: "utf8", mode: 0o600, flag: "wx" });
       lastPersistedBudget = snapshot;
-      writeFileSync(readyPath, READY_MARKER, { encoding: "utf8", mode: 0o600, flag: "wx" });
+      writeFileSync(runtimeFiles.ready, READY_MARKER, { encoding: "utf8", mode: 0o600, flag: "wx" });
     } catch (error) {
-      failClosed(`could not publish guard readiness: ${error instanceof Error ? error.message : String(error)}`);
+      failClosed(`could not publish guard readiness: ${errorMessage(error)}`);
       return;
     }
     pi.setActiveTools(activeTools);
@@ -372,10 +365,9 @@ export default function childGuard(
       permittedToolCallIds.add(event.toolCallId);
       persistBudget();
     };
+    const policyUnavailable = () => block(`Subagent policy is unavailable: ${policyError ?? "unknown error"}`, true);
 
-    if (!policy || (policy.capability === "web" && !webExtensionPath)) {
-      return block(`Subagent policy is unavailable: ${policyError ?? "unknown error"}`, true);
-    }
+    if (!policy || (policy.capability === "web" && !webExtensionPath)) return policyUnavailable();
     const deadlineExpired = timeLimitReached();
     if (deadlineExpired) requestPartialAnswer();
     if (deadlineExpired || finalizationRequested) {
@@ -390,26 +382,22 @@ export default function childGuard(
       return block(`Tool ${event.toolName} is not allowed in the subagent. Use an available tool or return the final answer`);
     }
 
-    const tool = pi.getAllTools().find((candidate) => candidate.name === event.toolName);
+    if (!ownsTool(event.toolName, pi.getAllTools())) {
+      return block(`Tool ${event.toolName} ownership changed`, true);
+    }
     if (FILE_TOOLS.has(event.toolName)) {
-      if (tool?.sourceInfo?.source !== "builtin") {
-        return block(`Tool ${event.toolName} ownership changed`, true);
-      }
       const path = requestedPath(event.toolName, event.input);
       if (path === undefined) return block(`${event.toolName} requires a path`);
       try {
         (event.input as Record<string, unknown>).path = await authorizeReadPath(policy, path);
       } catch (error) {
-        return block(error instanceof Error ? error.message : String(error));
+        return block(errorMessage(error));
       }
       permit();
       return;
     }
 
     if (WEB_TOOLS.has(event.toolName)) {
-      if (canonicalSourcePath(tool?.sourceInfo?.path) !== webExtensionPath) {
-        return block(`Tool ${event.toolName} ownership changed`, true);
-      }
       const input = event.input && typeof event.input === "object" ? event.input as Record<string, unknown> : {};
       const prepared = prepareWebCall(event.toolName, input);
       if ("violation" in prepared) {
@@ -436,7 +424,7 @@ export default function childGuard(
           sendSoftBudgetNotice(
             `The child lifetime web ${resource} soft limit has been reached: ${reserved}/${hard} reserved, ${hard - reserved} remaining. Use further calls only for essential missing evidence, then return the concise final answer.`,
           );
-          if (!policy) return block(`Subagent policy is unavailable: ${policyError ?? "unknown error"}`, true);
+          if (!policy) return policyUnavailable();
         }
       }
       permit();

@@ -52,16 +52,19 @@ globalThis.fetch = async (_url, options) => {
 
 // Import only after the isolated environment and network tripwires exist.
 const { default: childGuard } = await import("../child-guard.ts");
-const { ALLOWED_FILE_TOOLS, BUDGET_TELEMETRY_ENV, MODEL_SELECTION_ENV, POLICY_ENV, READY_ENV, READY_MARKER } = await import("../shared.ts");
+const {
+  ALLOWED_FILE_TOOLS, BUDGET_TELEMETRY_ENV, MODEL_SELECTION_ENV, POLICY_ENV, READY_ENV, READY_MARKER, runtimeFilesIn,
+} = await import("../shared.ts");
 // The spawning test preloads the SDK mapper; retain this dynamic import after
 // the isolated environment and network tripwires have been installed.
 const { createAgentSession, DefaultResourceLoader, ModelRuntime, SessionManager, SettingsManager } =
   await import("@earendil-works/pi-coding-agent");
-readyFile = join(root, "guard.ready");
+const files = runtimeFilesIn(root);
+readyFile = files.ready;
 marker = READY_MARKER;
 Object.assign(process.env, {
-  [POLICY_ENV]: join(root, "policy.json"), [READY_ENV]: readyFile,
-  [BUDGET_TELEMETRY_ENV]: join(root, "budget.json"),
+  [POLICY_ENV]: files.policy, [READY_ENV]: readyFile,
+  [BUDGET_TELEMETRY_ENV]: files.budgetTelemetry,
   [MODEL_SELECTION_ENV]: JSON.stringify({
     model: scenario === "model-mismatch" ? "openai-codex/gpt-6.1-sol" : "openai-codex/gpt-6-luna",
     thinking: scenario === "thinking-mismatch" ? "high" : "medium",

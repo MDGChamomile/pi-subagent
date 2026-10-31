@@ -1,6 +1,9 @@
+import { join } from "node:path";
+
 export const TOOL_NAME = "pi_subagent";
 export const ALLOWED_FILE_TOOLS = ["read", "grep", "find", "ls"] as const;
 export const ALLOWED_WEB_TOOLS = ["web_search", "source_check", "fetch_content", "get_search_content"] as const;
+export type WebTool = (typeof ALLOWED_WEB_TOOLS)[number];
 export const WEB_INPUT_KEYS = {
   web_search: ["query", "queries", "numResults", "recencyFilter", "domainFilter", "workflow"],
   source_check: ["claim", "queries", "numResults", "fetchContent", "recencyFilter", "domainFilter"],
@@ -8,7 +11,7 @@ export const WEB_INPUT_KEYS = {
   get_search_content: [
     "responseId", "query", "queryIndex", "url", "urlIndex", "offset", "limit", "findText", "findMode",
   ],
-} as const satisfies Record<(typeof ALLOWED_WEB_TOOLS)[number], readonly string[]>;
+} as const satisfies Record<WebTool, readonly string[]>;
 export const MAX_WEB_QUERIES_PER_CALL = 4;
 export const DEFAULT_WEB_RESULTS_PER_QUERY = 5;
 export const MAX_WEB_RESULTS_PER_QUERY = 10;
@@ -61,19 +64,9 @@ export const PRESET_NAMES = Object.keys(SUBAGENT_PRESETS) as Preset[];
 export type Capability = "local" | "web";
 export type ResultStatus = "complete" | "partial";
 export type PartialReason = "tool_budget" | "time_limit" | "model_length";
-export type BudgetTelemetry = {
-  version: 1;
-  toolCallsAttempted: number;
-  toolCallsExecuted: number;
-  deniedCalls: number;
-  queryCount: number;
-  fetchTargetCount: number;
-  softLimitReached: boolean;
-  hardLimitReached: boolean;
-  partialReason?: "tool_budget";
-};
 export type ScopeRoot = { path: string; kind: "file" | "directory" };
 export type ChildPolicy = { version: 1; cwd: string; capability: Capability; roots: ScopeRoot[] };
+export type RuntimeFiles = { policy: string; ready: string; budgetTelemetry: string };
 
 export type SubagentFailurePhase =
   | "preflight"
@@ -122,6 +115,29 @@ export type SubagentFailureDiagnostics = {
 
 export function toolsForCapability(capability: Capability): string[] {
   return capability === "local" ? [...ALLOWED_FILE_TOOLS] : [...ALLOWED_WEB_TOOLS];
+}
+
+/** Model references are "provider/model"; model IDs may contain further slashes. */
+export function modelRef(model: { provider: string; id: string }): string {
+  return `${model.provider}/${model.id}`;
+}
+
+export function splitModelRef(ref: string): { provider: string; id: string } {
+  const separator = ref.indexOf("/");
+  return separator < 0 ? { provider: "", id: ref } : { provider: ref.slice(0, separator), id: ref.slice(separator + 1) };
+}
+
+/** Private per-run files; the guard accepts companion files only beside the policy file. */
+export function runtimeFilesIn(directory: string): RuntimeFiles {
+  return {
+    policy: join(directory, "policy.json"),
+    ready: join(directory, "guard.ready"),
+    budgetTelemetry: join(directory, "budget-telemetry.json"),
+  };
+}
+
+export function errorMessage(error: unknown): string {
+  return error instanceof Error ? error.message : String(error);
 }
 
 export function sanitizeDisplayText(text: string): string {

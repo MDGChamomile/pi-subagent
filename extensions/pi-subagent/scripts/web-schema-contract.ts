@@ -5,9 +5,9 @@ import type { TSchema } from "typebox";
 import { prepareWebCall } from "../web-arguments.ts";
 import {
   ALLOWED_WEB_TOOLS, MAX_FETCH_URLS_PER_CALL, MAX_WEB_QUERIES_PER_CALL, MAX_WEB_RESULTS_PER_QUERY, WEB_INPUT_KEYS,
+  type WebTool,
 } from "../shared.ts";
 
-type WebTool = (typeof ALLOWED_WEB_TOOLS)[number];
 const url = "https://example.invalid/evidence";
 // Deliberately representative, not an exhaustive inclusion proof. Minimal inputs
 // catch newly required fields; populated inputs cover every allowlisted key.

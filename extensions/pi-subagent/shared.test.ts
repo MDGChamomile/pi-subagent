@@ -3,7 +3,8 @@ import { describe, test } from "node:test";
 import {
   CHILD_FINALIZATION_GRACE_MS, CHILD_GUARD_EXIT_CODES, CHILD_TIMEOUT_MS,
   LIFETIME_TOOL_CALL_LIMITS, LIFETIME_WEB_FETCH_TARGET_LIMIT, LIFETIME_WEB_QUERY_LIMIT,
-  MIN_WEB_EXTENSION_VERSION, PRESET_NAMES, SUBAGENT_PRESETS, THINKING_LEVELS, sanitizeDisplayText,
+  MIN_WEB_EXTENSION_VERSION, modelRef, PRESET_NAMES, SUBAGENT_PRESETS, THINKING_LEVELS, sanitizeDisplayText,
+  splitModelRef,
 } from "./shared.ts";
 import { isValidProviderModel } from "./config.ts";
 import { MAX_SUBAGENT_CALLS } from "./invocation-gate.ts";
@@ -44,5 +45,13 @@ describe("pi-subagent public contract", () => {
 
   test("sanitizes terminal control and bidi characters while preserving layout", () => {
     assert.equal(sanitizeDisplayText("safe\n\t\u001b[31m\u202eevil"), "safe\n\t?[31m?evil");
+  });
+
+  test("splits model references at the first slash only", () => {
+    const model = { provider: "custom", id: "@cf/example/model" };
+    assert.equal(modelRef(model), "custom/@cf/example/model");
+    assert.deepEqual(splitModelRef(modelRef(model)), model);
+    for (const name of PRESET_NAMES) assert.equal(modelRef(splitModelRef(SUBAGENT_PRESETS[name].model)), SUBAGENT_PRESETS[name].model);
+    assert.deepEqual(splitModelRef("unprefixed"), { provider: "", id: "unprefixed" });
   });
 });

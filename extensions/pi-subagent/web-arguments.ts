@@ -1,11 +1,20 @@
 import {
+  ALLOWED_WEB_TOOLS,
   DEFAULT_WEB_RESULTS_PER_QUERY,
   MAX_FETCH_URLS_PER_CALL,
   MAX_SOURCE_CHECK_FETCH_TARGETS_PER_CALL,
   MAX_WEB_QUERIES_PER_CALL,
   MAX_WEB_RESULTS_PER_QUERY,
   WEB_INPUT_KEYS,
+  type WebTool,
 } from "./shared.ts";
+
+type WebCost = { queries: number; fetchTargets: number };
+type WebRule = {
+  validate(input: Record<string, unknown>): string | undefined;
+  pinned?: Record<string, unknown>;
+  cost(input: Record<string, unknown>): WebCost;
+};
 
 function validatePublicHttpUrl(raw: string): string | undefined {
   try {
@@ -21,10 +30,6 @@ function validatePublicHttpUrl(raw: string): string | undefined {
     return "fetch_content received an invalid URL";
   }
 }
-
-const WEB_INPUT_ALLOWLISTS: Record<string, ReadonlySet<string>> = Object.fromEntries(
-  Object.entries(WEB_INPUT_KEYS).map(([toolName, keys]) => [toolName, new Set(keys)]),
-);
 
 function expandedSingleQueryCount(value: unknown): number {
   if (typeof value !== "string" || !value.trim()) return 0;
@@ -78,37 +83,18 @@ function validateBoundedQueries(toolName: string, input: Record<string, unknown>
   return undefined;
 }
 
-function webResourceCost(
-  toolName: string,
-  input: Record<string, unknown>,
-): { queries: number; fetchTargets: number } {
-  if (toolName === "web_search") return { queries: webSearchQueryCount(input), fetchTargets: 0 };
-  if (toolName === "source_check") {
-    const queries = sourceCheckQueryCount(input);
-    const requestedResults = typeof input.numResults === "number" && Number.isFinite(input.numResults)
-      ? Math.min(MAX_WEB_RESULTS_PER_QUERY, Math.max(1, Math.floor(input.numResults)))
-      : DEFAULT_WEB_RESULTS_PER_QUERY;
-    const fetchTargets = input.fetchContent === true
-      ? Math.min(MAX_SOURCE_CHECK_FETCH_TARGETS_PER_CALL, queries * requestedResults)
-      : 0;
-    return { queries, fetchTargets };
-  }
-  if (toolName === "fetch_content") return { queries: 0, fetchTargets: fetchContentTargetCount(input) };
-  if (toolName === "get_search_content") return { queries: 0, fetchTargets: 1 };
-  return { queries: 0, fetchTargets: 0 };
+function sourceCheckCost(input: Record<string, unknown>): WebCost {
+  const queries = sourceCheckQueryCount(input);
+  const requestedResults = typeof input.numResults === "number" && Number.isFinite(input.numResults)
+    ? Math.min(MAX_WEB_RESULTS_PER_QUERY, Math.max(1, Math.floor(input.numResults)))
+    : DEFAULT_WEB_RESULTS_PER_QUERY;
+  const fetchTargets = input.fetchContent === true
+    ? Math.min(MAX_SOURCE_CHECK_FETCH_TARGETS_PER_CALL, queries * requestedResults)
+    : 0;
+  return { queries, fetchTargets };
 }
 
-function validateWebCall(toolName: string, input: Record<string, unknown>): string | undefined {
-  const allowed = WEB_INPUT_ALLOWLISTS[toolName];
-  if (!allowed) return `${toolName} is not supported in the subagent`;
-  const unknown = Object.keys(input).filter((key) => !allowed.has(key));
-  if (unknown.length > 0) {
-    return `${toolName} input ${unknown.sort().join(", ")} is not allowed in the subagent`;
-  }
-
-  if (toolName === "web_search" || toolName === "source_check") return validateBoundedQueries(toolName, input);
-  if (toolName === "get_search_content") return undefined;
-  if (toolName !== "fetch_content") return `${toolName} is not supported in the subagent`;
+function validateFetchContent(input: Record<string, unknown>): string | undefined {
   if (input.mode !== undefined && input.mode !== "readable") {
     return "fetch_content permits only readable mode in the subagent";
   }
@@ -129,20 +115,45 @@ function validateWebCall(toolName: string, input: Record<string, unknown>): stri
   return undefined;
 }
 
+const WEB_RULES = {
+  web_search: {
+    validate: (input) => validateBoundedQueries("web_search", input),
+    pinned: { workflow: "none" },
+    cost: (input) => ({ queries: webSearchQueryCount(input), fetchTargets: 0 }),
+  },
+  source_check: {
+    validate: (input) => validateBoundedQueries("source_check", input),
+    cost: sourceCheckCost,
+  },
+  fetch_content: {
+    validate: validateFetchContent,
+    pinned: { mode: "readable" },
+    cost: (input) => ({ queries: 0, fetchTargets: fetchContentTargetCount(input) }),
+  },
+  get_search_content: {
+    validate: () => undefined,
+    cost: () => ({ queries: 0, fetchTargets: 1 }),
+  },
+} satisfies Record<WebTool, WebRule>;
+
+// Unlike an object index, a Map never resolves prototype names such as "constructor".
+const WEB_TOOL_RULES = new Map<string, WebRule & { allowed: ReadonlySet<string> }>(
+  ALLOWED_WEB_TOOLS.map((name) => [name, { ...WEB_RULES[name], allowed: new Set<string>(WEB_INPUT_KEYS[name]) }]),
+);
+
 // Keep validation side-effect free; apply prepared arguments only after budget admission.
 export function prepareWebCall(
   toolName: string,
   input: Record<string, unknown>,
-): { violation: string } | {
-  input: Record<string, unknown>;
-  cost: { queries: number; fetchTargets: number };
-} {
-  const violation = validateWebCall(toolName, input);
+): { violation: string } | { input: Record<string, unknown>; cost: WebCost } {
+  const rule = WEB_TOOL_RULES.get(toolName);
+  if (!rule) return { violation: `${toolName} is not supported in the subagent` };
+  const unknown = Object.keys(input).filter((key) => !rule.allowed.has(key));
+  if (unknown.length > 0) {
+    return { violation: `${toolName} input ${unknown.sort().join(", ")} is not allowed in the subagent` };
+  }
+  const violation = rule.validate(input);
   if (violation) return { violation };
-  const normalizedInput = toolName === "web_search"
-    ? { ...input, workflow: "none" }
-    : toolName === "fetch_content"
-      ? { ...input, mode: "readable" }
-      : { ...input };
-  return { input: normalizedInput, cost: webResourceCost(toolName, normalizedInput) };
+  const normalizedInput = { ...input, ...rule.pinned };
+  return { input: normalizedInput, cost: rule.cost(normalizedInput) };
 }

@@ -4,7 +4,7 @@ import tempfile
 import unittest
 from pathlib import Path
 
-from validate_skills import has_required_frontmatter, validate_relative_links, validate_skills
+from validate_skills import has_required_frontmatter, resource_documents, validate_relative_links, validate_skills
 
 
 class SkillValidationTests(unittest.TestCase):
@@ -77,7 +77,8 @@ class SkillValidationTests(unittest.TestCase):
             linked.write_text('# Migration\n', encoding='utf-8')
             document.write_text(
                 '[migration](MIGRATION.md#migration) [local](#start) '
-                '[remote](https://example.test/reference)\n',
+                '[remote](https://example.test/reference) [mail](mailto:help@example.test) '
+                '[protocol](//example.test/reference)\n',
                 encoding='utf-8',
             )
             self.assertEqual(validate_relative_links([document]), [])
@@ -86,6 +87,25 @@ class SkillValidationTests(unittest.TestCase):
                 validate_relative_links([document]),
                 [f'broken link: {document} -> missing.md'],
             )
+
+    def test_resource_documents_skip_skill_files_and_installed_dependencies(self):
+        with tempfile.TemporaryDirectory() as temp:
+            root = Path(temp)
+            for relative in (
+                'skills/synthetic/SKILL.md',
+                'skills/synthetic/README.md',
+                'skills/synthetic/references/guide.md',
+                'extensions/synthetic/README.md',
+                'extensions/synthetic/node_modules/dependency/README.md',
+            ):
+                path = root / relative
+                path.parent.mkdir(parents=True, exist_ok=True)
+                path.write_text('# Synthetic\n', encoding='utf-8')
+            self.assertEqual(resource_documents(root), [
+                root / 'extensions/synthetic/README.md',
+                root / 'skills/synthetic/README.md',
+                root / 'skills/synthetic/references/guide.md',
+            ])
 
 
 if __name__ == '__main__':

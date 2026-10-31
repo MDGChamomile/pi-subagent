@@ -5,7 +5,6 @@ import { tmpdir } from "node:os";
 import { dirname, join } from "node:path";
 import { pathToFileURL } from "node:url";
 import { authorizeReadPath, buildChildPolicy, makeCanonicalTempDirectory, normalizeInputPath } from "./path-policy.ts";
-import { buildChildPrompt } from "./subprocess.ts";
 
 describe("pi-subagent scope policy", () => {
   test("canonicalizes, deduplicates, and authorizes explicit roots", async () => {
@@ -19,9 +18,6 @@ describe("pi-subagent scope policy", () => {
       assert.equal(policy.roots.length, 1);
       assert.equal(policy.roots[0]?.kind, "directory");
       assert.equal(await authorizeReadPath(policy, "src/a.ts"), join(nested, "a.ts"));
-      const prompt = buildChildPrompt("Inspect the module", policy);
-      assert.match(prompt, /"src" \(directory\)/);
-      assert.doesNotMatch(prompt, new RegExp(root.replace(/[.*+?^${}()|[\]\\]/g, "\\$&")));
     } finally {
       await rm(root, { recursive: true, force: true });
     }
@@ -33,7 +29,6 @@ describe("pi-subagent scope policy", () => {
       await writeFile(join(root, "local.txt"), "local\n");
       const webPolicy = await buildChildPolicy(root, [], "web");
       assert.deepEqual(webPolicy.roots, []);
-      assert.match(buildChildPrompt("Research a public API", webPolicy), /none; web-only investigation/);
       await assert.rejects(() => authorizeReadPath(webPolicy, "."), /outside its explicit scope/);
       const localPolicy = await buildChildPolicy(root, ["local.txt"], "local");
       assert.equal(localPolicy.capability, "local");

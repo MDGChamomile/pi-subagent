@@ -1,22 +1,16 @@
 import { rmdirSync, unlinkSync } from "node:fs";
 import { Socket } from "node:net";
 import { dirname } from "node:path";
+import type { RuntimeFiles } from "./shared.ts";
 
 export const PARENT_LIVENESS_ENV = "PI_SUBAGENT_PARENT_LIVENESS_FD";
 export const PARENT_LIVENESS_FD = 3;
 
-export function cleanupPrivateRuntimeFiles(
-  policyPath: string | undefined,
-  readyPath: string | undefined,
-  budgetTelemetryPath?: string,
-): void {
-  for (const path of [budgetTelemetryPath, readyPath, policyPath]) {
-    if (!path) continue;
+export function cleanupPrivateRuntimeFiles(files: RuntimeFiles): void {
+  for (const path of [files.budgetTelemetry, files.ready, files.policy]) {
     try { unlinkSync(path); } catch {}
   }
-  if (policyPath) {
-    try { rmdirSync(dirname(policyPath)); } catch {}
-  }
+  try { rmdirSync(dirname(files.policy)); } catch {}
 }
 
 export function killProcessGroup(pid: number | undefined, signal: NodeJS.Signals): void {

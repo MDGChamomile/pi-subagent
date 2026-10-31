@@ -53,7 +53,7 @@ def validate_relative_links(documents: list[Path]) -> list[str]:
     for document in documents:
         text = document.read_text(encoding="utf-8")
         for target in re.findall(r"\[[^]]*\]\(([^)]+)\)", text):
-            if "://" in target or target.startswith("#"):
+            if re.match(r"(?:[a-z][a-z\d+.-]*:|//|#)", target, re.IGNORECASE):
                 continue
             path = (document.parent / target.split("#", 1)[0]).resolve()
             if not path.exists():
@@ -71,6 +71,14 @@ def validate_skills(root: Path) -> list[str]:
     return failures + validate_relative_links(skills)
 
 
+def resource_documents(root: Path) -> list[Path]:
+    """Markdown under root other than SKILL.md, which validate_skills checks."""
+    return sorted(
+        path for path in root.rglob("*.md")
+        if path.name != "SKILL.md" and "node_modules" not in path.parts
+    )
+
+
 if __name__ == "__main__":
     root = Path(".")
     failures = validate_skills(root / "skills")
@@ -78,7 +86,7 @@ if __name__ == "__main__":
         [root / name for name in (
             "README.md", "AGENTS.md", "MIGRATION.md", "CONTRIBUTING.md", "PRINCIPLE.md",
             "packaging/pi-subagent/DEVELOPMENT.md",
-        )]
+        )] + resource_documents(root / "extensions") + resource_documents(root / "skills")
     )
     if failures:
         raise SystemExit("\n".join(failures))

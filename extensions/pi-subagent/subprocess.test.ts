@@ -4,119 +4,35 @@ import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { describe, test } from "node:test";
 import { fileURLToPath } from "node:url";
-import {
-  assertChildReady,
-  buildChildInvocation,
-  estimateContextTokens,
-  formatElapsed,
-  formatProgress,
-  formatResultSummary,
-  readBudgetTelemetry,
-  selectPartialReason,
-} from "./subprocess.ts";
-import { READY_MARKER, type ChildPolicy, type PartialReason } from "./shared.ts";
+import { assertChildReady, buildChildInvocation, buildChildPrompt, selectPartialReason } from "./subprocess.ts";
+import { READY_MARKER, runtimeFilesIn, type ChildPolicy, type PartialReason } from "./shared.ts";
 
-describe("child completion boundary", () => {
-  test("formats live progress with elapsed time, model, thinking, and reported tokens", () => {
-    assert.equal(formatElapsed(0), "00:00");
-    assert.equal(formatElapsed(59_999), "00:59");
-    assert.equal(formatElapsed(60_000), "01:00");
-    assert.equal(formatElapsed(15 * 60_000), "15:00");
-    assert.equal(
-      formatProgress("openai-codex/gpt-6-luna", "low", 83_000, 4_512),
-      "01:23 · gpt-6-luna (low) running · 4,512 reported tokens",
-    );
+describe("child prompt", () => {
+  test("lists scope roots relative to the working directory without absolute paths", () => {
+    const prompt = buildChildPrompt("Inspect the module", {
+      version: 1, cwd: "/synthetic/project", capability: "local",
+      roots: [{ path: "/synthetic/project/src", kind: "directory" }],
+    });
+    assert.match(prompt, /"src" \(directory\)/);
+    assert.doesNotMatch(prompt, /\/synthetic\/project/);
   });
 
-  test("formats final context injection estimates for complete and partial results", () => {
-    assert.equal(estimateContextTokens(""), 0);
-    assert.equal(estimateContextTokens("x".repeat(7_280)), 1_820);
-    assert.equal(estimateContextTokens("abcde"), 2);
-    assert.equal(estimateContextTokens("한글"), 2); // 6 UTF-8 bytes
-    assert.equal(estimateContextTokens("😀😀"), 2); // 8 UTF-8 bytes
-    assert.equal(estimateContextTokens("A한😀"), 2); // mixed, 8 UTF-8 bytes
-    assert.equal(
-      formatResultSummary("complete", 14_200, 1_820),
-      "✓ Complete · 14.2s · Context injected: ~1,820 tokens",
-    );
-    assert.equal(
-      formatResultSummary("partial", 18 * 60_000 + 4_000, 2_210),
-      "⚠ Partial · 18:04 · Context injected: ~2,210 tokens",
-    );
+  test("marks a web-only investigation as having no local scope", () => {
+    const prompt = buildChildPrompt("Research a public API", { version: 1, cwd: "/synthetic/project", capability: "web", roots: [] });
+    assert.match(prompt, /none; web-only investigation/);
   });
+});
 
+describe("child readiness", () => {
   test("requires the exact guard readiness marker", async () => {
     const root = await mkdtemp(join(tmpdir(), "pi-subagent-ready-test-"));
     try {
-      const readyFile = join(root, "guard.ready");
+      const readyFile = runtimeFilesIn(root).ready;
       await assert.rejects(() => assertChildReady(readyFile), /did not become ready/);
       await writeFile(readyFile, "wrong\n");
       await assert.rejects(() => assertChildReady(readyFile), /marker is invalid/);
       await writeFile(readyFile, READY_MARKER);
       await assert.doesNotReject(() => assertChildReady(readyFile));
-    } finally {
-      await rm(root, { recursive: true, force: true });
-    }
-  });
-
-  test("accepts only content-free budget telemetry fields", async () => {
-    const root = await mkdtemp(join(tmpdir(), "pi-subagent-budget-test-"));
-    try {
-      const telemetryFile = join(root, "budget.json");
-      const telemetry = {
-        version: 1,
-        toolCallsAttempted: 12,
-        toolCallsExecuted: 10,
-        deniedCalls: 2,
-        queryCount: 4,
-        fetchTargetCount: 5,
-        softLimitReached: false,
-        hardLimitReached: true,
-        partialReason: "tool_budget",
-      };
-      await writeFile(telemetryFile, JSON.stringify(telemetry));
-      assert.deepEqual(await readBudgetTelemetry(telemetryFile), telemetry);
-
-      await writeFile(telemetryFile, JSON.stringify({ ...telemetry, task: "private task" }));
-      await assert.rejects(() => readBudgetTelemetry(telemetryFile), /malformed/);
-      await writeFile(telemetryFile, JSON.stringify({ ...telemetry, queryCount: -1 }));
-      await assert.rejects(() => readBudgetTelemetry(telemetryFile), /malformed/);
-      for (const partialReason of ["time_limit", "model_length"]) {
-        await writeFile(telemetryFile, JSON.stringify({ ...telemetry, partialReason }));
-        await assert.rejects(() => readBudgetTelemetry(telemetryFile), /malformed/);
-      }
-    } finally {
-      await rm(root, { recursive: true, force: true });
-    }
-  });
-
-  test("preserves telemetry validation boundaries and read errors", async () => {
-    const root = await mkdtemp(join(tmpdir(), "pi-subagent-telemetry-contract-"));
-    const path = join(root, "budget.json");
-    const telemetry = {
-      version: 1, toolCallsAttempted: 0, toolCallsExecuted: 0, deniedCalls: 0,
-      queryCount: 0, fetchTargetCount: 0, softLimitReached: false, hardLimitReached: false,
-    };
-    try {
-      await assert.rejects(() => readBudgetTelemetry(path), { message: "Subagent budget telemetry is unavailable or malformed" });
-      await writeFile(path, "{");
-      await assert.rejects(() => readBudgetTelemetry(path), { message: "Subagent budget telemetry is unavailable or malformed" });
-      for (const value of [null, [], true, 1, "text", {}, { ...telemetry, version: 2 },
-        { ...telemetry, softLimitReached: 0 }, { ...telemetry, hardLimitReached: "false" },
-        { ...telemetry, partialReason: null }, { ...telemetry, unexpected: 0 }]) {
-        await writeFile(path, JSON.stringify(value));
-        await assert.rejects(() => readBudgetTelemetry(path), { message: "Subagent budget telemetry is malformed" });
-      }
-      for (const key of ["toolCallsAttempted", "toolCallsExecuted", "deniedCalls", "queryCount", "fetchTargetCount"]) {
-        for (const value of [undefined, null, -1, 0.5, Number.MAX_SAFE_INTEGER + 1, "1", true]) {
-          await writeFile(path, JSON.stringify({ ...telemetry, [key]: value }));
-          await assert.rejects(() => readBudgetTelemetry(path), { message: "Subagent budget telemetry is malformed" });
-        }
-        await writeFile(path, JSON.stringify({ ...telemetry, [key]: Number.MAX_SAFE_INTEGER }));
-        assert.deepEqual(await readBudgetTelemetry(path), { ...telemetry, [key]: Number.MAX_SAFE_INTEGER });
-      }
-      await writeFile(path, JSON.stringify(telemetry));
-      assert.deepEqual(await readBudgetTelemetry(path), telemetry);
     } finally {
       await rm(root, { recursive: true, force: true });
     }
@@ -132,9 +48,7 @@ describe("child invocation", () => {
   });
   const build = (capability: "local" | "web", parentEnv: NodeJS.ProcessEnv) => buildChildInvocation({
     policy: policy(capability),
-    policyFile: "/synthetic/run/policy.json",
-    readyFile: "/synthetic/run/guard.ready",
-    budgetTelemetryFile: "/synthetic/run/budget-telemetry.json",
+    files: runtimeFilesIn("/synthetic/run"),
     webExtensionPath: capability === "web" ? "/synthetic/pi-web-access/index.ts" : undefined,
     model: "provider/model",
     thinking: "high",
@@ -217,7 +131,7 @@ describe("child invocation", () => {
   test("defaults to the current process environment without mutating it", () => {
     const before = { ...process.env };
     buildChildInvocation({
-      policy: policy("local"), policyFile: "p", readyFile: "r", budgetTelemetryFile: "b",
+      policy: policy("local"), files: { policy: "p", ready: "r", budgetTelemetry: "b" },
       model: "provider/model", thinking: "off", softDeadline: 1,
     });
     assert.deepEqual({ ...process.env }, before);
