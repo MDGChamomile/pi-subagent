@@ -3,7 +3,8 @@ run-name: ${{ inputs.name || github.workflow }}
 
 # No push/PR/schedule triggers here. Owner-approved console reviews,
 # re-reviews, and owner @pullfrog mentions may dispatch this workflow; other
-# automations remain disabled.
+# automations remain disabled. Keep this file identical across repositories;
+# see ../PULLFROG.md.
 on:
   workflow_dispatch:
     inputs:
