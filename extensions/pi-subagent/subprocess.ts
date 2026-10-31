@@ -4,7 +4,7 @@ import { readFile } from "node:fs/promises";
 import { basename, relative, sep } from "node:path";
 import { setTimeout as delay } from "node:timers/promises";
 import { fileURLToPath } from "node:url";
-import type { Usage as PiUsage } from "@earendil-works/pi-ai";
+import type { Usage } from "@earendil-works/pi-ai";
 import { isProcessGroupGone, killProcessGroup, PARENT_LIVENESS_ENV, PARENT_LIVENESS_FD } from "./parent-liveness.ts";
 import {
   BUDGET_TELEMETRY_ENV,
@@ -71,8 +71,6 @@ export function buildChildPrompt(task: string, policy: ChildPolicy): string {
     "Stay within this runtime-enforced capability and scope. Return only the requested deliverable.",
   ].join("\n");
 }
-
-export type Usage = PiUsage;
 
 export type ChildResult = {
   /** Parent-visible JSON envelope with runtime status and an untrusted answer string. */
