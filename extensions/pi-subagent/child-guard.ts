@@ -1,6 +1,6 @@
 import { lstatSync, readFileSync, realpathSync, writeFileSync } from "node:fs";
 import { dirname, resolve } from "node:path";
-import type { ExtensionAPI } from "@earendil-works/pi-coding-agent";
+import type { ExtensionAPI, ExtensionContext, ToolInfo } from "@earendil-works/pi-coding-agent";
 import { cleanupPrivateRuntimeFiles, installParentLivenessMonitor } from "./parent-liveness.ts";
 import { validatePresetSelection, type PresetSelection } from "./config.ts";
 import {
@@ -8,17 +8,14 @@ import {
   ALLOWED_WEB_TOOLS,
   BUDGET_TELEMETRY_ENV,
   CHILD_GUARD_EXIT_CODES,
-  DEFAULT_WEB_RESULTS_PER_QUERY,
+  errorMessage,
   LIFETIME_TOOL_CALL_LIMITS,
   LIFETIME_WEB_FETCH_TARGET_LIMIT,
   LIFETIME_WEB_FETCH_TARGET_SOFT_LIMIT,
   LIFETIME_WEB_QUERY_LIMIT,
   LIFETIME_WEB_QUERY_SOFT_LIMIT,
-  MAX_FETCH_URLS_PER_CALL,
   MAX_SCOPE_ROOTS,
-  MAX_SOURCE_CHECK_FETCH_TARGETS_PER_CALL,
-  MAX_WEB_QUERIES_PER_CALL,
-  MAX_WEB_RESULTS_PER_QUERY,
+  modelRef,
   POLICY_ENV,
   MODEL_SELECTION_ENV,
   READY_ENV,
@@ -26,11 +23,12 @@ import {
   SOFT_DEADLINE_ENV,
   toolsForCapability,
   WEB_EXTENSION_ENV,
-  WEB_INPUT_KEYS,
-  type BudgetTelemetry,
   type ChildPolicy,
+  type RuntimeFiles,
 } from "./shared.ts";
+import type { BudgetTelemetry } from "./budget-telemetry.ts";
 import { authorizeReadPath, isWithin } from "./path-policy.ts";
+import { prepareWebCall } from "./web-arguments.ts";
 
 const FILE_TOOLS = new Set<string>(ALLOWED_FILE_TOOLS);
 const WEB_TOOLS = new Set<string>(ALLOWED_WEB_TOOLS);
@@ -77,12 +75,12 @@ function loadCompanionPath(policyPath: string, envName: string, label: string): 
   return resolved;
 }
 
-function loadReadyPath(policyPath: string): string {
-  return loadCompanionPath(policyPath, READY_ENV, "readiness");
-}
-
-function loadBudgetTelemetryPath(policyPath: string): string {
-  return loadCompanionPath(policyPath, BUDGET_TELEMETRY_ENV, "budget telemetry");
+function loadRuntimeFiles(policyPath: string): RuntimeFiles {
+  return {
+    policy: policyPath,
+    ready: loadCompanionPath(policyPath, READY_ENV, "readiness"),
+    budgetTelemetry: loadCompanionPath(policyPath, BUDGET_TELEMETRY_ENV, "budget telemetry"),
+  };
 }
 
 function loadSoftDeadline(): number | undefined {
@@ -121,154 +119,12 @@ function canonicalSourcePath(raw: unknown): string | undefined {
   }
 }
 
-function validatePublicHttpUrl(raw: string): string | undefined {
-  try {
-    const url = new URL(raw);
-    if (url.protocol !== "http:" && url.protocol !== "https:") {
-      return "fetch_content permits only HTTP(S) URLs";
-    }
-    if (url.username || url.password) {
-      return "fetch_content URLs must not contain embedded credentials";
-    }
-    return undefined;
-  } catch {
-    return "fetch_content received an invalid URL";
-  }
-}
-
-const WEB_INPUT_ALLOWLISTS: Record<string, ReadonlySet<string>> = Object.fromEntries(
-  Object.entries(WEB_INPUT_KEYS).map(([toolName, keys]) => [toolName, new Set(keys)]),
-);
-
-function expandedSingleQueryCount(value: unknown): number {
-  if (typeof value !== "string" || !value.trim()) return 0;
-  const trimmed = value.trim();
-  if (trimmed.startsWith("[") && trimmed.endsWith("]")) {
-    try {
-      const parsed: unknown = JSON.parse(trimmed);
-      if (Array.isArray(parsed) && parsed.every((entry) => typeof entry === "string")) {
-        return parsed.filter((entry) => entry.trim().length > 0).length;
-      }
-    } catch {
-      // pi-web-access treats malformed JSON-shaped strings as one literal query.
-    }
-  }
-  return 1;
-}
-
-function webSearchQueryCount(input: Record<string, unknown>): number {
-  if (Array.isArray(input.queries)) {
-    return input.queries.filter((query) => typeof query === "string" && query.trim().length > 0).length;
-  }
-  return expandedSingleQueryCount(input.query);
-}
-
-function sourceCheckQueryCount(input: Record<string, unknown>): number {
-  if (typeof input.claim !== "string" || !input.claim.trim()) return 0;
-  const requested = Array.isArray(input.queries)
-    ? input.queries.filter((query) => typeof query === "string" && query.trim().length > 0).length
-    : 0;
-  return requested > 0 ? requested : 1;
-}
-
-function fetchContentTargetCount(input: Record<string, unknown>): number {
-  const urls = Array.isArray(input.urls)
-    ? input.urls.filter((url) => typeof url === "string" && url.trim().length > 0).map((url) => url.trim())
-    : [];
-  if (urls.length > 0) return new Set(urls).size;
-  return typeof input.url === "string" && input.url.trim().length > 0 ? 1 : 0;
-}
-
-function validateBoundedQueries(toolName: string, input: Record<string, unknown>): string | undefined {
-  if (Array.isArray(input.queries) && input.queries.length > MAX_WEB_QUERIES_PER_CALL) {
-    return `${toolName} permits at most ${MAX_WEB_QUERIES_PER_CALL} queries`;
-  }
-  if (toolName === "web_search" && webSearchQueryCount(input) > MAX_WEB_QUERIES_PER_CALL) {
-    return `${toolName} permits at most ${MAX_WEB_QUERIES_PER_CALL} queries`;
-  }
-  if (typeof input.numResults === "number" && input.numResults > MAX_WEB_RESULTS_PER_QUERY) {
-    return `${toolName} permits at most ${MAX_WEB_RESULTS_PER_QUERY} results per query`;
-  }
-  return undefined;
-}
-
-function webResourceCost(
-  toolName: string,
-  input: Record<string, unknown>,
-): { queries: number; fetchTargets: number } {
-  if (toolName === "web_search") return { queries: webSearchQueryCount(input), fetchTargets: 0 };
-  if (toolName === "source_check") {
-    const queries = sourceCheckQueryCount(input);
-    const requestedResults = typeof input.numResults === "number" && Number.isFinite(input.numResults)
-      ? Math.min(MAX_WEB_RESULTS_PER_QUERY, Math.max(1, Math.floor(input.numResults)))
-      : DEFAULT_WEB_RESULTS_PER_QUERY;
-    const fetchTargets = input.fetchContent === true
-      ? Math.min(MAX_SOURCE_CHECK_FETCH_TARGETS_PER_CALL, queries * requestedResults)
-      : 0;
-    return { queries, fetchTargets };
-  }
-  if (toolName === "fetch_content") return { queries: 0, fetchTargets: fetchContentTargetCount(input) };
-  if (toolName === "get_search_content") return { queries: 0, fetchTargets: 1 };
-  return { queries: 0, fetchTargets: 0 };
-}
-
-function validateWebCall(toolName: string, input: Record<string, unknown>): string | undefined {
-  const allowed = WEB_INPUT_ALLOWLISTS[toolName];
-  if (!allowed) return `${toolName} is not supported in the subagent`;
-  const unknown = Object.keys(input).filter((key) => !allowed.has(key));
-  if (unknown.length > 0) {
-    return `${toolName} input ${unknown.sort().join(", ")} is not allowed in the subagent`;
-  }
-
-  if (toolName === "web_search" || toolName === "source_check") return validateBoundedQueries(toolName, input);
-  if (toolName === "get_search_content") return undefined;
-  if (toolName !== "fetch_content") return `${toolName} is not supported in the subagent`;
-  if (input.mode !== undefined && input.mode !== "readable") {
-    return "fetch_content permits only readable mode in the subagent";
-  }
-  const urls: string[] = [];
-  if (typeof input.url === "string") urls.push(input.url);
-  if (Array.isArray(input.urls)) {
-    if (!input.urls.every((value) => typeof value === "string")) {
-      return "fetch_content URLs must be strings";
-    }
-    urls.push(...input.urls as string[]);
-  }
-  if (urls.length === 0) return "fetch_content requires at least one HTTP(S) URL";
-  if (urls.length > MAX_FETCH_URLS_PER_CALL) return `fetch_content permits at most ${MAX_FETCH_URLS_PER_CALL} URLs`;
-  for (const url of urls) {
-    const violation = validatePublicHttpUrl(url);
-    if (violation) return violation;
-  }
-  return undefined;
-}
-
-// Keep validation side-effect free; apply prepared arguments only after budget admission.
-export function prepareWebCall(
-  toolName: string,
-  input: Record<string, unknown>,
-): { violation: string } | {
-  input: Record<string, unknown>;
-  cost: { queries: number; fetchTargets: number };
-} {
-  const violation = validateWebCall(toolName, input);
-  if (violation) return { violation };
-  const normalizedInput = toolName === "web_search"
-    ? { ...input, workflow: "none" }
-    : toolName === "fetch_content"
-      ? { ...input, mode: "readable" }
-      : { ...input };
-  return { input: normalizedInput, cost: webResourceCost(toolName, normalizedInput) };
-}
-
 export default function childGuard(
   pi: ExtensionAPI,
   installLiveness = installParentLivenessMonitor,
 ): void {
   let policy: ChildPolicy | undefined;
-  let policyPath: string | undefined;
-  let readyPath: string | undefined;
-  let budgetTelemetryPath: string | undefined;
+  let runtimeFiles: RuntimeFiles | undefined;
   let webExtensionPath: string | undefined;
   let softDeadline: number | undefined;
   let softDeadlineTimer: ReturnType<typeof setTimeout> | undefined;
@@ -277,7 +133,6 @@ export default function childGuard(
   let policyError: string | undefined;
   let guardReady = false;
   let startupExitCode: number = CHILD_GUARD_EXIT_CODES.initialization;
-  let stopParentLivenessMonitor: (() => void) | undefined;
   const validatedToolCallIds = new Set<string>();
   const permittedToolCallIds = new Set<string>();
   const deniedToolCallIds = new Set<string>();
@@ -293,6 +148,13 @@ export default function childGuard(
     hardLimitReached: false,
   };
 
+  // Local tools must be Pi built-ins; web tools must come from the explicitly loaded extension file.
+  const ownsTool = (name: string, tools: ToolInfo[]) => {
+    const tool = tools.find((candidate) => candidate.name === name);
+    if (FILE_TOOLS.has(name)) return tool?.sourceInfo?.source === "builtin";
+    return WEB_TOOLS.has(name) && webExtensionPath !== undefined
+      && canonicalSourcePath(tool?.sourceInfo?.path) === webExtensionPath;
+  };
   const invalidatePolicy = (message: string) => {
     policy = undefined;
     policyError = message;
@@ -303,19 +165,19 @@ export default function childGuard(
   };
   let lastPersistedBudget: string | undefined;
   const persistBudget = () => {
-    if (!budgetTelemetryPath) return;
+    if (!runtimeFiles) return;
     const snapshot = JSON.stringify(budget);
     if (snapshot === lastPersistedBudget) return;
     try {
-      writeFileSync(budgetTelemetryPath, snapshot, { encoding: "utf8", mode: 0o600 });
+      writeFileSync(runtimeFiles.budgetTelemetry, snapshot, { encoding: "utf8", mode: 0o600 });
     } catch (error) {
       // The parent derives tool_budget status only from this file. Pi may continue
       // after a hook error, so a stale snapshot must not let the child finish normally.
-      failClosed(`could not persist budget telemetry: ${error instanceof Error ? error.message : String(error)}`);
+      failClosed(`could not persist budget telemetry: ${errorMessage(error)}`);
       throw error;
     }
-    // Record only successful writes; changed reservations and terminal state must
-    // still be persisted synchronously at their existing event boundaries.
+    // Record only successful writes, so the event that changes a reservation or
+    // terminal state always persists it synchronously.
     lastPersistedBudget = snapshot;
   };
   const timeLimitReached = () => softDeadline !== undefined && Date.now() >= softDeadline;
@@ -327,7 +189,7 @@ export default function childGuard(
       pi.sendUserMessage(`${content}\n\nDo not call tools. Return the concise final answer as ordinary assistant text.`, { deliverAs });
     } catch (error) {
       // Tools were disabled before delivery; retain that ordering on failure.
-      invalidatePolicy(`could not request the final answer: ${error instanceof Error ? error.message : String(error)}`);
+      invalidatePolicy(`could not request the final answer: ${errorMessage(error)}`);
     }
   };
   const requestPartialAnswer = () => {
@@ -350,23 +212,20 @@ export default function childGuard(
     try {
       pi.sendUserMessage(content, { deliverAs: "steer" });
     } catch (error) {
-      failClosed(`could not send the tool budget warning: ${error instanceof Error ? error.message : String(error)}`);
+      failClosed(`could not send the tool budget warning: ${errorMessage(error)}`);
     }
   };
 
   try {
     const loaded = loadPolicy();
     policy = loaded.policy;
-    policyPath = loaded.policyPath;
-    readyPath = loadReadyPath(loaded.policyPath);
-    budgetTelemetryPath = loadBudgetTelemetryPath(loaded.policyPath);
-    stopParentLivenessMonitor = installLiveness(
-      () => cleanupPrivateRuntimeFiles(policyPath, readyPath, budgetTelemetryPath),
-    );
+    const files = loadRuntimeFiles(loaded.policyPath);
+    runtimeFiles = files;
+    installLiveness(() => cleanupPrivateRuntimeFiles(files));
     softDeadline = loadSoftDeadline();
     if (policy.capability === "web") webExtensionPath = loadWebExtensionPath();
   } catch (error) {
-    policyError = error instanceof Error ? error.message : String(error);
+    policyError = errorMessage(error);
   }
 
   pi.on("turn_end", (event) => {
@@ -405,13 +264,14 @@ export default function childGuard(
   pi.on("session_shutdown", () => {
     if (softDeadlineTimer) clearTimeout(softDeadlineTimer);
     persistBudget();
-    stopParentLivenessMonitor?.();
+    // Session shutdown can precede process exit while other handles remain.
+    // The unreferenced liveness pipe must stay armed until the process exits.
   });
 
   // Pin the effective selection at the request boundary: Pi may otherwise fuzzy-match
   // a model ID or clamp thinking when the child's registry differs from the parent's.
   const expectedSelection = process.env[MODEL_SELECTION_ENV];
-  pi.on("before_provider_request", (_event, ctx) => {
+  const requireTransmissionAllowed = (ctx: ExtensionContext) => {
     // Tool disabling alone does not prevent a provider request. Require the
     // complete startup path, including readiness publication, before transmission.
     if (!guardReady || !policy || policyError) {
@@ -420,54 +280,53 @@ export default function childGuard(
     try {
       const expected = JSON.parse(expectedSelection ?? "null") as PresetSelection | null;
       if (!expected || typeof expected.model !== "string" || typeof expected.thinking !== "string" ||
-        `${ctx.model?.provider}/${ctx.model?.id}` !== expected.model || ctx.thinkingLevel !== expected.thinking) {
+        !ctx.model || modelRef(ctx.model) !== expected.model || ctx.thinkingLevel !== expected.thinking) {
         throw new Error("Subagent model/thinking selection mismatch");
       }
       // The CLI can synthesize an unknown ID from a same-provider model. Require
       // an exact child registry entry, not just a matching effective ID.
       validatePresetSelection(expected, ctx.modelRegistry);
     } catch {
-      // Pi (through at least 1.0.0) swallows hook exceptions and continues the request. Exit
-      // synchronously instead; the parent observes failure and cleans runtime files.
+      // Pi swallows hook exceptions and continues the request (pinned by provider-guard.test.ts).
+      // Exit synchronously instead; the parent observes failure and cleans runtime files.
       process.exit(CHILD_GUARD_EXIT_CODES.modelSelection);
     }
+  };
+  pi.on("before_provider_request", (_event, ctx) => {
+    requireTransmissionAllowed(ctx);
+  });
+  // Pi sends compaction summaries without before_provider_request. The ephemeral
+  // child has no later use for a summary of a run that already answered, and the
+  // parent's hard deadline still covers it, so cancel that one. Other compactions
+  // (before a later request or for overflow recovery) keep the request checks.
+  pi.on("session_before_compact", (_event, ctx) => {
+    if (finalAnswerSeen) return { cancel: true };
+    requireTransmissionAllowed(ctx);
   });
 
   pi.on("session_start", () => {
-    if (!policy || policyError || !readyPath || !budgetTelemetryPath || (policy.capability === "web" && !webExtensionPath)) {
+    if (!policy || policyError || !runtimeFiles || (policy.capability === "web" && !webExtensionPath)) {
       pi.setActiveTools([]);
       return;
     }
     const tools = pi.getAllTools();
     const activeTools = toolsForCapability(policy.capability);
     startupExitCode = CHILD_GUARD_EXIT_CODES.toolOwnership;
-    if (policy.capability === "local") {
-      for (const name of ALLOWED_FILE_TOOLS) {
-        const tool = tools.find((candidate) => candidate.name === name);
-        if (!tool || tool.sourceInfo?.source !== "builtin") {
-          failClosed(`${name} is not owned by Pi's built-in tool set`);
-          return;
-        }
-      }
-    }
-    if (policy.capability === "web") {
-      for (const name of ALLOWED_WEB_TOOLS) {
-        const tool = tools.find((candidate) => candidate.name === name);
-        const sourcePath = canonicalSourcePath(tool?.sourceInfo?.path);
-        if (!tool || sourcePath !== webExtensionPath) {
-          failClosed(`${name} is not owned by the explicitly loaded web extension`);
-          return;
-        }
+    for (const name of activeTools) {
+      if (!ownsTool(name, tools)) {
+        const owner = policy.capability === "local" ? "Pi's built-in tool set" : "the explicitly loaded web extension";
+        failClosed(`${name} is not owned by ${owner}`);
+        return;
       }
     }
     startupExitCode = CHILD_GUARD_EXIT_CODES.readiness;
     try {
       const snapshot = JSON.stringify(budget);
-      writeFileSync(budgetTelemetryPath!, snapshot, { encoding: "utf8", mode: 0o600, flag: "wx" });
+      writeFileSync(runtimeFiles.budgetTelemetry, snapshot, { encoding: "utf8", mode: 0o600, flag: "wx" });
       lastPersistedBudget = snapshot;
-      writeFileSync(readyPath, READY_MARKER, { encoding: "utf8", mode: 0o600, flag: "wx" });
+      writeFileSync(runtimeFiles.ready, READY_MARKER, { encoding: "utf8", mode: 0o600, flag: "wx" });
     } catch (error) {
-      failClosed(`could not publish guard readiness: ${error instanceof Error ? error.message : String(error)}`);
+      failClosed(`could not publish guard readiness: ${errorMessage(error)}`);
       return;
     }
     pi.setActiveTools(activeTools);
@@ -506,10 +365,9 @@ export default function childGuard(
       permittedToolCallIds.add(event.toolCallId);
       persistBudget();
     };
+    const policyUnavailable = () => block(`Subagent policy is unavailable: ${policyError ?? "unknown error"}`, true);
 
-    if (!policy || (policy.capability === "web" && !webExtensionPath)) {
-      return block(`Subagent policy is unavailable: ${policyError ?? "unknown error"}`, true);
-    }
+    if (!policy || (policy.capability === "web" && !webExtensionPath)) return policyUnavailable();
     const deadlineExpired = timeLimitReached();
     if (deadlineExpired) requestPartialAnswer();
     if (deadlineExpired || finalizationRequested) {
@@ -524,26 +382,22 @@ export default function childGuard(
       return block(`Tool ${event.toolName} is not allowed in the subagent. Use an available tool or return the final answer`);
     }
 
-    const tool = pi.getAllTools().find((candidate) => candidate.name === event.toolName);
+    if (!ownsTool(event.toolName, pi.getAllTools())) {
+      return block(`Tool ${event.toolName} ownership changed`, true);
+    }
     if (FILE_TOOLS.has(event.toolName)) {
-      if (tool?.sourceInfo?.source !== "builtin") {
-        return block(`Tool ${event.toolName} ownership changed`, true);
-      }
       const path = requestedPath(event.toolName, event.input);
       if (path === undefined) return block(`${event.toolName} requires a path`);
       try {
         (event.input as Record<string, unknown>).path = await authorizeReadPath(policy, path);
       } catch (error) {
-        return block(error instanceof Error ? error.message : String(error));
+        return block(errorMessage(error));
       }
       permit();
       return;
     }
 
     if (WEB_TOOLS.has(event.toolName)) {
-      if (canonicalSourcePath(tool?.sourceInfo?.path) !== webExtensionPath) {
-        return block(`Tool ${event.toolName} ownership changed`, true);
-      }
       const input = event.input && typeof event.input === "object" ? event.input as Record<string, unknown> : {};
       const prepared = prepareWebCall(event.toolName, input);
       if ("violation" in prepared) {
@@ -570,7 +424,7 @@ export default function childGuard(
           sendSoftBudgetNotice(
             `The child lifetime web ${resource} soft limit has been reached: ${reserved}/${hard} reserved, ${hard - reserved} remaining. Use further calls only for essential missing evidence, then return the concise final answer.`,
           );
-          if (!policy) return block(`Subagent policy is unavailable: ${policyError ?? "unknown error"}`, true);
+          if (!policy) return policyUnavailable();
         }
       }
       permit();

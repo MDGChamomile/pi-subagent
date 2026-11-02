@@ -5,7 +5,7 @@ import { mkdtemp, mkdir, readFile, realpath, rm, symlink, writeFile } from "node
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { describe, test, type TestContext } from "node:test";
-import childGuard, { prepareWebCall } from "./child-guard.ts";
+import childGuard from "./child-guard.ts";
 import { ChildJsonCollector } from "./child-stream.ts";
 import {
   ALLOWED_FILE_TOOLS,
@@ -15,10 +15,14 @@ import {
   POLICY_ENV,
   READY_ENV,
   READY_MARKER,
+  runtimeFilesIn,
   SOFT_DEADLINE_ENV,
   WEB_EXTENSION_ENV,
 } from "./shared.ts";
 import { buildChildPolicy } from "./path-policy.ts";
+import { readBudgetTelemetry } from "./budget-telemetry.ts";
+import { setEnv } from "./test-support.ts";
+import { prepareWebCall } from "./web-arguments.ts";
 
 type Handler = (...args: any[]) => any;
 
@@ -33,23 +37,18 @@ async function createHarness(
   await writeFile(join(workspace, "allowed", "inside.txt"), "inside\n");
   await writeFile(join(workspace, "outside.txt"), "outside\n");
   const policy = await buildChildPolicy(workspace, scope, capability);
-  const policyFile = join(root, "policy.json");
-  await writeFile(policyFile, JSON.stringify(policy), { mode: 0o600 });
+  const files = runtimeFilesIn(root);
+  await writeFile(files.policy, JSON.stringify(policy), { mode: 0o600 });
   const webExtension = join(root, "web-extension.ts");
-  const readyFile = join(root, "guard.ready");
-  const budgetTelemetryFile = join(root, "budget-telemetry.json");
   await writeFile(webExtension, "export default () => {};\n", { mode: 0o600 });
 
-  const previousPolicy = process.env[POLICY_ENV];
-  const previousReady = process.env[READY_ENV];
-  const previousBudgetTelemetry = process.env[BUDGET_TELEMETRY_ENV];
-  const previousWeb = process.env[WEB_EXTENSION_ENV];
-  const previousDeadline = process.env[SOFT_DEADLINE_ENV];
-  process.env[POLICY_ENV] = policyFile;
-  process.env[READY_ENV] = readyFile;
-  process.env[BUDGET_TELEMETRY_ENV] = budgetTelemetryFile;
-  process.env[WEB_EXTENSION_ENV] = webExtension;
-  process.env[SOFT_DEADLINE_ENV] = String(softDeadline);
+  const restoreEnv = setEnv({
+    [POLICY_ENV]: files.policy,
+    [READY_ENV]: files.ready,
+    [BUDGET_TELEMETRY_ENV]: files.budgetTelemetry,
+    [WEB_EXTENSION_ENV]: webExtension,
+    [SOFT_DEADLINE_ENV]: String(softDeadline),
+  });
 
   const handlers = new Map<string, Handler[]>();
   const sentUserMessages: Array<{ content: string; options: unknown }> = [];
@@ -102,7 +101,7 @@ async function createHarness(
   return {
     root,
     workspace,
-    readyFile,
+    readyFile: files.ready,
     tools,
     emit,
     callTool,
@@ -111,23 +110,45 @@ async function createHarness(
     getLifecycle: () => lifecycle,
     getSentUserMessages: () => sentUserMessages,
     failUserMessages: () => { messageError = new Error("synthetic notice failure"); },
-    getBudgetTelemetry: async () => JSON.parse(await readFile(budgetTelemetryFile, "utf8")) as Record<string, unknown>,
+    getBudgetTelemetry: async () => JSON.parse(await readFile(files.budgetTelemetry, "utf8")) as Record<string, unknown>,
     async cleanup() {
       await emit("session_shutdown");
-      if (previousPolicy === undefined) delete process.env[POLICY_ENV];
-      else process.env[POLICY_ENV] = previousPolicy;
-      if (previousReady === undefined) delete process.env[READY_ENV];
-      else process.env[READY_ENV] = previousReady;
-      if (previousBudgetTelemetry === undefined) delete process.env[BUDGET_TELEMETRY_ENV];
-      else process.env[BUDGET_TELEMETRY_ENV] = previousBudgetTelemetry;
-      if (previousWeb === undefined) delete process.env[WEB_EXTENSION_ENV];
-      else process.env[WEB_EXTENSION_ENV] = previousWeb;
-      if (previousDeadline === undefined) delete process.env[SOFT_DEADLINE_ENV];
-      else process.env[SOFT_DEADLINE_ENV] = previousDeadline;
+      restoreEnv();
       await rm(root, { recursive: true, force: true });
     },
   };
 }
+
+test("parent reads the guard's initial, admitted, denied, and exhausted telemetry unchanged", async () => {
+  const harness = await createHarness(["allowed"], "local");
+  const telemetryFile = runtimeFilesIn(harness.root).budgetTelemetry;
+  try {
+    await harness.emit("session_start");
+    const initial = {
+      version: 1, toolCallsAttempted: 0, toolCallsExecuted: 0, deniedCalls: 0,
+      queryCount: 0, fetchTargetCount: 0, softLimitReached: false, hardLimitReached: false,
+    };
+    assert.deepEqual(await readBudgetTelemetry(telemetryFile), initial);
+    await harness.callTool({ toolName: "read", toolCallId: "admitted", input: { path: "allowed/inside.txt" } });
+    assert.deepEqual(await readBudgetTelemetry(telemetryFile), {
+      ...initial, toolCallsAttempted: 1, toolCallsExecuted: 1,
+    });
+    await harness.callTool({ toolName: "read", toolCallId: "denied", input: { path: "outside.txt" } });
+    assert.deepEqual(await readBudgetTelemetry(telemetryFile), {
+      ...initial, toolCallsAttempted: 2, toolCallsExecuted: 1, deniedCalls: 1,
+    });
+    const hard = LIFETIME_TOOL_CALL_LIMITS.local.hard;
+    for (let attempt = 3; attempt <= hard + 1; attempt++) {
+      await harness.callTool({ toolName: "bash", toolCallId: `denied-${attempt}`, input: {} });
+    }
+    assert.deepEqual(await readBudgetTelemetry(telemetryFile), {
+      ...initial, toolCallsAttempted: hard + 1, toolCallsExecuted: 1, deniedCalls: hard,
+      softLimitReached: true, hardLimitReached: true, partialReason: "tool_budget",
+    });
+  } finally {
+    await harness.cleanup();
+  }
+});
 
 function trackBudgetWrites(t: TestContext) {
   const writes: Array<Record<string, unknown>> = [];
@@ -327,6 +348,14 @@ describe("pi-subagent child guard", () => {
     }
   });
 
+  test("rejects non-web and prototype-named tools as unsupported web calls", () => {
+    for (const tool of ["read", "constructor", "__proto__", "toString", "hasOwnProperty"]) {
+      assert.deepEqual(prepareWebCall(tool, { url: "https://example.com" }), {
+        violation: `${tool} is not supported in the subagent`,
+      });
+    }
+  });
+
   test("activates only the owned web tool allowlist", async () => {
     const harness = await createHarness([], "web");
     try {
@@ -340,6 +369,25 @@ describe("pi-subagent child guard", () => {
         toolName: "web_search",
         toolCallId: "changed",
         input: { query: "test" },
+      });
+      assert.equal(changedOwner.block, true);
+      assert.equal(changedOwner.terminate, true);
+      assert.match(changedOwner.reason, /ownership changed/);
+    } finally {
+      await harness.cleanup();
+    }
+  });
+
+  test("terminates when a local tool stops being a Pi built-in after startup", async () => {
+    const harness = await createHarness(["allowed"]);
+    try {
+      await harness.emit("session_start");
+      assert.deepEqual(harness.getActiveTools(), [...ALLOWED_FILE_TOOLS]);
+      harness.tools.find((tool) => tool.name === "read")!.sourceInfo.source = "local";
+      const changedOwner = await harness.emit("tool_call", {
+        toolName: "read",
+        toolCallId: "changed",
+        input: { path: "allowed/inside.txt" },
       });
       assert.equal(changedOwner.block, true);
       assert.equal(changedOwner.terminate, true);
@@ -683,7 +731,7 @@ describe("pi-subagent child guard", () => {
       const after = await harness.getBudgetTelemetry();
       assert.equal(after.queryCount, 25);
       assert.equal(after.fetchTargetCount, 39);
-      assert.equal(after.softLimitReached, false); // The existing flag tracks tool attempts only.
+      assert.equal(after.softLimitReached, false); // Tracks tool attempts only, not resource notices.
       assert.equal(after.hardLimitReached, false);
       assert.equal(after.partialReason, undefined);
       assert.deepEqual(Object.keys(after).sort(), Object.keys(before).sort());

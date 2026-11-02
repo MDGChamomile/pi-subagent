@@ -6,10 +6,8 @@ import { fileURLToPath } from "node:url";
 import { test } from "node:test";
 import type { AgentSession } from "@earendil-works/pi-coding-agent";
 import { ALLOWED_WEB_TOOLS, TOOL_NAME } from "./shared.ts";
+import { createOfflineSession } from "./test-support.ts";
 import { resolveWebExtensionPath } from "./web-provenance.ts";
-
-// The configured test loader selects the bundled SDK when available.
-import { createAgentSession, DefaultResourceLoader, ModelRuntime, SessionManager, SettingsManager } from "@earendil-works/pi-coding-agent";
 
 for (const filtered of [false, true]) {
   test(`real Pi web smoke registry: CLI allowlist=${filtered}`, { timeout: 15_000 }, async () => {
@@ -28,24 +26,11 @@ for (const filtered of [false, true]) {
           async execute() { throw new Error("No web tool may execute in this test"); }
         });
       }`);
-      const settingsManager = SettingsManager.inMemory({ compaction: { enabled: false }, retry: { enabled: false } });
-      const resourceLoader = new DefaultResourceLoader({
-        cwd: root, agentDir: root, settingsManager,
-        noExtensions: true, noSkills: true, noPromptTemplates: true, noThemes: true, noContextFiles: true,
+      session = await createOfflineSession({
+        root, systemPrompt: "Offline web registry test.", tools: filtered ? [TOOL_NAME] : undefined,
         additionalExtensionPaths: [fileURLToPath(new URL("./index.ts", import.meta.url)), entry,
           fileURLToPath(new URL("./scripts/web-smoke-parent.ts", import.meta.url))],
-        systemPrompt: "Offline web registry test.",
       });
-      await resourceLoader.reload();
-      assert.deepEqual(resourceLoader.getExtensions().errors, []);
-      const modelRuntime = await ModelRuntime.create({
-        authPath: join(root, "auth.json"), modelsPath: join(root, "models.json"),
-        modelsStorePath: join(root, "models-store.json"), allowModelNetwork: false,
-      });
-      ({ session } = await createAgentSession({
-        cwd: root, agentDir: root, resourceLoader, modelRuntime, settingsManager,
-        sessionManager: SessionManager.inMemory(root), ...(filtered ? { tools: [TOOL_NAME] } : {}),
-      }));
       const errors: unknown[] = [];
       await session.bindExtensions({ onError: (error) => { errors.push(error); } });
       assert.deepEqual(errors, []);

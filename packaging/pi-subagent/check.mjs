@@ -44,6 +44,30 @@ const futureExtensionReadme = renderExtensionReadme(sourceExtensionReadme, futur
 assert.equal(renderExtensionReadme(futureExtensionReadme, futureVersion), futureExtensionReadme);
 assert.throws(() => renderExtensionReadme(sourceExtensionReadme, "1.0.0-beta.1"), /stable release version/);
 
+// Compare prose independently of rebased inline link destinations. Normalizing
+// release versions also permits releaseUrls' documented changes to literal URLs;
+// stripping generated prefixes would corrupt already-absolute source URLs.
+const readmeBody = (markdown) => releaseUrls(markdown, futureVersion)
+  .replace(/(\]\()[^\s)]+(\))/g, "$1$2");
+const checkReadmeBody = (source, rendered) => assert.equal(
+  readmeBody(rendered), readmeBody(source), "package README must preserve canonical prose",
+);
+const relativeMarkdownTargets = (markdown) => [...markdown.matchAll(/\[[^\]]*\]\(([^)]+)\)/g)]
+  .map((match) => match[1])
+  .filter((target) => !/^(?:[a-z][a-z\d+.-]*:|\/\/|#)/i.test(target))
+  .map((target) => target.split("#", 1)[0]).filter(Boolean);
+const absoluteLinks = `\n[Pinned](${rawRoot}/v${maintainedManifest.version}/README.md)\nLiteral URL: ${rawRoot}/v${maintainedManifest.version}/README.md\n[Mail](mailto:help@example.com)\n`;
+for (const [source, render] of [[sourceReadme, renderPackageReadme], [sourceExtensionReadme, renderExtensionReadme]]) {
+  const fixture = source + absoluteLinks;
+  const rendered = render(fixture, futureVersion);
+  checkReadmeBody(fixture, rendered);
+  assert.throws(() => checkReadmeBody(fixture, rendered.replace("Literal URL:", "Changed prose:")), /preserve canonical prose/);
+}
+assert.deepEqual(relativeMarkdownTargets(
+  '[Mail](mailto:help@example.com) [Remote](https://example.com) [Protocol](//example.com/path) [Here](#anchor) [Local](README.md#anchor)',
+), ["README.md"]);
+assert.deepEqual(relativeMarkdownTargets('[Missing](missing.md)'), ["missing.md"]);
+
 await buildPackage();
 assert.equal(await readFile(join(packageRoot, "manifest.json"), "utf8"), maintainedManifestText);
 assert.equal(await readFile(join(sourceRoot, "README.md"), "utf8"), sourceReadme);
@@ -58,23 +82,11 @@ assert.equal(manifest.pi.image, `${rawRoot}/v${manifest.version}/extensions/pi-s
 
 const topLevelReadme = await readFile(join(stagingDirectory, "README.md"), "utf8");
 assert.equal(topLevelReadme, renderPackageReadme(sourceReadme, manifest.version));
-assert.equal(
-  topLevelReadme
-    .replaceAll(`${rawRoot}/v${manifest.version}/`, "")
-    .replaceAll(`https://github.com/MDGChamomile/pi-subagent/blob/v${manifest.version}/`, ""),
-  sourceReadme,
-  "package README must preserve the entire canonical body, changing only link destinations",
-);
+checkReadmeBody(sourceReadme, topLevelReadme);
 
 const bundledExtensionReadme = await readFile(join(stagingDirectory, extensionReadmePath), "utf8");
 assert.equal(bundledExtensionReadme, renderExtensionReadme(sourceExtensionReadme, manifest.version));
-assert.equal(
-  bundledExtensionReadme
-    .replaceAll(`${rawRoot}/v${manifest.version}/extensions/pi-subagent/`, "")
-    .replaceAll(`https://github.com/MDGChamomile/pi-subagent/blob/v${manifest.version}/extensions/pi-subagent/DEVELOPMENT.md`, "DEVELOPMENT.md"),
-  sourceExtensionReadme,
-  "bundled extension guide must preserve its body, rebasing only assets and the source-only development guide",
-);
+checkReadmeBody(sourceExtensionReadme, bundledExtensionReadme);
 for (const [asset, readmes] of [
   ["pi-subagent-automatic.gif", [topLevelReadme]],
   ["pi-subagent-architecture.png", [topLevelReadme, bundledExtensionReadme]],
@@ -87,10 +99,20 @@ for (const [asset, readmes] of [
   }
 }
 
-// Documentation must state the runtime's web minimum, not a separately maintained copy.
+// Documentation must state the pinned Pi minimum and the runtime's web minimum,
+// not separately maintained copies.
+const devDependencies = JSON.parse(
+  await readFile(join(sourceRoot, "extensions/pi-subagent/package.json"), "utf8"),
+).devDependencies;
+const piMinimum = devDependencies["@earendil-works/pi-coding-agent"];
+assert.match(piMinimum, /^\d+\.\d+\.\d+$/, "development Pi dependency must pin the exact minimum");
+for (const [name, version] of Object.entries(devDependencies)) {
+  if (name.startsWith("@earendil-works/pi-")) assert.equal(version, piMinimum, `${name} must pin the Pi minimum`);
+}
+const piMinimumPattern = new RegExp(`Pi ${piMinimum.replaceAll(".", "\\.")} or later`);
 const webMinimum = MIN_WEB_EXTENSION_VERSION.replaceAll(".", "\\.");
 const canonicalRequirementPatterns = [
-  ["minimum Pi version", /Pi 1\.0\.0 or later/],
+  ["minimum Pi version", piMinimumPattern],
   ["provider authentication requirement", /authentication for the configured child provider/],
   ["minimum web extension version", new RegExp(`pi-web-access\` v${webMinimum} or later`)],
   ["npm installation command", /pi install npm:@mdgchamomile\/pi-subagent/],
@@ -100,7 +122,7 @@ for (const [description, pattern] of canonicalRequirementPatterns) {
 }
 // The model-loaded workflow still declares compatibility; human guides link to the README.
 const skill = await readFile(join(sourceRoot, "skills/pi-subagent/SKILL.md"), "utf8");
-assert.match(skill, /Pi 1\.0\.0 or later/, "SKILL.md has an outdated Pi minimum");
+assert.match(skill, piMinimumPattern, "SKILL.md has an outdated Pi minimum");
 assert.match(skill, new RegExp(`pi-web-access(?:\`)? v${webMinimum} or later`), "SKILL.md has an outdated web minimum");
 
 const presetRows = (markdown) => {
@@ -183,19 +205,10 @@ assert.deepEqual(actualFiles, expectedFiles, "npm tarball contains an unexpected
 assert.equal(actualFiles.some((path) => path.startsWith("extensions/pi-subagent/assets/")), false,
   "repository presentation assets must not be bundled in the npm package");
 
-for (const [markdownPath, root] of [
-  ["README.md", sourceRoot],
-  ["extensions/pi-subagent/README.md", sourceRoot],
-  ["extensions/pi-subagent/DEVELOPMENT.md", sourceRoot],
-  ...actualFiles.filter((path) => path.endsWith(".md")).map((path) => [path, stagingDirectory]),
-]) {
-  const markdown = await readFile(join(root, markdownPath), "utf8");
-  for (const match of markdown.matchAll(/\[[^\]]*\]\(([^)]+)\)/g)) {
-    const target = match[1];
-    if (target.includes("://") || target.startsWith("#")) continue;
-    const relativePath = target.split("#", 1)[0];
-    if (!relativePath) continue;
-    await stat(join(root, dirname(markdownPath), relativePath));
+for (const markdownPath of actualFiles.filter((path) => path.endsWith(".md"))) {
+  const markdown = await readFile(join(stagingDirectory, markdownPath), "utf8");
+  for (const relativePath of relativeMarkdownTargets(markdown)) {
+    await stat(join(stagingDirectory, dirname(markdownPath), relativePath));
   }
 }
 
@@ -223,8 +236,8 @@ try {
 
   // A body-only source edit must propagate through the real builder without a
   // second maintained README, and the builder must not overwrite its input.
-  const editedReadme = `${sourceReadme}\nCanonical body fixture.\n`;
-  const editedExtensionReadme = `${sourceExtensionReadme}\nExtension guide body fixture.\n`;
+  const editedReadme = `${sourceReadme}\nCanonical body fixture.\n${absoluteLinks}`;
+  const editedExtensionReadme = `${sourceExtensionReadme}\nExtension guide body fixture.\n${absoluteLinks}`;
   await writeFile(join(fixtureRoot, "README.md"), editedReadme);
   await writeFile(join(fixtureRoot, extensionReadmePath), editedExtensionReadme);
   const rebuilt = spawnSync(process.execPath, [join(fixturePackage, "build.mjs")], { encoding: "utf8", timeout: 30_000 });

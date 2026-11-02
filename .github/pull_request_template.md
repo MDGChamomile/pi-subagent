@@ -1,8 +1,11 @@
 ## Summary
-<!-- Explain why the change is needed and what changes. -->
+
+<!-- What changed, and why? -->
 
 ## Verification
-<!-- List checks run and results, and note any unverified scope. Use N/A where not applicable. -->
+
+<!-- Checks run and results; note unverified areas and relevant environment details. -->
 
 ## Risk
-<!-- Describe the impact, how to revert or recover, and any effects that remain after reverting. Use N/A where not applicable. -->
+
+<!-- Affected behavior, compatibility or side effects, how to revert or recover, and any remaining effects. Use N/A where appropriate. -->

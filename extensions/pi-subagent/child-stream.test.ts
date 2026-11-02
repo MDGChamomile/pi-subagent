@@ -1,6 +1,6 @@
 import assert from "node:assert/strict";
 import { describe, test } from "node:test";
-import { MAX_JSON_LINE_BYTES, MAX_OBSERVATION_COUNT, MAX_PARENT_ERROR_BYTES } from "./shared.ts";
+import { ALLOWED_FILE_TOOLS, ALLOWED_WEB_TOOLS, MAX_JSON_LINE_BYTES, MAX_OBSERVATION_COUNT, MAX_PARENT_ERROR_BYTES } from "./shared.ts";
 import { boundedParentError } from "./diagnostics.ts";
 import { ChildJsonCollector, emptyUsage } from "./child-stream.ts";
 
@@ -270,6 +270,43 @@ describe("child JSON stream collector", () => {
     assert.equal(withBreakdown.snapshot().usage.totalTokens, 40);
   });
 
+  test("adds compaction summary usage, which Pi reports only on compaction_end", () => {
+    const collector = new ChildJsonCollector();
+    collector.push(`${assistantEvent("intermediate")}\n`);
+    collector.push(`${JSON.stringify({
+      type: "compaction_end",
+      reason: "overflow",
+      result: {
+        summary: "private compaction summary",
+        firstKeptEntryId: "entry",
+        tokensBefore: 1000,
+        details: { readFiles: ["private.txt"] },
+        usage: {
+          input: 100,
+          output: 20,
+          cacheRead: 5,
+          cacheWrite: 0,
+          totalTokens: 125,
+          cost: { input: 1, output: 2, cacheRead: 0, cacheWrite: 0, total: 3 },
+        },
+      },
+      aborted: false,
+      willRetry: true,
+    })}\n`);
+    // Pi omits the result of a failed or cancelled compaction.
+    collector.push('{"type":"compaction_end","reason":"threshold","aborted":true,"willRetry":false}\n');
+    collector.push(`${assistantEvent("Final answer.")}\n`);
+    collector.finish();
+    const result = collector.snapshot();
+    assert.equal(result.protocolError, undefined);
+    assert.equal(result.finalOutput, "Final answer.");
+    assert.equal(result.assistantMessageCount, 2);
+    assert.equal(result.usage.input, 120);
+    assert.equal(result.usage.totalTokens, 157);
+    assert.equal(result.usage.cost.total, 23);
+    assert.equal(JSON.stringify(result).includes("private"), false);
+  });
+
   test("accepts ordinary assistant text and requires it to be the last assistant message", () => {
     const accepted = new ChildJsonCollector();
     accepted.push(`${assistantEvent("intermediate")}\n${assistantEvent("Final conclusion with evidence.")}\n`);
@@ -368,7 +405,7 @@ describe("child JSON stream collector", () => {
     }
   });
 
-  test("fails closed on malformed or oversized message_end records", () => {
+  test("fails closed on malformed or oversized message_end and compaction_end records", () => {
     const malformed = new ChildJsonCollector();
     malformed.push('{"type":"message_end",broken}\n');
     malformed.finish();
@@ -378,6 +415,11 @@ describe("child JSON stream collector", () => {
     oversized.push(`{"type":"message_end","message":{"role":"assistant","content":[{"type":"text","text":"${"x".repeat(MAX_JSON_LINE_BYTES)}"}]}}\n`);
     oversized.finish();
     assert.match(oversized.snapshot().protocolError ?? "", /message_end record exceeded/);
+
+    const oversizedCompaction = new ChildJsonCollector();
+    oversizedCompaction.push(`{"type":"compaction_end","result":{"summary":"${"x".repeat(MAX_JSON_LINE_BYTES)}"}}\n`);
+    oversizedCompaction.finish();
+    assert.match(oversizedCompaction.snapshot().protocolError ?? "", /compaction_end record exceeded/);
   });
 
   test("tracks tool errors without retaining ordinary tool output", () => {
@@ -391,6 +433,25 @@ describe("child JSON stream collector", () => {
     assert.equal(result.lastToolError, "read");
     assert.equal(result.finalOutput, "Supported final answer.");
     assert.doesNotMatch(result.finalOutput, /private/);
+  });
+
+  test("retains only allowlisted names for the most recent tool error", () => {
+    for (const toolName of [...ALLOWED_FILE_TOOLS, ...ALLOWED_WEB_TOOLS]) {
+      const collector = new ChildJsonCollector();
+      collector.push(`${toolResultEvent(toolName, "private result", { isError: true })}\n`);
+      assert.equal(collector.snapshot().lastToolError, toolName);
+    }
+    for (const toolName of ["private-tool-name", "read-private", "read\u001b[31m", "read\u202e", "private".repeat(10_000), "", null, 42, {}, undefined]) {
+      const collector = new ChildJsonCollector();
+      collector.push(`${toolResultEvent("read", "private result", { isError: true })}\n`);
+      collector.push(`${toolResultEvent("read", "private result", { toolName, isError: true })}\n`);
+      collector.finish();
+      const snapshot = collector.snapshot();
+      assert.equal(snapshot.toolErrorCount, 2);
+      assert.equal(snapshot.lastToolError, "unknown");
+      assert.equal(snapshot.usage.totalTokens, 12);
+      assert.doesNotMatch(JSON.stringify(snapshot), /private/);
+    }
   });
 
   test("clears stale provider errors on each subsequent assistant message", () => {

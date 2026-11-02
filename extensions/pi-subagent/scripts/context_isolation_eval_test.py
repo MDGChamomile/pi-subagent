@@ -54,6 +54,12 @@ def smoke_messages(capability="local", preset=PRESET, selection=None):
     ]
 
 
+def context_messages():
+    messages = smoke_messages()
+    messages[0]["content"][0]["arguments"]["scope"] = ["fixture"]
+    return messages
+
+
 def wire(messages):
     return "\n".join(json.dumps({"type": "message_end", "message": row}, ensure_ascii=False) for row in messages)
 
@@ -67,8 +73,10 @@ def check(messages=None, observed=None, capability="local"):
 class RuntimeObservationTests(unittest.TestCase):
     def test_runtime_catalog_is_loaded_from_typescript(self):
         presets = load_presets()
-        self.assertEqual(presets[PRESET], SELECTION)
-        self.assertIn("review-standard", presets)
+        self.assertEqual(list(presets), ["lookup-standard", "analysis-standard", "review-standard"])
+        for selection in presets.values():
+            self.assertEqual(set(selection), {"model", "thinking"})
+            self.assertRegex(selection["model"], r"^[^/\s]+/\S+$")
 
     def test_lf_framing_preserves_unicode_line_and_paragraph_separators(self):
         item = {"text": "one\u2028two\u2029three"}
@@ -144,7 +152,7 @@ class ResultEnvelopeTests(unittest.TestCase):
 
     def test_context_scores_only_decoded_child_answer_and_never_parent_fallback(self):
         case = evaluator.EvalCase("fixture", "lookup", "Synthetic task", (("complete",),))
-        messages = smoke_messages()
+        messages = context_messages()
         set_answer(messages, "Evidence fixture/incident.log:1\nto=functions.read")
         with patch.object(evaluator, "load_presets", return_value={PRESET: SELECTION}), \
                 patch.object(evaluator, "observe_run", return_value=(
@@ -165,6 +173,124 @@ class ResultEnvelopeTests(unittest.TestCase):
         self.assertFalse(row["result_contract_verified"])
         self.assertEqual(row["expected_facts_matched"], 0)
         self.assertFalse(row["has_evidence_location"])
+
+
+class ContextEvaluationTests(unittest.TestCase):
+    def run_context(self, messages, arm):
+        case = evaluator.EvalCase("fixture", "lookup", "Synthetic task", (("fact-one",), ("fact-two",)))
+        with patch.object(evaluator, "load_presets", return_value={PRESET: SELECTION}), \
+                patch.object(evaluator, "observe_run", return_value=(
+                    SimpleNamespace(stdout=wire(messages), stderr="", returncode=0), observations())), \
+                patch.object(evaluator.time, "monotonic", side_effect=[10.0, 10.125]):
+            return evaluator.run_pi(cwd=Path("."), main_model="offline/parent", main_thinking="off",
+                                    case=case, arm=arm, timeout_seconds=1)
+
+    def test_direct_metrics_and_scoring_are_preserved(self):
+        answer = "fact-one fixture/incident.log:2"
+        messages = [
+            {"role": "assistant", "usage": {"input": 10, "cacheRead": 5, "cacheWrite": 2},
+             "content": [{"type": "toolCall", "name": "read"}]},
+            {"role": "toolResult", "toolName": "read", "content": [{"type": "text", "text": "가"}]},
+            {"role": "assistant", "usage": {"input": "ignored", "cacheRead": 8, "cacheWrite": 2},
+             "content": [{"type": "text", "text": answer}]},
+        ]
+        self.assertEqual(self.run_context(messages, "direct"), {
+            "case": "fixture", "profile": "lookup", "arm": "direct", "child_preset": None,
+            "child_model": None, "child_thinking": None, "child_status": None, "child_usage": None,
+            "runtime_checks": {}, "result_contract_verified": True, "runtime_configuration_verified": True,
+            "delegation_checks": {"no_subagent_call_or_result": True}, "delegation_contract_verified": True,
+            "duration_ms": 125, "max_parent_prompt_tokens": 17, "parent_tool_result_bytes": 3,
+            "parent_investigative_tool_result_bytes": 3, "parent_investigative_calls": 1,
+            "post_subagent_investigative_calls": 0, "result_bytes": 0,
+            "final_bytes": len(answer.encode("utf-8")), "expected_facts_matched": 1,
+            "expected_facts_total": 2, "fact_recall": 0.5, "has_evidence_location": True,
+            "has_raw_tool_syntax": False, "subagent_result_received": False, "result_text": "",
+        })
+
+    def test_delegated_metrics_use_child_answer_and_count_followup_investigation(self):
+        answer = "FACT_one; fact-two fixture/incident.log:1"
+        messages = context_messages()
+        set_answer(messages, answer)
+        body = messages[1]["content"][0]["text"]
+        messages[0]["usage"] = {"input": 10, "cacheRead": 3, "cacheWrite": 2}
+        messages.extend([
+            {"role": "assistant", "usage": {"input": 20}, "content": [{"type": "toolCall", "name": "grep"}]},
+            {"role": "toolResult", "toolName": "grep", "content": [{"type": "text", "text": "after 한"}]},
+            {"role": "assistant", "usage": {"input": 30, "cacheRead": 4, "cacheWrite": 1},
+             "content": [{"type": "text", "text": "parent-only"}]},
+        ])
+        self.assertEqual(self.run_context(messages, "subagent"), {
+            "case": "fixture", "profile": "lookup", "arm": "subagent", "child_preset": PRESET,
+            "child_model": SELECTION["model"], "child_thinking": SELECTION["thinking"],
+            "child_status": "complete", "child_usage": {"totalTokens": 42},
+            "runtime_checks": {"observed_child_requests": True, "effective_child_model": True,
+                               "effective_child_thinking": True, "wire_child_model": True,
+                               "wire_child_thinking": True, "response_child_model": True},
+            "result_contract_verified": True, "runtime_configuration_verified": True,
+            "delegation_checks": {"exactly_one_call": True, "requested_preset_and_scope": True,
+                                  "exactly_one_result": True, "no_tool_error": True,
+                                  "reported_preset": True, "reported_capability": True},
+            "delegation_contract_verified": True,
+            "duration_ms": 125, "max_parent_prompt_tokens": 35,
+            "parent_tool_result_bytes": len(body.encode("utf-8")) + 9,
+            "parent_investigative_tool_result_bytes": 9, "parent_investigative_calls": 1,
+            "post_subagent_investigative_calls": 1, "result_bytes": len(body.encode("utf-8")),
+            "final_bytes": 11, "expected_facts_matched": 2, "expected_facts_total": 2,
+            "fact_recall": 1.0, "has_evidence_location": True, "has_raw_tool_syntax": False,
+            "subagent_result_received": True, "result_text": body,
+        })
+
+    def test_nonzero_process_exit_preserves_diagnostic_before_evaluation(self):
+        case = evaluator.EvalCase("fixture", "lookup", "Synthetic task", (("fact",),))
+        with patch.object(evaluator, "load_presets", return_value={PRESET: SELECTION}), \
+                patch.object(evaluator, "observe_run", return_value=(
+                    SimpleNamespace(stdout="not JSON", stderr=" first\n  second ", returncode=7), [])), \
+                self.assertRaisesRegex(RuntimeError, "^Pi direct arm exited with 7: first second$"):
+            evaluator.run_pi(cwd=Path("."), main_model="offline/parent", main_thinking="off",
+                             case=case, arm="direct", timeout_seconds=1)
+
+
+    def test_context_rejects_missing_or_duplicate_calls_results_and_errors(self):
+        valid = context_messages()
+        invalid = [valid[1:], valid[:1], valid + [copy.deepcopy(valid[0])],
+                   valid + [copy.deepcopy(valid[1])],
+                   [{**valid[1], "isError": True}, *valid]]
+        for messages in invalid:
+            with self.subTest(messages=messages):
+                row = self.run_context(messages, "subagent")
+                self.assertFalse(row.get("delegation_contract_verified", True))
+        self.assertTrue(self.run_context(valid, "subagent")["delegation_contract_verified"])
+
+    def test_context_rejects_wrong_or_malformed_request_and_reported_selection(self):
+        for arguments in (None, 7, True, "invalid", ["invalid"], {},
+                          {"capability": "local", "preset": PRESET, "scope": ["."]},
+                          {"capability": "web", "preset": PRESET, "scope": []},
+                          {"capability": "local", "preset": "review-standard", "scope": ["fixture"]}):
+            with self.subTest(arguments=arguments):
+                messages = context_messages()
+                messages[0]["content"][0]["arguments"] = arguments
+                self.assertFalse(self.run_context(messages, "subagent").get("delegation_contract_verified", True))
+        for key, wrong in [("preset", None), ("preset", "review-standard"), ("capability", "web")]:
+            messages = context_messages()
+            messages[1]["details"][key] = wrong
+            self.assertFalse(self.run_context(messages, "subagent").get("delegation_contract_verified", True))
+
+    def test_direct_arm_rejects_any_delegation_call_or_result(self):
+        valid = context_messages()
+        for messages in (valid, valid[:1], valid[1:]):
+            self.assertFalse(self.run_context(messages, "direct").get("delegation_contract_verified", True))
+
+    def test_context_exit_code_requires_the_delegation_contract(self):
+        args = argparse.Namespace(mode="context", main_model="offline/parent", main_thinking="off",
+                                  repetitions=1, case="lookup", include_results=True, timeout_seconds=1)
+        direct = self.run_context([], "direct")
+        valid = context_messages()
+        for messages, expected in [(valid, 0), (valid + [copy.deepcopy(valid[0])], 1)]:
+            delegated = self.run_context(messages, "subagent")
+            with patch.object(evaluator, "parse_args", return_value=args), \
+                    patch.object(evaluator, "run_pi", side_effect=[direct, delegated]), \
+                    redirect_stdout(io.StringIO()):
+                self.assertEqual(evaluator.main(), expected)
 
 
 class PortableWebSmokeTests(unittest.TestCase):
@@ -255,6 +381,13 @@ class SmokeContractTests(unittest.TestCase):
             with self.subTest(key=key):
                 messages = smoke_messages()
                 messages[0]["content"][0]["arguments"][key] = wrong
+                self.assertEqual(check(messages)["status"], "fail")
+
+    def test_malformed_call_arguments_fail_without_crashing(self):
+        for arguments in (None, 7, True, "invalid", ["invalid"]):
+            with self.subTest(arguments=arguments):
+                messages = smoke_messages()
+                messages[0]["content"][0]["arguments"] = arguments
                 self.assertEqual(check(messages)["status"], "fail")
 
     def test_rejects_duplicate_calls_and_results(self):

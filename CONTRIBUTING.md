@@ -12,12 +12,11 @@ contracts or rollback considerations. Follow [Source and checks](#source-and-che
 for the changed area.
 
 Preserve `main` and `updates`: do not push directly to them, delete them, or
-rewrite their history. The repository currently merges PRs with merge commits.
-For `updates`, the required checks are `skills` and `subagent`, and review
-conversations must be addressed and resolved before merging. A successful check
-or bot run is not review approval; the current rules do not enforce a minimum
-approval count. The actual [GitHub rules](https://github.com/MDGChamomile/pi-subagent/rules)
-and repository merge settings are authoritative, not this description.
+rewrite their history. Address and resolve review conversations before merging;
+a successful check or bot run is not review approval. Required checks, merge
+methods, and approval rules are defined by the
+[GitHub rules](https://github.com/MDGChamomile/pi-subagent/rules) and repository
+merge settings.
 
 When configured automatic review applies, PR content and repository context are
 sent to an external review service. See the [review-only policy](.github/PULLFROG.md).
@@ -107,9 +106,9 @@ python3 -B -m unittest discover -s .github/scripts -p 'test_*.py' -v
 python3 -B .github/scripts/validate_skills.py
 ```
 
-The `subagent-macos` validation job runs the runtime and package checks on macOS 15/arm64 with Node.js 22.22.0 and Python 3.10, including source package discovery, private canonical paths, cancellation, process-group escalation, and abrupt parent exit. It deliberately uses a symlinked `TMPDIR` to exercise macOS-style path aliases. Existing required checks remain `skills` and `subagent`; macOS support changes also require a successful `subagent-macos` result before merge and on the merged commit. No live provider requests are made. Other macOS versions, Intel Macs, and non-Node Pi launchers are not covered by this job.
+The `subagent-macos` validation job runs the runtime and package checks on macOS 15/arm64, using a symlinked `TMPDIR` to exercise macOS-style path aliases. macOS support changes require a successful `subagent-macos` result before merge and on the merged commit. No live provider requests are made. Other macOS versions, Intel Macs, and non-Node Pi launchers are not covered by this job.
 
-The development lockfile and CI pin Pi 1.0.0, the declared minimum; the weekly canary tests current upstream Pi packages separately. An independent `latest-web` canary job installs `pi-web-access@latest` only in its disposable test environment and checks its registered Pi request schemas against the guard's allowlist and representative original/normalized inputs. It never invokes the tools or starts a model session. Regular validation tests the checker with synthetic schemas and breaking-change controls; it does not install the web dependency.
+The development lockfile and CI pin the declared minimum Pi version; the weekly canary tests current upstream Pi packages separately. An independent `latest-web` canary job installs `pi-web-access@latest` only in its disposable test environment and checks its registered Pi request schemas against the guard's allowlist and representative original/normalized inputs. It never invokes the tools or starts a model session. Regular validation tests the checker with synthetic schemas and breaking-change controls; it does not install the web dependency.
 
 To reproduce the web schema canary in a disposable checkout:
 
@@ -121,9 +120,9 @@ npm --prefix extensions/pi-subagent run test:web-schema
 
 Package installation accesses npm. Schema discovery runs in a bounded child with a temporary HOME/config directory, no inherited credentials, and network/subprocess tripwires; this is not an OS sandbox for untrusted dependencies. The check detects missing tools/keys and representative type, required-field, enum, and limit incompatibilities, not every possible request or semantic change. It does not establish live provider compatibility, SSRF behavior, or compatibility with custom web configurations. Scheduled canaries use the default branch, so changes merged only to `updates` take effect on the schedule after a release to `main`; an authorized `workflow_dispatch` can test a task branch earlier.
 
-`npm test` preloads `scripts/pi-sdk-test-loader.mjs` to select Pi's bundled SDK when available. When running a TypeScript test directly from `extensions/pi-subagent`, keep that preload, for example `node --import ./scripts/pi-sdk-test-loader.mjs --experimental-strip-types --test child-retry.test.ts`. The provider/selection fixtures receive the same preload from their spawning tests; package discovery chooses its SDK independently. Dependency installation can access registries. The checks do not call models. Package validation rebuilds ignored `dist/`, verifies the exact npm file set and documentation links, and runs isolated offline resource discovery plus negative controls.
+`npm test` preloads `scripts/pi-sdk-test-loader.mjs` to select Pi's bundled SDK when available. When running a TypeScript test directly from `extensions/pi-subagent`, keep that preload, for example `node --import ./scripts/pi-sdk-test-loader.mjs --experimental-strip-types --test child-retry.test.ts`. The provider/selection fixtures receive the same preload from their spawning tests; package discovery chooses its SDK independently. Dependency installation can access registries. The checks do not call models. Package validation rebuilds ignored `dist/`, verifies the exact npm file set and packaged documentation links, and runs isolated offline resource discovery plus negative controls.
 
-For documentation changes, review relative links and commands; for runtime changes, add regression coverage and run all three runtime/package checks. The skill validator covers metadata and relative links in `SKILL.md` and the maintained root documents (`README.md`, `AGENTS.md`, `MIGRATION.md`, `CONTRIBUTING.md`, `PRINCIPLE.md`) plus `packaging/pi-subagent/DEVELOPMENT.md`; it does not check semantic compatibility.
+For documentation changes, review relative links and commands; for runtime changes, add regression coverage and run all three runtime/package checks. The skill validator covers metadata and relative links in `SKILL.md`, the maintained root documents (`README.md`, `AGENTS.md`, `MIGRATION.md`, `CONTRIBUTING.md`, `PRINCIPLE.md`), `packaging/pi-subagent/DEVELOPMENT.md`, and other Markdown under `extensions/` and `skills/` (excluding installed `node_modules`); it does not check semantic compatibility.
 
 Keep superseded evaluation material in repository history and link it by commit instead of retaining it in the current tree. Historical protocols and hashes describe earlier code; do not rewrite them to imply validation of current code. Live smoke/evaluation commands consume provider usage, can disclose inputs, and require separate authorization. The web smoke uses a checked-in parent helper and requires an explicit `--web-extension` path to a separately installed, reviewed `pi-web-access` entry file. See the source-only [evaluation and verification guide](extensions/pi-subagent/DEVELOPMENT.md).
 

@@ -53,7 +53,7 @@ macOS validation targets the Node.js Pi installation on macOS 15/arm64. Other ma
 
 Capability-specific requirements:
 
-- `local`: `rg` for `grep`, and `fd` or `fdfind` for `find`;
+- `local`: `rg` for `grep`, and `fd` or `fdfind` for `find`, on `PATH` or in Pi's managed `bin` directory (interactive Pi downloads missing ones there unless offline); child processes never download them;
 - `web`: `pi-web-access`; see [Optional web capability](#optional-web-capability).
 
 > [!IMPORTANT]
@@ -67,7 +67,7 @@ Restart Pi or run `/reload`.
 
 ### Optional web capability
 
-Local investigations work with this package alone. Web investigations require `pi-web-access` v0.33.0 or later (stable releases) with its default tool names:
+Local investigations work with this package alone. Web investigations require [`pi-web-access` v0.33.0 or later](https://github.com/nicobailon/pi-web-access) (stable releases) with its default tool names:
 
 ```bash
 pi install npm:pi-web-access

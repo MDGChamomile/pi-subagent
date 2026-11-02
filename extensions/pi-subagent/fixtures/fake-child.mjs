@@ -5,11 +5,11 @@ import { join } from "node:path";
 import { cleanupPrivateRuntimeFiles, installParentLivenessMonitor } from "../parent-liveness.ts";
 import { CHILD_GUARD_EXIT_CODES } from "../shared.ts";
 
-installParentLivenessMonitor(() => cleanupPrivateRuntimeFiles(
-  process.env.PI_SUBAGENT_POLICY_FILE,
-  process.env.PI_SUBAGENT_READY_FILE,
-  process.env.PI_SUBAGENT_BUDGET_TELEMETRY_FILE,
-));
+installParentLivenessMonitor(() => cleanupPrivateRuntimeFiles({
+  policy: process.env.PI_SUBAGENT_POLICY_FILE,
+  ready: process.env.PI_SUBAGENT_READY_FILE,
+  budgetTelemetry: process.env.PI_SUBAGENT_BUDGET_TELEMETRY_FILE,
+}));
 
 const READY_MARKER = "pi-subagent-guard-ready-v1\n";
 const scenario = process.argv[2] ?? "success";
@@ -36,7 +36,7 @@ if (scenario.startsWith("guard-")) {
   process.exit(CHILD_GUARD_EXIT_CODES[scenario.slice("guard-".length)] ?? 9);
 }
 if (scenario === "startup-signal") process.kill(process.pid, "SIGKILL");
-writeFileSync(readyPath, scenario === "invalid-ready-error" ? "invalid\n" : READY_MARKER, { encoding: "utf8", mode: 0o600, flag: "wx" });
+writeFileSync(readyPath, ["invalid-ready-error", "invalid-ready-success"].includes(scenario) ? "invalid\n" : READY_MARKER, { encoding: "utf8", mode: 0o600, flag: "wx" });
 if (scenario === "ready-signal") process.kill(process.pid, "SIGKILL");
 const budget = {
   version: 1,
@@ -49,7 +49,7 @@ const budget = {
   hardLimitReached: false,
   ...(scenario.startsWith("budget-") ? { hardLimitReached: true, partialReason: "tool_budget" } : {}),
 };
-writeFileSync(budgetTelemetryPath, JSON.stringify(budget), { encoding: "utf8", mode: 0o600, flag: "wx" });
+writeFileSync(budgetTelemetryPath, JSON.stringify(scenario === "invalid-budget-success" ? { ...budget, unexpected: "private-sentinel" } : budget), { encoding: "utf8", mode: 0o600, flag: "wx" });
 
 const usage = {
   input: 10,
@@ -78,7 +78,7 @@ if (scenario.startsWith("observations-")) {
     process.on("SIGTERM", () => {});
     setInterval(() => {}, 1_000);
   }
-} else if (scenario === "success") {
+} else if (["success", "invalid-ready-success", "invalid-budget-success"].includes(scenario)) {
   emit({
     role: "assistant",
     content: [
@@ -110,7 +110,6 @@ if (scenario.startsWith("observations-")) {
   });
 } else if (scenario === "scoped-grep") {
   // Exercise Pi's real rg invocation, not a mock of its search arguments.
-  // Import the native tool module directly; Pi 1.0.0's SDK barrel would also work.
   const grepModule = new URL("./core/tools/grep.js", import.meta.resolve("@earendil-works/pi-coding-agent"));
   const { createGrepTool } = await import(grepModule.href);
   const { authorizeReadPath } = await import("../path-policy.ts");
@@ -125,6 +124,18 @@ if (scenario.startsWith("observations-")) {
   process.on("SIGTERM", () => process.exit(0));
   writeFileSync(join(process.cwd(), "child-pid"), String(process.pid));
   setInterval(() => {}, 1_000);
+} else if (scenario.startsWith("natural-exit-")) {
+  const descendant = spawn(process.execPath, [
+    "-e",
+    "const fs = require('node:fs'); process.on('SIGTERM', () => fs.writeFileSync(process.argv[2], 'received')); process.send('ready'); setInterval(() => {}, 1000); setTimeout(() => process.exit(9), 8000);",
+    "unused", join(process.cwd(), "descendant-sigterm"),
+  ], { stdio: ["ignore", scenario.endsWith("inherited") ? 1 : "ignore", scenario.endsWith("inherited") ? 2 : "ignore", "ipc"] });
+  await once(descendant, "message");
+  descendant.disconnect();
+  descendant.unref();
+  writeFileSync(join(process.cwd(), "pids.json"), JSON.stringify({ childPid: process.pid, descendantPid: descendant.pid }));
+  emit({ role: "assistant", content: [{ type: "text", text: "Completed before descendant cleanup." }], usage, stopReason: "stop" });
+  process.exitCode = scenario.includes("failure") ? 7 : 0;
 } else if (scenario.startsWith("orphan-")) {
   // The descendant shares the process group but none of the leader's stdio.
   const descendant = spawn(process.execPath, [
@@ -210,7 +221,9 @@ if (scenario.startsWith("observations-")) {
     await new Promise((resolve) => setTimeout(resolve, Math.max(0, softDeadline - Date.now()) + 50));
   }
 } else if (scenario === "partial-success") {
-  await new Promise((resolve) => setTimeout(resolve, 300));
+  // Answer just after the parent's soft deadline, independent of child startup time.
+  const softDeadline = Number(process.env.PI_SUBAGENT_SOFT_DEADLINE_EPOCH_MS);
+  await new Promise((resolve) => setTimeout(resolve, Math.max(0, softDeadline - Date.now()) + 50));
   emit({
     role: "assistant",
     content: [{ type: "text", text: "The completed portion remains useful. Coverage is incomplete." }],
@@ -233,6 +246,8 @@ if (scenario.startsWith("observations-")) {
     process.stdout.write(`${JSON.stringify({ type: "tool_execution_start", toolCallId: "private-id", toolName: "read", args: { path: "/private-path" } })}\n`);
   } else if (scenario === "process-error-assistant") {
     emit({ role: "assistant", content: [{ type: "text", text: "private-answer" }], usage, stopReason: "stop" });
+  } else if (scenario === "process-error-private-tool") {
+    emit({ role: "toolResult", toolName: `private-tool-name-${"한".repeat(1_000)}`, content: [{ type: "text", text: "private-tool-error" }], usage, isError: true });
   } else if (scenario === "process-error-tool-error") {
     emit({ role: "toolResult", toolName: "read", content: [{ type: "text", text: "private-tool-error" }], usage, isError: true });
   } else {

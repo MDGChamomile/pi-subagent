@@ -8,6 +8,7 @@ import { Type } from "typebox";
 import {
   MAX_SCOPE_ROOTS,
   PRESET_NAMES,
+  runtimeFilesIn,
   sanitizeDisplayText,
   TOOL_NAME,
   type Capability,
@@ -18,7 +19,8 @@ import { buildChildPolicy, makeCanonicalTempDirectory } from "./path-policy.ts";
 import { resolveWebExtensionPath } from "./web-provenance.ts";
 import { invocationLimitBlock, MAX_SUBAGENT_CALLS, ModelInvocationGate } from "./invocation-gate.ts";
 import { boundedParentError } from "./diagnostics.ts";
-import { ChildRunError, formatResultSummary, runChild } from "./subprocess.ts";
+import { formatResultSummary } from "./call-display.ts";
+import { ChildRunError, runChild } from "./subprocess.ts";
 import { loadPresetSettings, validatePresetSelection, type PresetSelection } from "./config.ts";
 import { registerSubagentSettingsCommand } from "./settings-command.ts";
 
@@ -105,16 +107,12 @@ export default function piSubagentExtension(
         let childStarted = false;
         try {
           await chmod(tempDir, 0o700);
-          const policyFile = join(tempDir, "policy.json");
-          const readyFile = join(tempDir, "guard.ready");
-          const budgetTelemetryFile = join(tempDir, "budget-telemetry.json");
-          await writeFile(policyFile, JSON.stringify(policy), { encoding: "utf8", mode: 0o600, flag: "wx" });
+          const files = runtimeFilesIn(tempDir);
+          await writeFile(files.policy, JSON.stringify(policy), { encoding: "utf8", mode: 0o600, flag: "wx" });
           childStarted = true;
           const result = await runtime.runChild({
             policy,
-            policyFile,
-            readyFile,
-            budgetTelemetryFile,
+            files,
             webExtensionPath,
             task: params.task,
             model,

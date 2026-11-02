@@ -10,11 +10,11 @@ import re
 import subprocess
 import tempfile
 import time
-from dataclasses import dataclass
+from dataclasses import dataclass, field
 from pathlib import Path
 from typing import Any
 
-from eval_runtime import json_events, load_presets, observe_run, runtime_checks
+from eval_runtime import investigation_tools, json_events, load_presets, observe_run, runtime_checks
 
 EXTENSION_DIR = Path(__file__).resolve().parents[1]
 EXTENSION_ENTRY = EXTENSION_DIR / "index.ts"
@@ -22,7 +22,6 @@ WEB_SMOKE_PARENT = Path(__file__).with_name("web-smoke-parent.ts")
 SMOKE_WEB_URL = "https://www.iana.org/help/example-domains"
 SMOKE_WEB_QUOTE = "not available for registration or transfer"
 SMOKE_WEB_PURPOSE = "maintained for documentation purposes"
-INVESTIGATION_TOOLS = {"read", "grep", "find", "ls", "web_search", "fetch_content", "get_search_content", "source_check"}
 TOOL_SYNTAX_RE = re.compile(r"(?:^|\s)(?:to=|functions\.)\w+", re.I)
 EVIDENCE_RE = re.compile(r"(?:fixture[/\\][^\s`:]+(?::\d+(?:-\d+)?)?|(?:incident|metrics|production|transfer)\.[a-z]+(?::\d+(?:-\d+)?)?)", re.I)
 
@@ -204,58 +203,112 @@ def run_pi(
     if completed.returncode != 0:
         diagnostic = re.sub(r"\s+", " ", completed.stderr).strip()[:500]
         raise RuntimeError(f"Pi {arm} arm exited with {completed.returncode}: {diagnostic}")
+    return _evaluate_context_output(
+        completed.stdout, observations, case=case, arm=arm, child_preset=child_preset,
+        selection=selection, duration_ms=duration_ms,
+    )
 
-    assistant_prompts: list[int] = []
-    tool_result_bytes = 0
-    investigative_tool_result_bytes = 0
-    investigative_calls = 0
-    post_subagent_investigative_calls = 0
-    subagent_finished = False
-    result_text = ""
-    final_text = ""
-    child_details: dict[str, Any] = {}
-    for event in json_events(completed.stdout):
-        if event.get("type") != "message_end" or not isinstance(event.get("message"), dict):
+
+@dataclass(frozen=True)
+class SubagentResult:
+    body: str
+    is_error: bool
+    details: dict[str, Any]
+
+
+@dataclass
+class ParentTranscript:
+    prompt_tokens: list[int] = field(default_factory=list)
+    final_text: str = ""
+    subagent_calls: list[Any] = field(default_factory=list)
+    other_calls: list[str] = field(default_factory=list)
+    investigative_calls: int = 0
+    post_subagent_investigative_calls: int = 0
+    tool_result_bytes: int = 0
+    investigative_tool_result_bytes: int = 0
+    subagent_results: list[SubagentResult] = field(default_factory=list)
+
+    def last_answer(self) -> SubagentResult | None:
+        return next((result for result in reversed(self.subagent_results) if not result.is_error), None)
+
+
+def parent_transcript(output: str) -> ParentTranscript:
+    tools = investigation_tools()
+    transcript = ParentTranscript()
+    for event in json_events(output):
+        message = event.get("message") if event.get("type") == "message_end" else None
+        if not isinstance(message, dict):
             continue
-        message = event["message"]
-        role = message.get("role")
-        if role == "assistant":
-            usage = message.get("usage") or {}
-            prompt_tokens = sum(
+        if message.get("role") == "assistant":
+            usage = message.get("usage") if isinstance(message.get("usage"), dict) else {}
+            transcript.prompt_tokens.append(int(sum(
                 value if isinstance(value, (int, float)) else 0
                 for value in (usage.get("input"), usage.get("cacheRead"), usage.get("cacheWrite"))
-            )
-            assistant_prompts.append(int(prompt_tokens))
+            )))
             text = text_content(message.get("content"))
             if text:
-                final_text = text
+                transcript.final_text = text
             for block in message.get("content") or []:
                 if not isinstance(block, dict) or block.get("type") != "toolCall":
                     continue
                 name = block.get("name")
-                if name in INVESTIGATION_TOOLS:
-                    investigative_calls += 1
-                    if subagent_finished:
-                        post_subagent_investigative_calls += 1
-        elif role == "toolResult":
+                if name == "pi_subagent":
+                    transcript.subagent_calls.append(block.get("arguments"))
+                else:
+                    transcript.other_calls.append(str(name))
+                if name in tools:
+                    transcript.investigative_calls += 1
+                    if transcript.subagent_results:
+                        transcript.post_subagent_investigative_calls += 1
+        elif message.get("role") == "toolResult":
             body = text_content(message.get("content"))
             size = len(body.encode("utf-8"))
-            tool_result_bytes += size
-            if message.get("toolName") in INVESTIGATION_TOOLS:
-                investigative_tool_result_bytes += size
+            transcript.tool_result_bytes += size
+            if message.get("toolName") in tools:
+                transcript.investigative_tool_result_bytes += size
             if message.get("toolName") == "pi_subagent":
-                subagent_finished = True
-                if not message.get("isError"):
-                    result_text = body
-                    child_details = message.get("details") if isinstance(message.get("details"), dict) else {}
+                details = message.get("details")
+                transcript.subagent_results.append(SubagentResult(
+                    body, bool(message.get("isError")), details if isinstance(details, dict) else {}))
+    return transcript
 
+
+def requested_call_matches(calls: list[Any], *, capability: str, preset: str, scope: list[str]) -> bool:
+    return (len(calls) == 1 and isinstance(calls[0], dict)
+            and calls[0].get("capability") == capability and calls[0].get("preset") == preset
+            and calls[0].get("scope") == scope)
+
+
+def _evaluate_context_output(
+    output: str,
+    observations: list[dict[str, Any]],
+    *,
+    case: EvalCase,
+    arm: str,
+    child_preset: str,
+    selection: dict[str, str],
+    duration_ms: int,
+) -> dict[str, Any]:
+    transcript = parent_transcript(output)
+    last_answer = transcript.last_answer()
+    result_text = last_answer.body if last_answer else ""
+    child_details = last_answer.details if last_answer else {}
+    delegation_checks = {
+        "exactly_one_call": len(transcript.subagent_calls) == 1,
+        "requested_preset_and_scope": requested_call_matches(
+            transcript.subagent_calls, capability="local", preset=child_preset, scope=["fixture"]),
+        "exactly_one_result": len(transcript.subagent_results) == 1,
+        "no_tool_error": not any(result.is_error for result in transcript.subagent_results),
+        "reported_preset": child_details.get("preset") == child_preset,
+        "reported_capability": child_details.get("capability") == "local",
+    } if arm == "subagent" else {
+        "no_subagent_call_or_result": not transcript.subagent_calls and not transcript.subagent_results,
+    }
     observed_checks = runtime_checks(observations, **selection) if arm == "subagent" else {}
     envelope = parse_result_envelope(result_text, child_details) if arm == "subagent" else None
     # Never substitute a parent answer for a missing or malformed delegated result.
-    quality_text = (envelope["answer"] if envelope is not None else "") if arm == "subagent" else final_text
-    normalize = lambda value: " ".join(re.sub(r"[^0-9a-z가-힣]+", " ", value.casefold()).split())
-    normalized_quality = normalize(quality_text)
-    matched = sum(any(normalize(candidate) in normalized_quality for candidate in group) for group in case.expected_groups)
+    quality_text = (envelope["answer"] if envelope is not None else "") if arm == "subagent" else transcript.final_text
+    matched = _count_expected_facts(quality_text, case.expected_groups)
     return {
         "case": case.name,
         "profile": case.profile,
@@ -266,19 +319,21 @@ def run_pi(
         "child_status": child_details.get("status"),
         "child_usage": child_details.get("usage"),
         "runtime_checks": observed_checks,
+        "delegation_checks": delegation_checks,
+        "delegation_contract_verified": all(delegation_checks.values()),
         "result_contract_verified": arm == "direct" or envelope is not None,
         "runtime_configuration_verified": arm == "direct" or (
             all(observed_checks.values()) and child_details.get("model") == selection["model"]
             and child_details.get("thinking") == selection["thinking"]
         ),
         "duration_ms": duration_ms,
-        "max_parent_prompt_tokens": max(assistant_prompts, default=0),
-        "parent_tool_result_bytes": tool_result_bytes,
-        "parent_investigative_tool_result_bytes": investigative_tool_result_bytes,
-        "parent_investigative_calls": investigative_calls,
-        "post_subagent_investigative_calls": post_subagent_investigative_calls,
+        "max_parent_prompt_tokens": max(transcript.prompt_tokens, default=0),
+        "parent_tool_result_bytes": transcript.tool_result_bytes,
+        "parent_investigative_tool_result_bytes": transcript.investigative_tool_result_bytes,
+        "parent_investigative_calls": transcript.investigative_calls,
+        "post_subagent_investigative_calls": transcript.post_subagent_investigative_calls,
         "result_bytes": len(result_text.encode("utf-8")),
-        "final_bytes": len(final_text.encode("utf-8")),
+        "final_bytes": len(transcript.final_text.encode("utf-8")),
         "expected_facts_matched": matched,
         "expected_facts_total": len(case.expected_groups),
         "fact_recall": round(matched / len(case.expected_groups), 3),
@@ -289,33 +344,19 @@ def run_pi(
     }
 
 
+def _count_expected_facts(answer: str, expected_groups: tuple[tuple[str, ...], ...]) -> int:
+    normalize = lambda value: " ".join(re.sub(r"[^0-9a-z가-힣]+", " ", value.casefold()).split())
+    normalized_quality = normalize(answer)
+    return sum(any(normalize(candidate) in normalized_quality for candidate in group) for group in expected_groups)
+
+
 def evaluate_smoke(output: str, observations: list[dict[str, Any]], *, capability: str,
                    preset: str, selection: dict[str, str]) -> dict[str, Any]:
-    answers: list[str] = []
-    errors: list[str] = []
-    calls: list[dict[str, Any]] = []
-    parent_other_calls: list[str] = []
-    details: dict[str, Any] = {}
-    for event in json_events(output):
-        message = event.get("message") if event.get("type") == "message_end" else None
-        if not isinstance(message, dict):
-            continue
-        if message.get("role") == "assistant":
-            for block in message.get("content") or []:
-                if not isinstance(block, dict) or block.get("type") != "toolCall":
-                    continue
-                if block.get("name") == "pi_subagent":
-                    calls.append(block.get("arguments") or {})
-                else:
-                    parent_other_calls.append(str(block.get("name")))
-        elif message.get("role") == "toolResult" and message.get("toolName") == "pi_subagent":
-            body = text_content(message.get("content"))
-            if message.get("isError"):
-                errors.append(body[:500])
-            else:
-                answers.append(body)
-                details = message.get("details") if isinstance(message.get("details"), dict) else {}
-
+    transcript = parent_transcript(output)
+    answers = [result.body for result in transcript.subagent_results if not result.is_error]
+    errors = [result.body[:500] for result in transcript.subagent_results if result.is_error]
+    last_answer = transcript.last_answer()
+    details = last_answer.details if last_answer else {}
     result_text = answers[0] if len(answers) == 1 else ""
     envelope = parse_result_envelope(result_text, details)
     answer = envelope["answer"] if envelope is not None else ""
@@ -323,9 +364,9 @@ def evaluate_smoke(output: str, observations: list[dict[str, Any]], *, capabilit
     usage = details.get("usage") if isinstance(details.get("usage"), dict) else {}
     reported_tokens = usage.get("totalTokens")
     checks = {
-        "exactly_one_call": len(calls) == 1,
-        "requested_preset_and_scope": len(calls) == 1 and calls[0].get("preset") == preset
-            and calls[0].get("capability") == capability and calls[0].get("scope") == scope,
+        "exactly_one_call": len(transcript.subagent_calls) == 1,
+        "requested_preset_and_scope": requested_call_matches(
+            transcript.subagent_calls, capability=capability, preset=preset, scope=scope),
         "exactly_one_result": len(answers) == 1,
         "no_tool_error": not errors,
         "valid_result_envelope": envelope is not None,
@@ -335,7 +376,7 @@ def evaluate_smoke(output: str, observations: list[dict[str, Any]], *, capabilit
         "expected_fact": (capability == "local" and "plain-final-answer" in answer)
             or (capability == "web" and SMOKE_WEB_PURPOSE in answer.casefold() and SMOKE_WEB_QUOTE in answer.casefold()),
         "evidence_present": "fixture.txt:1" in answer if capability == "local" else SMOKE_WEB_URL in answer,
-        "no_parent_investigation_or_loader_calls": not parent_other_calls,
+        "no_parent_investigation_or_loader_calls": not transcript.other_calls,
         "observed_successful_target_fetch": capability != "web" or any(
             row.get("actor") == "child" and row.get("kind") == "web_fetch"
             and row.get("targetMatch") is True and row.get("success") is True
@@ -354,7 +395,7 @@ def evaluate_smoke(output: str, observations: list[dict[str, Any]], *, capabilit
         "capability": capability, "preset": preset, "expected": selection,
         "status": "pass" if all(checks.values()) else "fail", "checks": checks,
         "result_bytes": len(result_text.encode("utf-8")), "errors": errors,
-        "parent_other_calls": parent_other_calls, "child_usage": usage,
+        "parent_other_calls": transcript.other_calls, "child_usage": usage,
         "child_duration_ms": details.get("durationMs"),
         # Fixed synthetic/public smoke targets only; retain bounded final text to diagnose failures.
         **({"failure_answer_excerpt": answer[:1500]} if not all(checks.values()) else {}),
@@ -517,7 +558,8 @@ def main() -> int:
         "cases": [case.name for case in selected],
         "repetitions": args.repetitions,
     }, "summary": summarize(results), "results": results}, ensure_ascii=False, indent=2))
-    return 0 if all(row["runtime_configuration_verified"] and row["result_contract_verified"] for row in results) else 1
+    return 0 if all(row["runtime_configuration_verified"] and row["result_contract_verified"]
+                    and row["delegation_contract_verified"] for row in results) else 1
 
 
 if __name__ == "__main__":

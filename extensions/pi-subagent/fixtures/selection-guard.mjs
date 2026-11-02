@@ -6,24 +6,25 @@ import childGuard from "../child-guard.ts";
 import {
   ALLOWED_FILE_TOOLS, ALLOWED_WEB_TOOLS, BUDGET_TELEMETRY_ENV, LIFETIME_TOOL_CALL_LIMITS,
   MODEL_SELECTION_ENV, POLICY_ENV, READY_ENV, READY_MARKER,
-  SOFT_DEADLINE_ENV, WEB_EXTENSION_ENV,
+  runtimeFilesIn, SOFT_DEADLINE_ENV, WEB_EXTENSION_ENV,
 } from "../shared.ts";
 // The spawning test preloads the SDK mapper.
 const { ExtensionRunner } = await import("@earendil-works/pi-coding-agent");
 const scenario = process.argv[2];
+// Pi sends compaction summaries after session_before_compact, without before_provider_request.
+const boundary = process.argv[3] ?? "provider";
 const root = realpathSync(mkdtempSync(join(tmpdir(), "pi-subagent-request-guard-")));
 let requests = 0;
 let activeTools = [];
+let cancelled = false;
 process.on("exit", () => {
   let guardReady = false;
   try { guardReady = readFileSync(process.env[READY_ENV], "utf8") === READY_MARKER; } catch {}
-  console.log(JSON.stringify({ requests, guardReady, activeTools }));
+  console.log(JSON.stringify({ requests, guardReady, activeTools, cancelled }));
   rmSync(root, { recursive: true, force: true });
 });
 const web = scenario === "web-owner" || scenario === "missing-web-extension";
-const policyFile = join(root, "policy.json");
-const readyFile = join(root, "guard.ready");
-const budgetFile = join(root, "budget.json");
+const { policy: policyFile, ready: readyFile, budgetTelemetry: budgetFile } = runtimeFilesIn(root);
 process.env[POLICY_ENV] = policyFile;
 process.env[READY_ENV] = readyFile;
 process.env[BUDGET_TELEMETRY_ENV] = budgetFile;
@@ -81,6 +82,16 @@ if (scenario === "tool-notice-failure") {
   }
 }
 if (scenario === "final-answer-failure") await runner.emit({ type: "agent_end", messages: [] });
-await runner.emitBeforeProviderRequest({ model: effective.id });
+if (scenario === "answered") {
+  await runner.emit({ type: "turn_end", toolResults: [],
+    message: { role: "assistant", content: [{ type: "text", text: "Final answer." }], stopReason: "stop" } });
+}
+if (boundary === "compaction") {
+  const result = await runner.emit({ type: "session_before_compact", preparation: {}, branchEntries: [],
+    reason: "threshold", willRetry: false, signal: new AbortController().signal });
+  cancelled = result?.cancel === true;
+} else {
+  await runner.emitBeforeProviderRequest({ model: effective.id });
+}
 const transportSpy = () => { requests++; };
-transportSpy();
+if (!cancelled) transportSpy();

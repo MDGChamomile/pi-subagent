@@ -1,10 +1,10 @@
 import { spawn } from "node:child_process";
 import { existsSync } from "node:fs";
 import { readFile } from "node:fs/promises";
-import { basename } from "node:path";
+import { basename, relative, sep } from "node:path";
 import { setTimeout as delay } from "node:timers/promises";
 import { fileURLToPath } from "node:url";
-import type { Usage as PiUsage } from "@earendil-works/pi-ai";
+import type { Usage } from "@earendil-works/pi-ai";
 import { isProcessGroupGone, killProcessGroup, PARENT_LIVENESS_ENV, PARENT_LIVENESS_FD } from "./parent-liveness.ts";
 import {
   BUDGET_TELEMETRY_ENV,
@@ -26,15 +26,16 @@ import {
   toolsForCapability,
   WEB_EXTENSION_ENV,
   WEB_INPUT_KEYS,
-  type BudgetTelemetry,
   type ChildPolicy,
   type PartialReason,
   type ResultStatus,
+  type RuntimeFiles,
   type SubagentFailureDiagnostics,
   type SubagentFailurePhase,
   type Thinking,
 } from "./shared.ts";
-import { buildChildPrompt } from "./path-policy.ts";
+import { readBudgetTelemetry, type BudgetTelemetry } from "./budget-telemetry.ts";
+import { estimateContextTokens, formatProgress } from "./call-display.ts";
 import { formatChildOutput } from "./envelope.ts";
 import { boundedParentError } from "./diagnostics.ts";
 import { ChildJsonCollector, type ChildJsonSnapshot } from "./child-stream.ts";
@@ -54,7 +55,22 @@ Investigate only the delegated objective. The child tool-call soft limit is ${li
 After investigation, return the requested deliverable as concise ordinary assistant text. Include the conclusion, up to 10 material findings with evidence locations, material alternatives, uncertainties, and coverage gaps when relevant. Do not include a chronological transcript or raw tool output, and do not end on a tool call. The parent discards intermediate messages and caps the final answer at ${MAX_FINAL_BYTES} UTF-8 bytes.`;
 }
 
-export type Usage = PiUsage;
+export function buildChildPrompt(task: string, policy: ChildPolicy): string {
+  const visibleRoots = policy.roots.map((root) => {
+    const rel = relative(policy.cwd, root.path);
+    const portablePath = (rel === "" ? "." : rel).split(sep).join("/");
+    return `- ${JSON.stringify(portablePath)} (${root.kind})`;
+  });
+  return [
+    "Objective",
+    task,
+    "",
+    "Authorized local scope (runtime enforced)",
+    ...(visibleRoots.length > 0 ? visibleRoots : ["- (none; web-only investigation)"]),
+    "",
+    "Stay within this runtime-enforced capability and scope. Return only the requested deliverable.",
+  ].join("\n");
+}
 
 export type ChildResult = {
   /** Parent-visible JSON envelope with runtime status and an untrusted answer string. */
@@ -80,33 +96,6 @@ export class ChildRunError extends Error {
   }
 }
 
-export function formatElapsed(durationMs: number): string {
-  const totalSeconds = Math.max(0, Math.floor(durationMs / 1000));
-  const minutes = Math.floor(totalSeconds / 60).toString().padStart(2, "0");
-  const seconds = (totalSeconds % 60).toString().padStart(2, "0");
-  return `${minutes}:${seconds}`;
-}
-
-export function formatProgress(model: string, thinking: Thinking, durationMs: number, reportedTokens: number): string {
-  const separator = model.indexOf("/");
-  const displayModel = separator >= 0 ? model.slice(separator + 1) : model;
-  const tokens = Math.max(0, Math.trunc(reportedTokens)).toLocaleString("en-US");
-  return `${formatElapsed(durationMs)} · ${displayModel} (${thinking}) running · ${tokens} reported tokens`;
-}
-
-export function estimateContextTokens(text: string): number {
-  // Model-independent size heuristic, not tokenizer-measured usage.
-  return Math.ceil(Buffer.byteLength(text, "utf8") / 4);
-}
-
-export function formatResultSummary(status: ResultStatus, durationMs: number, contextTokens: number): string {
-  const marker = status === "partial" ? "⚠" : "✓";
-  const label = status === "partial" ? "Partial" : "Complete";
-  const duration = durationMs < 60_000 ? `${(Math.max(0, durationMs) / 1000).toFixed(1)}s` : formatElapsed(durationMs);
-  const tokens = Math.max(0, Math.trunc(contextTokens)).toLocaleString("en-US");
-  return `${marker} ${label} · ${duration} · Context injected: ~${tokens} tokens`;
-}
-
 function childFailure(
   error: unknown,
   phase: SubagentFailurePhase,
@@ -130,6 +119,47 @@ function childFailure(
   return new ChildRunError(boundedParentError(error, diagnostics), snapshot.usage);
 }
 
+function classifyChildInterruption(input: {
+  progressFailed: boolean;
+  aborted: boolean;
+  timedOut: boolean;
+  effectiveTimeoutMs: number;
+  waitError: unknown;
+  protocolError: string | undefined;
+  exitCode: number;
+}): { message: unknown; phase: SubagentFailurePhase; exitCode?: number } | undefined {
+  if (input.progressFailed) return { message: "Subagent stopped because progress reporting failed", phase: "progress" };
+  if (input.aborted) return { message: "Subagent invocation was cancelled", phase: "cancelled" };
+  if (input.timedOut) return {
+    message: input.effectiveTimeoutMs === CHILD_TIMEOUT_MS
+      ? `Subagent timed out after ${CHILD_TIMEOUT_MS / 60_000} minutes`
+      : `Subagent timed out after ${input.effectiveTimeoutMs} milliseconds`,
+    phase: "timeout",
+  };
+  if (input.waitError) return { message: input.waitError, phase: "spawn" };
+  if (input.protocolError) return { message: input.protocolError, phase: "protocol", exitCode: input.exitCode };
+  return undefined;
+}
+
+function describeChildExit(
+  exitCode: number,
+  exitSignal: NodeJS.Signals | undefined,
+  guardReady: boolean,
+  snapshot: ChildJsonSnapshot,
+): string {
+  const guardFailure = Object.entries(CHILD_GUARD_EXIT_CODES).find(([, code]) => code === exitCode)?.[0];
+  let message = exitSignal ? `Subagent exited with signal ${exitSignal}`
+    : guardFailure ? `Subagent guard failed: ${guardFailure}` : `Subagent exited with code ${exitCode}`;
+  if (guardReady && !exitSignal && !guardFailure
+    && snapshot.assistantMessageCount === 0 && snapshot.toolErrorCount === 0
+    && !snapshot.observations.incomplete
+    && Object.values(snapshot.observations.receipts).every((count) => count === 0)) {
+    // Missing stream activity does not prove an authentication failure.
+    message += ". No investigation activity was observed; the cause is unknown. Check the selected preset's provider authentication and model access, or review /pi-subagent-settings.";
+  }
+  return message;
+}
+
 /** Executable and script prefix that launches Pi; Pi CLI arguments are appended separately. */
 export type ChildLauncher = { command: string; args: string[] };
 
@@ -148,9 +178,7 @@ function getPiLauncher(): ChildLauncher {
 export function buildChildInvocation(
   options: {
     policy: ChildPolicy;
-    policyFile: string;
-    readyFile: string;
-    budgetTelemetryFile: string;
+    files: RuntimeFiles;
     webExtensionPath?: string;
     model: string;
     thinking: Thinking;
@@ -182,9 +210,9 @@ export function buildChildInvocation(
     PI_OFFLINE: "1",
     [MODEL_SELECTION_ENV]: JSON.stringify({ model: options.model, thinking: options.thinking }),
     [PARENT_LIVENESS_ENV]: String(PARENT_LIVENESS_FD),
-    [POLICY_ENV]: options.policyFile,
-    [READY_ENV]: options.readyFile,
-    [BUDGET_TELEMETRY_ENV]: options.budgetTelemetryFile,
+    [POLICY_ENV]: options.files.policy,
+    [READY_ENV]: options.files.ready,
+    [BUDGET_TELEMETRY_ENV]: options.files.budgetTelemetry,
     [SOFT_DEADLINE_ENV]: String(options.softDeadline),
   };
   // Pi's native grep inherits rg's config; --follow there can escape scoped roots.
@@ -215,37 +243,6 @@ export async function assertChildReady(readyFile: string): Promise<void> {
   if (marker !== READY_MARKER) throw new Error("Subagent guard readiness marker is invalid");
 }
 
-export async function readBudgetTelemetry(path: string): Promise<BudgetTelemetry> {
-  let parsed: unknown;
-  try {
-    parsed = JSON.parse(await readFile(path, "utf8"));
-  } catch {
-    throw new Error("Subagent budget telemetry is unavailable or malformed");
-  }
-  if (!parsed || typeof parsed !== "object" || Array.isArray(parsed)) {
-    throw new Error("Subagent budget telemetry is malformed");
-  }
-  const value = parsed as Record<string, unknown>;
-  const allowedKeys = new Set([
-    "version", "toolCallsAttempted", "toolCallsExecuted", "deniedCalls", "queryCount", "fetchTargetCount",
-    "softLimitReached", "hardLimitReached", "partialReason",
-  ]);
-  const integerKeys = [
-    "toolCallsAttempted", "toolCallsExecuted", "deniedCalls", "queryCount", "fetchTargetCount",
-  ] as const;
-  if (
-    Object.keys(value).some((key) => !allowedKeys.has(key))
-    || value.version !== 1
-    || integerKeys.some((key) => !Number.isSafeInteger(value[key]) || (value[key] as number) < 0)
-    || typeof value.softLimitReached !== "boolean"
-    || typeof value.hardLimitReached !== "boolean"
-    || (value.partialReason !== undefined && value.partialReason !== "tool_budget")
-  ) {
-    throw new Error("Subagent budget telemetry is malformed");
-  }
-  return value as BudgetTelemetry;
-}
-
 /**
  * Precedence is model_length > tool_budget > time_limit. Decide only after process-group
  * cleanup: time_limit uses the parent's answer receipt time, else the post-cleanup time.
@@ -266,9 +263,7 @@ export function selectPartialReason(input: {
 
 export async function runChild(options: {
   policy: ChildPolicy;
-  policyFile: string;
-  readyFile: string;
-  budgetTelemetryFile: string;
+  files: RuntimeFiles;
   webExtensionPath?: string;
   task: string;
   model: string;
@@ -296,9 +291,7 @@ export async function runChild(options: {
   const softDeadline = hardDeadline - finalizationGraceMs;
   const invocation = buildChildInvocation({
     policy: options.policy,
-    policyFile: options.policyFile,
-    readyFile: options.readyFile,
-    budgetTelemetryFile: options.budgetTelemetryFile,
+    files: options.files,
     webExtensionPath: options.webExtensionPath,
     model: options.model,
     thinking: options.thinking,
@@ -333,13 +326,13 @@ export async function runChild(options: {
   let stopCleanup: Promise<void> | undefined;
   let progressTimer: ReturnType<typeof setInterval> | undefined;
 
-  const requestStop = (reason: "timeout" | "aborted" | "protocol" | "progress" | "setup") => {
+  const requestStop = (reason: "timeout" | "aborted" | "protocol" | "progress" | "setup" | "exit") => {
     if (reason === "timeout") timedOut = true;
     if (reason === "aborted") aborted = true;
     if (stopping) return;
     stopping = true;
-    // A failed spawn has no process group to clean up. Keep the conservative
-    // group probe unchanged for children that actually received a PID.
+    // A failed spawn has no process group to clean up. Every child that received
+    // a PID goes through the conservative group probe below.
     if (child.pid === undefined) return;
     killProcessGroup(child.pid, "SIGTERM");
     // The leader may close while descendants survive. Only confirmed group
@@ -391,6 +384,14 @@ export async function runChild(options: {
   // Register completion before initialization can call user code or request a stop.
   const exited = new Promise<number>((resolveExit, reject) => {
     child.once("error", reject);
+    child.once("exit", () => {
+      clearTimeout(timeout);
+      if (progressTimer) clearInterval(progressTimer);
+      // Descendants can outlive a natural exit and even hold stdout/stderr open,
+      // delaying close. Reuse bounded group cleanup without changing the result.
+      // Never signal a possibly reused single PID after exit on native Windows.
+      if (process.platform !== "win32" && !isProcessGroupGone(child.pid)) requestStop("exit");
+    });
     child.once("close", (code, signal) => {
       exitSignal = signal ?? undefined;
       resolveExit(code ?? 1);
@@ -429,38 +430,17 @@ export async function runChild(options: {
   const completedAt = Date.now();
   const snapshot = collector.snapshot();
 
-  if (progressFailed) throw childFailure(
-    "Subagent stopped because progress reporting failed",
-    "progress",
-    snapshot,
-    startedAt,
+  const interruption = classifyChildInterruption({
+    progressFailed, aborted, timedOut, effectiveTimeoutMs, waitError, protocolError: snapshot.protocolError, exitCode,
+  });
+  if (interruption) throw childFailure(
+    interruption.message, interruption.phase, snapshot, startedAt, interruption.exitCode,
   );
-  if (aborted) throw childFailure("Subagent invocation was cancelled", "cancelled", snapshot, startedAt);
-  if (timedOut) throw childFailure(
-    effectiveTimeoutMs === CHILD_TIMEOUT_MS
-      ? `Subagent timed out after ${CHILD_TIMEOUT_MS / 60_000} minutes`
-      : `Subagent timed out after ${effectiveTimeoutMs} milliseconds`,
-    "timeout",
-    snapshot,
-    startedAt,
-  );
-  if (waitError) throw childFailure(waitError, "spawn", snapshot, startedAt);
-  if (snapshot.protocolError) throw childFailure(snapshot.protocolError, "protocol", snapshot, startedAt, exitCode);
   if (exitCode !== 0) {
     // Readiness is an observation, not a diagnosis of why startup failed.
-    const guardReady = await assertChildReady(options.readyFile).then(() => true, () => false);
-    const guardFailure = Object.entries(CHILD_GUARD_EXIT_CODES).find(([, code]) => code === exitCode)?.[0];
-    let message = exitSignal ? `Subagent exited with signal ${exitSignal}`
-      : guardFailure ? `Subagent guard failed: ${guardFailure}` : `Subagent exited with code ${exitCode}`;
-    if (guardReady && !exitSignal && !guardFailure
-      && snapshot.assistantMessageCount === 0 && snapshot.toolErrorCount === 0
-      && !snapshot.observations.incomplete
-      && Object.values(snapshot.observations.receipts).every((count) => count === 0)) {
-      // Missing stream activity does not prove an authentication failure.
-      message += ". No investigation activity was observed; the cause is unknown. Check the selected preset's provider authentication and model access, or review /pi-subagent-settings.";
-    }
+    const guardReady = await assertChildReady(options.files.ready).then(() => true, () => false);
     throw childFailure(
-      message,
+      describeChildExit(exitCode, exitSignal, guardReady, snapshot),
       "process",
       snapshot,
       startedAt,
@@ -470,8 +450,8 @@ export async function runChild(options: {
   }
   let budget: BudgetTelemetry;
   try {
-    await assertChildReady(options.readyFile);
-    budget = await readBudgetTelemetry(options.budgetTelemetryFile);
+    await assertChildReady(options.files.ready);
+    budget = await readBudgetTelemetry(options.files.budgetTelemetry);
   } catch (error) {
     throw childFailure(error, "readiness", snapshot, startedAt, exitCode);
   }

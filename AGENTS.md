@@ -17,10 +17,11 @@ Pi Subagent delegates bounded, read-only investigations to ephemeral child Pi pr
 - `extensions/pi-subagent/`: TypeScript runtime, regression tests, and current evaluation scripts. Read the [extension guide](extensions/pi-subagent/README.md) when changing runtime contracts.
 - `skills/pi-subagent/`: delegation guidance; keep it consistent with enforced runtime capabilities.
 - `packaging/pi-subagent/`: maintained assembly and validation code. Do not hand-edit generated `dist/`. Read [package maintenance](packaging/pi-subagent/DEVELOPMENT.md) for packaging or release work.
-- `.github/scripts/`: skill validation and its Python tests.
+- `.github/scripts/`: skill validation plus Python tests for it and for the publish workflow's release-tag gate.
 
 ## Workflow and verification
 
+- Do not add comments that narrate code or justify avoidable workarounds. Prefer clear names, structure, and executable checks. Keep comments concise and only for legal notices, public API contracts, necessary tooling directives, or essential rationale and constraints not evident from code and tests. When changing code, verify that related comments remain accurate.
 - Create task branches from the latest `updates` branch and target `updates` for task PRs unless the user requests otherwise.
 - Release PRs from `updates` to `main` require an explicit release request; merge them with a merge commit. If changes land directly on `main`, merge `main` back into `updates` rather than resetting or force-pushing.
 - Branch conventions do not authorize commits, pushes, PRs, merges, or branch deletion. Preserve `main` and `updates`; delete task branches only with explicit authorization.

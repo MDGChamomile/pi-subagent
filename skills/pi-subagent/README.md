@@ -36,7 +36,7 @@ Follow the README's [requirements and installation guide](../../README.md#instal
 - Local runs are restricted to explicitly scoped paths inside the parent working directory.
 - Web runs have no local-file tools and apply default-deny argument allowlists.
 - The `web` capability is not a credential-isolated sandbox; the trusted web extension may use host credentials and reach authenticated target sources.
-- Delegated content and the final answer reach the selected model provider; web queries and pages may also reach search providers.
+- Delegated content reaches the selected child model provider, and the final answer enters the parent model context; web queries and requested URLs also reach the applicable search/fetch services.
 - This is an application-level capability boundary, not an OS sandbox.
 
 For the complete runtime contract, threat model, evaluation, and verification commands, see the [extension guide](../../extensions/pi-subagent/README.md).

@@ -15,12 +15,13 @@ let hooks = 0;
 let networkAttempts = 0;
 let extensionErrors = 0;
 let answered = false;
+let compactionAttempts = 0;
 let readyFile;
 let marker;
 process.on("exit", () => {
   let guardReady = false;
   try { guardReady = readFileSync(readyFile, "utf8") === marker; } catch {}
-  console.log(JSON.stringify({ requests, hooks, networkAttempts, extensionErrors, answered, guardReady }));
+  console.log(JSON.stringify({ requests, hooks, networkAttempts, extensionErrors, answered, guardReady, compactionAttempts }));
   rmSync(root, { recursive: true, force: true });
 });
 // Fail closed if upstream changes transport or attempts discovery. No live
@@ -30,6 +31,8 @@ net.Socket.prototype.connect = denyNetwork;
 tls.connect = denyNetwork;
 syncBuiltinESMExports();
 globalThis.WebSocket = class { constructor() { denyNetwork(); } };
+// Exceed gpt-6-luna's default compaction threshold so Pi compacts after the answer.
+const promptTokens = scenario === "post-answer-compaction" ? 260_000 : 1;
 globalThis.fetch = async (_url, options) => {
   requests++;
   assert.equal(hooks, 1, "the actual provider must invoke onPayload before fetch");
@@ -40,7 +43,7 @@ globalThis.fetch = async (_url, options) => {
   const events = [
     { type: "response.output_item.done", output_index: 0, item },
     { type: "response.completed", response: { id: "resp_offline", status: "completed", output: [item],
-      usage: { input_tokens: 1, output_tokens: 1, total_tokens: 2 } } },
+      usage: { input_tokens: promptTokens, output_tokens: 1, total_tokens: promptTokens + 1 } } },
   ];
   return new Response(events.map((event) => `data: ${JSON.stringify(event)}\n\n`).join(""), {
     status: 200, headers: { "content-type": "text/event-stream" },
@@ -49,16 +52,19 @@ globalThis.fetch = async (_url, options) => {
 
 // Import only after the isolated environment and network tripwires exist.
 const { default: childGuard } = await import("../child-guard.ts");
-const { ALLOWED_FILE_TOOLS, BUDGET_TELEMETRY_ENV, MODEL_SELECTION_ENV, POLICY_ENV, READY_ENV, READY_MARKER } = await import("../shared.ts");
+const {
+  ALLOWED_FILE_TOOLS, BUDGET_TELEMETRY_ENV, MODEL_SELECTION_ENV, POLICY_ENV, READY_ENV, READY_MARKER, runtimeFilesIn,
+} = await import("../shared.ts");
 // The spawning test preloads the SDK mapper; retain this dynamic import after
 // the isolated environment and network tripwires have been installed.
 const { createAgentSession, DefaultResourceLoader, ModelRuntime, SessionManager, SettingsManager } =
   await import("@earendil-works/pi-coding-agent");
-readyFile = join(root, "guard.ready");
+const files = runtimeFilesIn(root);
+readyFile = files.ready;
 marker = READY_MARKER;
 Object.assign(process.env, {
-  [POLICY_ENV]: join(root, "policy.json"), [READY_ENV]: readyFile,
-  [BUDGET_TELEMETRY_ENV]: join(root, "budget.json"),
+  [POLICY_ENV]: files.policy, [READY_ENV]: readyFile,
+  [BUDGET_TELEMETRY_ENV]: files.budgetTelemetry,
   [MODEL_SELECTION_ENV]: JSON.stringify({
     model: scenario === "model-mismatch" ? "openai-codex/gpt-6.1-sol" : "openai-codex/gpt-6-luna",
     thinking: scenario === "thinking-mismatch" ? "high" : "medium",
@@ -67,7 +73,9 @@ Object.assign(process.env, {
 writeFileSync(process.env[POLICY_ENV], JSON.stringify({ version: 1, cwd: root, capability: "local",
   roots: [{ path: root, kind: "directory" }] }), { mode: 0o600 });
 const settingsManager = SettingsManager.inMemory({
-  transport: "sse", cacheWarming: "off", compaction: { enabled: false },
+  transport: "sse", cacheWarming: "off",
+  // keepRecentTokens: 1 leaves the one-answer transcript something to summarize.
+  compaction: scenario === "post-answer-compaction" ? { enabled: true, keepRecentTokens: 1 } : { enabled: false },
   retry: { enabled: false, provider: { maxRetries: 0 } },
 });
 const resourceLoader = new DefaultResourceLoader({
@@ -79,6 +87,11 @@ const resourceLoader = new DefaultResourceLoader({
       hooks++;
       assert.equal(event.payload.model, "gpt-6-luna");
       if (scenario === "throwing-hook") throw new Error("Synthetic hook exception");
+    }),
+    // Registered before the guard, whose cancellation stops later handlers.
+    (pi) => pi.on("session_before_compact", (event) => {
+      compactionAttempts++;
+      assert.equal(event.reason, "threshold");
     }),
     (pi) => childGuard(pi, () => () => undefined),
   ],

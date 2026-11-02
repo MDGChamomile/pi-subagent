@@ -3,7 +3,8 @@ run-name: ${{ inputs.name || github.workflow }}
 
 # No push/PR/schedule triggers here. Owner-approved console reviews,
 # re-reviews, and owner @pullfrog mentions may dispatch this workflow; other
-# automations remain disabled.
+# automations remain disabled. Keep this file identical across repositories;
+# see ../PULLFROG.md.
 on:
   workflow_dispatch:
     inputs:
@@ -33,7 +34,7 @@ jobs:
           fetch-depth: 1
           persist-credentials: false
       - name: Run reviewer
-        # v0 resolved on 2026-09-27; this pins the entrypoint, not all runtime code.
+        # This pins the entrypoint, not all runtime code.
         uses: pullfrog/pullfrog@99c5e781dd54463197d1109998386d37c84f6853
         with:
           prompt: ${{ inputs.prompt }}
