@@ -1,5 +1,36 @@
 # Migration
 
+## v0.8.4
+
+### Path identity and process cleanup
+
+Local reads now reject canonical paths that Pi would normalize to a different
+file, rather than forwarding an ambiguous target. Child process groups are
+cleaned up after natural exits, including descendants holding output pipes open,
+and parent-liveness monitoring remains active after session shutdown.
+
+### Compaction and failure diagnostics
+
+Compaction requests now use the same readiness and model-selection checks as
+ordinary provider requests. Compactions after a final answer are cancelled;
+other compactions remain subject to those checks and the parent's hard deadline.
+Reported child usage now includes compaction summaries. Failure diagnostics
+report only allowlisted tool names, using `unknown` for other names.
+
+### Maintenance and compatibility
+
+Runtime helpers, web argument rules and settings handling are consolidated, and
+regression, evaluation, package and documentation validation are strengthened.
+Tool schemas, preset arguments, settings, successful and partial result
+envelopes, resource limits and capability boundaries remain unchanged. Offline
+checks do not establish live provider compatibility.
+
+No migration action is required for ordinary supported paths. If a local path
+is rejected because Pi would normalize its canonical spelling differently, use
+an unambiguous canonical path; do not rely on an alias that resolves to the same
+ambiguous spelling. Pi 1.0.0 or later and pi-web-access 0.33.0 or later remain the
+minimum supported versions.
+
 ## v0.8.3
 
 ### Budget persistence and failure guidance
