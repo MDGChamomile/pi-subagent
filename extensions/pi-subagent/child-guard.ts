@@ -32,6 +32,7 @@ import { prepareWebCall } from "./web-arguments.ts";
 
 const FILE_TOOLS = new Set<string>(ALLOWED_FILE_TOOLS);
 const WEB_TOOLS = new Set<string>(ALLOWED_WEB_TOOLS);
+const PARTIAL_ANSWER_INSTRUCTION = "Stop investigating and answer now using only evidence already gathered. Clearly identify unfinished work and coverage gaps; the runtime will mark the result as partial.";
 
 function loadPolicy(): { policy: ChildPolicy; policyPath: string } {
   const policyPath = process.env[POLICY_ENV];
@@ -180,6 +181,13 @@ export default function childGuard(
     // terminal state always persists it synchronously.
     lastPersistedBudget = snapshot;
   };
+  const markDenied = (toolCallId: string) => {
+    if (!deniedToolCallIds.has(toolCallId)) {
+      deniedToolCallIds.add(toolCallId);
+      budget.deniedCalls += 1;
+    }
+    persistBudget();
+  };
   const timeLimitReached = () => softDeadline !== undefined && Date.now() >= softDeadline;
   const requestFinalAnswer = (content: string, deliverAs: "steer" | "followUp") => {
     if (finalAnswerSeen || finalizationRequested) return;
@@ -193,19 +201,13 @@ export default function childGuard(
     }
   };
   const requestPartialAnswer = () => {
-    requestFinalAnswer(
-      "The investigation time limit has been reached. Stop investigating and answer now using only evidence already gathered. Clearly identify unfinished work and coverage gaps; the runtime will mark the result as partial.",
-      "steer",
-    );
+    requestFinalAnswer(`The investigation time limit has been reached. ${PARTIAL_ANSWER_INSTRUCTION}`, "steer");
   };
   const requestBudgetPartialAnswer = () => {
     budget.hardLimitReached = true;
     budget.partialReason = "tool_budget";
     persistBudget();
-    requestFinalAnswer(
-      "The child lifetime tool budget has been exhausted. Stop investigating and answer now using only evidence already gathered. Clearly identify unfinished work and coverage gaps; the runtime will mark the result as partial.",
-      "steer",
-    );
+    requestFinalAnswer(`The child lifetime tool budget has been exhausted. ${PARTIAL_ANSWER_INSTRUCTION}`, "steer");
   };
   const sendSoftBudgetNotice = (content = "The child lifetime tool-call soft limit has been reached. Use further calls only for essential missing evidence, then return the concise final answer.") => {
     if (finalizationRequested) return;
@@ -354,11 +356,7 @@ export default function childGuard(
   pi.on("tool_call", async (event) => {
     validatedToolCallIds.add(event.toolCallId);
     const block = (reason: string, terminate?: true) => {
-      if (!deniedToolCallIds.has(event.toolCallId)) {
-        deniedToolCallIds.add(event.toolCallId);
-        budget.deniedCalls += 1;
-      }
-      persistBudget();
+      markDenied(event.toolCallId);
       return { block: true as const, reason, ...(terminate ? { terminate } : {}) };
     };
     const permit = () => {
@@ -439,11 +437,7 @@ export default function childGuard(
   });
 
   pi.on("tool_execution_end", (event) => {
-    if (!validatedToolCallIds.has(event.toolCallId) && !deniedToolCallIds.has(event.toolCallId)) {
-      deniedToolCallIds.add(event.toolCallId);
-      budget.deniedCalls += 1;
-      persistBudget();
-    }
+    if (!validatedToolCallIds.has(event.toolCallId)) markDenied(event.toolCallId);
     validatedToolCallIds.delete(event.toolCallId);
     permittedToolCallIds.delete(event.toolCallId);
     deniedToolCallIds.delete(event.toolCallId);

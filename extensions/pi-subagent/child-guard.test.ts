@@ -150,6 +150,21 @@ test("parent reads the guard's initial, admitted, denied, and exhausted telemetr
   }
 });
 
+test("counts each denied tool call once across repeated guard checks and execution end", async () => {
+  const harness = await createHarness(["allowed"], "local");
+  try {
+    await harness.emit("session_start");
+    const event = { toolName: "bash", toolCallId: "repeated-denial", input: {} };
+    await harness.emit("tool_execution_start", { ...event, args: event.input });
+    assert.equal((await harness.emit("tool_call", event)).block, true);
+    assert.equal((await harness.emit("tool_call", event)).block, true);
+    await harness.emit("tool_execution_end", { ...event, result: {}, isError: true });
+    assert.equal((await harness.getBudgetTelemetry()).deniedCalls, 1);
+  } finally {
+    await harness.cleanup();
+  }
+});
+
 function trackBudgetWrites(t: TestContext) {
   const writes: Array<Record<string, unknown>> = [];
   const original = fs.writeFileSync;
