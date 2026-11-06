@@ -1,14 +1,11 @@
 import { spawn } from "node:child_process";
 import { existsSync } from "node:fs";
-import { readFile } from "node:fs/promises";
 import { basename, relative, sep } from "node:path";
 import { setTimeout as delay } from "node:timers/promises";
 import { fileURLToPath } from "node:url";
-import type { Usage } from "@earendil-works/pi-ai";
 import { isProcessGroupGone, killProcessGroup, PARENT_LIVENESS_ENV, PARENT_LIVENESS_FD } from "./parent-liveness.ts";
 import {
   BUDGET_TELEMETRY_ENV,
-  CHILD_GUARD_EXIT_CODES,
   CHILD_FINALIZATION_GRACE_MS,
   CHILD_TIMEOUT_MS,
   LIFETIME_TOOL_CALL_LIMITS,
@@ -21,24 +18,20 @@ import {
   POLICY_ENV,
   MODEL_SELECTION_ENV,
   READY_ENV,
-  READY_MARKER,
   SOFT_DEADLINE_ENV,
   toolsForCapability,
   WEB_EXTENSION_ENV,
   WEB_INPUT_KEYS,
   type ChildPolicy,
-  type PartialReason,
-  type ResultStatus,
   type RuntimeFiles,
-  type SubagentFailureDiagnostics,
-  type SubagentFailurePhase,
   type Thinking,
 } from "./shared.ts";
-import { readBudgetTelemetry, type BudgetTelemetry } from "./budget-telemetry.ts";
-import { estimateContextTokens, formatProgress } from "./call-display.ts";
-import { formatChildOutput } from "./envelope.ts";
+import { formatProgress } from "./call-display.ts";
 import { boundedParentError } from "./diagnostics.ts";
-import { ChildJsonCollector, type ChildJsonSnapshot } from "./child-stream.ts";
+import { ChildJsonCollector } from "./child-stream.ts";
+
+import { finishChildRun, type ChildResult } from "./child-result.ts";
+export { assertChildReady, ChildRunError, selectPartialReason, type ChildResult } from "./child-result.ts";
 
 const CHILD_GUARD_PATH = fileURLToPath(new URL("./child-guard.ts", import.meta.url));
 function childSystemPrompt(policy: ChildPolicy): string {
@@ -70,94 +63,6 @@ export function buildChildPrompt(task: string, policy: ChildPolicy): string {
     "",
     "Stay within this runtime-enforced capability and scope. Return only the requested deliverable.",
   ].join("\n");
-}
-
-export type ChildResult = {
-  /** Parent-visible JSON envelope with runtime status and an untrusted answer string. */
-  output: string;
-  outputTruncated: boolean;
-  status: ResultStatus;
-  exitCode: number;
-  stopReason?: string;
-  durationMs: number;
-  contextTokens: number;
-  usage: Usage;
-  budget: BudgetTelemetry;
-  partialReason?: PartialReason;
-};
-
-export class ChildRunError extends Error {
-  readonly usage: Usage;
-
-  constructor(message: string, usage: Usage) {
-    super(message);
-    this.name = "ChildRunError";
-    this.usage = usage;
-  }
-}
-
-function childFailure(
-  error: unknown,
-  phase: SubagentFailurePhase,
-  snapshot: ChildJsonSnapshot,
-  startedAt: number,
-  exitCode?: number,
-  processDiagnostics: Pick<SubagentFailureDiagnostics, "guardReady" | "exitSignal"> = {},
-): ChildRunError {
-  const diagnostics: SubagentFailureDiagnostics = {
-    phase,
-    exitCode,
-    ...processDiagnostics,
-    stopReason: snapshot.stopReason,
-    durationMs: Date.now() - startedAt,
-    assistantMessages: snapshot.assistantMessageCount,
-    lastAssistantMode: snapshot.lastAssistantMode,
-    toolErrors: snapshot.toolErrorCount,
-    lastToolError: snapshot.lastToolError,
-    observations: snapshot.observations,
-  };
-  return new ChildRunError(boundedParentError(error, diagnostics), snapshot.usage);
-}
-
-function classifyChildInterruption(input: {
-  progressFailed: boolean;
-  aborted: boolean;
-  timedOut: boolean;
-  effectiveTimeoutMs: number;
-  waitError: unknown;
-  protocolError: string | undefined;
-  exitCode: number;
-}): { message: unknown; phase: SubagentFailurePhase; exitCode?: number } | undefined {
-  if (input.progressFailed) return { message: "Subagent stopped because progress reporting failed", phase: "progress" };
-  if (input.aborted) return { message: "Subagent invocation was cancelled", phase: "cancelled" };
-  if (input.timedOut) return {
-    message: input.effectiveTimeoutMs === CHILD_TIMEOUT_MS
-      ? `Subagent timed out after ${CHILD_TIMEOUT_MS / 60_000} minutes`
-      : `Subagent timed out after ${input.effectiveTimeoutMs} milliseconds`,
-    phase: "timeout",
-  };
-  if (input.waitError) return { message: input.waitError, phase: "spawn" };
-  if (input.protocolError) return { message: input.protocolError, phase: "protocol", exitCode: input.exitCode };
-  return undefined;
-}
-
-function describeChildExit(
-  exitCode: number,
-  exitSignal: NodeJS.Signals | undefined,
-  guardReady: boolean,
-  snapshot: ChildJsonSnapshot,
-): string {
-  const guardFailure = Object.entries(CHILD_GUARD_EXIT_CODES).find(([, code]) => code === exitCode)?.[0];
-  let message = exitSignal ? `Subagent exited with signal ${exitSignal}`
-    : guardFailure ? `Subagent guard failed: ${guardFailure}` : `Subagent exited with code ${exitCode}`;
-  if (guardReady && !exitSignal && !guardFailure
-    && snapshot.assistantMessageCount === 0 && snapshot.toolErrorCount === 0
-    && !snapshot.observations.incomplete
-    && Object.values(snapshot.observations.receipts).every((count) => count === 0)) {
-    // Missing stream activity does not prove an authentication failure.
-    message += ". No investigation activity was observed; the cause is unknown. Check the selected preset's provider authentication and model access, or review /pi-subagent-settings.";
-  }
-  return message;
 }
 
 /** Executable and script prefix that launches Pi; Pi CLI arguments are appended separately. */
@@ -231,34 +136,6 @@ export function buildChildInvocation(
     delete env[name];
   }
   return { command: launcher.command, args: [...launcher.args, ...args], env };
-}
-
-export async function assertChildReady(readyFile: string): Promise<void> {
-  let marker: string;
-  try {
-    marker = await readFile(readyFile, "utf8");
-  } catch {
-    throw new Error("Subagent guard did not become ready");
-  }
-  if (marker !== READY_MARKER) throw new Error("Subagent guard readiness marker is invalid");
-}
-
-/**
- * Precedence is model_length > tool_budget > time_limit. Decide only after process-group
- * cleanup: time_limit uses the parent's answer receipt time, else the post-cleanup time.
- */
-export function selectPartialReason(input: {
-  stopReason: string | undefined;
-  hardLimitReached: boolean;
-  finalOutputReceivedAt: number | undefined;
-  completedAt: number;
-  softDeadline: number;
-}): PartialReason | undefined {
-  return input.stopReason === "length"
-    ? "model_length"
-    : input.hardLimitReached
-      ? "tool_budget"
-      : (input.finalOutputReceivedAt ?? input.completedAt) >= input.softDeadline ? "time_limit" : undefined;
 }
 
 export async function runChild(options: {
@@ -427,65 +304,8 @@ export async function runChild(options: {
     // close only settles the direct child and its pipes, not its process group.
     await stopCleanup;
   }
-  const completedAt = Date.now();
-  const snapshot = collector.snapshot();
-
-  const interruption = classifyChildInterruption({
-    progressFailed, aborted, timedOut, effectiveTimeoutMs, waitError, protocolError: snapshot.protocolError, exitCode,
+  return finishChildRun({
+    completedAt: Date.now(), snapshot: collector.snapshot(), files: options.files,
+    startedAt, softDeadline, exitCode, exitSignal, progressFailed, aborted, timedOut, effectiveTimeoutMs, waitError,
   });
-  if (interruption) throw childFailure(
-    interruption.message, interruption.phase, snapshot, startedAt, interruption.exitCode,
-  );
-  if (exitCode !== 0) {
-    // Readiness is an observation, not a diagnosis of why startup failed.
-    const guardReady = await assertChildReady(options.files.ready).then(() => true, () => false);
-    throw childFailure(
-      describeChildExit(exitCode, exitSignal, guardReady, snapshot),
-      "process",
-      snapshot,
-      startedAt,
-      exitSignal ? undefined : exitCode,
-      { guardReady, exitSignal },
-    );
-  }
-  let budget: BudgetTelemetry;
-  try {
-    await assertChildReady(options.files.ready);
-    budget = await readBudgetTelemetry(options.files.budgetTelemetry);
-  } catch (error) {
-    throw childFailure(error, "readiness", snapshot, startedAt, exitCode);
-  }
-  if (snapshot.stopReason === "error" || snapshot.stopReason === "aborted") {
-    throw childFailure(
-      snapshot.errorMessage || `Subagent stopped with reason ${snapshot.stopReason}`,
-      "model",
-      snapshot,
-      startedAt,
-      exitCode,
-    );
-  }
-  if (!snapshot.finalOutput.trim()) {
-    throw childFailure("Subagent finished without a final assistant answer", "output", snapshot, startedAt, exitCode);
-  }
-  const partialReason = selectPartialReason({
-    stopReason: snapshot.stopReason,
-    hardLimitReached: budget.hardLimitReached,
-    finalOutputReceivedAt: snapshot.finalOutputReceivedAt,
-    completedAt,
-    softDeadline,
-  });
-  // Pi sends content, not details, to the parent model. Bound the entire envelope.
-  const capped = formatChildOutput(snapshot.finalOutput, partialReason);
-  return {
-    output: capped.text,
-    outputTruncated: capped.truncated,
-    status: partialReason ? "partial" : "complete",
-    exitCode,
-    stopReason: snapshot.stopReason,
-    durationMs: Date.now() - startedAt,
-    contextTokens: estimateContextTokens(capped.text),
-    usage: snapshot.usage,
-    budget,
-    partialReason,
-  };
 }
