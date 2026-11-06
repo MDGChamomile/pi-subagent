@@ -180,6 +180,13 @@ export default function childGuard(
     // terminal state always persists it synchronously.
     lastPersistedBudget = snapshot;
   };
+  const markDenied = (toolCallId: string) => {
+    if (!deniedToolCallIds.has(toolCallId)) {
+      deniedToolCallIds.add(toolCallId);
+      budget.deniedCalls += 1;
+    }
+    persistBudget();
+  };
   const timeLimitReached = () => softDeadline !== undefined && Date.now() >= softDeadline;
   const requestFinalAnswer = (content: string, deliverAs: "steer" | "followUp") => {
     if (finalAnswerSeen || finalizationRequested) return;
@@ -354,11 +361,7 @@ export default function childGuard(
   pi.on("tool_call", async (event) => {
     validatedToolCallIds.add(event.toolCallId);
     const block = (reason: string, terminate?: true) => {
-      if (!deniedToolCallIds.has(event.toolCallId)) {
-        deniedToolCallIds.add(event.toolCallId);
-        budget.deniedCalls += 1;
-      }
-      persistBudget();
+      markDenied(event.toolCallId);
       return { block: true as const, reason, ...(terminate ? { terminate } : {}) };
     };
     const permit = () => {
@@ -439,11 +442,7 @@ export default function childGuard(
   });
 
   pi.on("tool_execution_end", (event) => {
-    if (!validatedToolCallIds.has(event.toolCallId) && !deniedToolCallIds.has(event.toolCallId)) {
-      deniedToolCallIds.add(event.toolCallId);
-      budget.deniedCalls += 1;
-      persistBudget();
-    }
+    if (!validatedToolCallIds.has(event.toolCallId)) markDenied(event.toolCallId);
     validatedToolCallIds.delete(event.toolCallId);
     permittedToolCallIds.delete(event.toolCallId);
     deniedToolCallIds.delete(event.toolCallId);
