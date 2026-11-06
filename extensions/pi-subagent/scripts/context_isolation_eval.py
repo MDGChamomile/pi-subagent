@@ -245,12 +245,12 @@ def parent_transcript(output: str) -> ParentTranscript:
                 value if isinstance(value, (int, float)) else 0
                 for value in (usage.get("input"), usage.get("cacheRead"), usage.get("cacheWrite"))
             )))
-            text = text_content(message.get("content"))
-            if text:
-                transcript.final_text = text
-            for block in message.get("content") or []:
-                if not isinstance(block, dict) or block.get("type") != "toolCall":
-                    continue
+            content = message.get("content")
+            calls = [block for block in content if isinstance(block, dict) and block.get("type") == "toolCall"
+                     ] if isinstance(content, list) else []
+            text = text_content(content)
+            transcript.final_text = text if message.get("stopReason") == "stop" and not calls and text.strip() else ""
+            for block in calls:
                 name = block.get("name")
                 if name == "pi_subagent":
                     transcript.subagent_calls.append(block.get("arguments"))
@@ -321,7 +321,7 @@ def _evaluate_context_output(
         "runtime_checks": observed_checks,
         "delegation_checks": delegation_checks,
         "delegation_contract_verified": all(delegation_checks.values()),
-        "result_contract_verified": arm == "direct" or envelope is not None,
+        "result_contract_verified": bool(transcript.final_text) if arm == "direct" else envelope is not None,
         "runtime_configuration_verified": arm == "direct" or (
             all(observed_checks.values()) and child_details.get("model") == selection["model"]
             and child_details.get("thinking") == selection["thinking"]
