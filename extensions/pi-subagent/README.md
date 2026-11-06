@@ -59,7 +59,8 @@ The README maintains the [per-run call limits](../../README.md#capabilities), in
 - Local and web access never coexist in one child. Mixed-source work uses separate calls and parent-side synthesis.
 - A bare `@` is rejected rather than expanding to the parent working directory.
 - `task` is limited to 12,000 characters and must not contain NUL bytes; each scope path is limited to 4,096 characters. Unknown tool arguments are rejected.
-- The child cannot write files, run Bash or tests, inspect sessions, recurse, run in the background, persist a child session, or load discovered extensions, Skills, prompt templates, context files, themes, or trust-gated project configuration and resources.
+- The child has no tool for browsing session history and does not save its own session. A local child can read an existing session file if the file is within its authorized scope.
+- The child cannot write files, run Bash or tests, recurse, run in the background, or load discovered extensions, Skills, prompt templates, context files, themes, or trust-gated project configuration and resources.
 
 ### Presets
 

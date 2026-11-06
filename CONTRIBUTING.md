@@ -93,6 +93,8 @@ ancestor of `updates`.
 
 ## Source and checks
 
+The validation workflow runs on pull requests and on pushes to `main`, `updates`, or any tag. Open a PR to validate a task branch on GitHub.
+
 Edit `extensions/pi-subagent/`, `skills/pi-subagent/`, or the maintained files in `packaging/pi-subagent/`, not generated `packaging/pi-subagent/dist/`.
 
 From the repository root, with Node.js 22.22+, Python 3.10+, and `rg`:
