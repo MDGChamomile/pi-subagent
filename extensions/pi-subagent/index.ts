@@ -54,6 +54,7 @@ export default function piSubagentExtension(
   let ownSourcePath: string | undefined;
 
   const currentOwnSource = () => pi.getAllTools().find((tool) => tool.name === TOOL_NAME)?.sourceInfo?.path;
+  const sourceVerified = () => !!ownSourcePath && currentOwnSource() === ownSourcePath;
   const clearRun = () => {
     gate.endRun();
     failedUsage.clear();
@@ -67,11 +68,10 @@ export default function piSubagentExtension(
     parameters: Parameters,
     async execute(toolCallId, params, signal, onUpdate, ctx) {
       try {
-        const currentSource = currentOwnSource();
-        const sourceVerified = !!ownSourcePath && currentSource === ownSourcePath;
-        if (!gate.beginPreflight(toolCallId) || !sourceVerified) {
+        const verified = sourceVerified();
+        if (!gate.beginPreflight(toolCallId) || !verified) {
           throw new Error(boundedParentError(
-            sourceVerified ? `pi_subagent allows at most ${MAX_SUBAGENT_CALLS} model-selected calls per parent agent run`
+            verified ? `pi_subagent allows at most ${MAX_SUBAGENT_CALLS} model-selected calls per parent agent run`
               : TOOL_SOURCE_FAILURE,
             { phase: "preflight" },
           ));
@@ -212,10 +212,7 @@ export default function piSubagentExtension(
   });
   pi.on("tool_call", (event) => {
     if (event.toolName !== TOOL_NAME) return;
-    const currentSource = currentOwnSource();
-    if (!ownSourcePath || currentSource !== ownSourcePath) {
-      return { block: true, reason: TOOL_SOURCE_FAILURE };
-    }
+    if (!sourceVerified()) return { block: true, reason: TOOL_SOURCE_FAILURE };
     if (!gate.authorize(event.toolCallId)) return invocationLimitBlock();
   });
   pi.on("tool_result", (event) => {
