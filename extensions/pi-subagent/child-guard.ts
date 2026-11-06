@@ -366,15 +366,19 @@ export default function childGuard(
     const policyUnavailable = () => block(`Subagent policy is unavailable: ${policyError ?? "unknown error"}`, true);
 
     if (!policy || (policy.capability === "web" && !webExtensionPath)) return policyUnavailable();
-    const deadlineExpired = timeLimitReached();
-    if (deadlineExpired) requestPartialAnswer();
-    if (deadlineExpired || finalizationRequested) {
+    const blockIfFinalizing = () => {
+      const expired = timeLimitReached();
+      if (expired) requestPartialAnswer();
+      if (!policy) return policyUnavailable();
+      if (!expired && !finalizationRequested) return;
       const hardLimitExceeded = budget.hardLimitReached
         && budget.toolCallsAttempted > LIFETIME_TOOL_CALL_LIMITS[policy.capability].hard;
       return block(hardLimitExceeded
         ? "The child lifetime tool-call hard limit has been exceeded; finalization has started"
         : "Finalization has started; return the final answer without further tool calls");
-    }
+    };
+    const initialBlock = blockIfFinalizing();
+    if (initialBlock) return initialBlock;
     const allowed = policy.capability === "local" ? FILE_TOOLS : WEB_TOOLS;
     if (!allowed.has(event.toolName)) {
       return block(`Tool ${event.toolName} is not allowed in the subagent. Use an available tool or return the final answer`);
@@ -391,6 +395,8 @@ export default function childGuard(
       } catch (error) {
         return block(errorMessage(error));
       }
+      const finalBlock = blockIfFinalizing();
+      if (finalBlock) return finalBlock;
       permit();
       return;
     }

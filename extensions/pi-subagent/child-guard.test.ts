@@ -904,6 +904,33 @@ describe("pi-subagent child guard", () => {
     }
   });
 
+  for (const fireTimer of [false, true]) {
+    test(`blocks a pending local read when the deadline passes during path resolution (timer=${fireTimer})`, async (t) => {
+      const now = Date.now();
+      t.mock.timers.enable({ apis: ["Date", "setTimeout"], now });
+      const harness = await createHarness(["allowed"], "local", now + 100);
+      try {
+        await harness.emit("session_start");
+        const event = { toolName: "read", toolCallId: "pending", input: { path: "allowed/inside.txt" } };
+        await harness.emit("tool_execution_start", event);
+        const pending = harness.emit("tool_call", event);
+        if (fireTimer) t.mock.timers.tick(100);
+        else t.mock.timers.setTime(now + 100);
+        const result = await pending;
+        assert.equal(result?.block, true);
+        await harness.emit("tool_execution_end", event);
+        assert.deepEqual(harness.getActiveTools(), []);
+        assert.equal(harness.getSentUserMessages().length, 1);
+        const budget = await harness.getBudgetTelemetry();
+        assert.equal(budget.toolCallsAttempted, 1);
+        assert.equal(budget.deniedCalls, 1);
+        assert.equal(budget.toolCallsExecuted, 0);
+      } finally {
+        await harness.cleanup();
+      }
+    });
+  }
+
   test("steers one text finalization and blocks new tools after the soft deadline", async () => {
     const harness = await createHarness(["allowed"], "local", Date.now() - 1);
     try {
