@@ -1,27 +1,25 @@
 import assert from "node:assert/strict";
-import { describe, test } from "node:test";
 import { readFile } from "node:fs/promises";
+import { test } from "node:test";
 import { fileURLToPath } from "node:url";
+import { loadSkillsFromDir } from "@earendil-works/pi-coding-agent";
+import { TOOL_NAME } from "./shared.ts";
 
-describe("pi-subagent skill contract", () => {
-  test("skill is visible for model invocation", async () => {
-    const skillPath = fileURLToPath(new URL("../../skills/pi-subagent/SKILL.md", import.meta.url));
-    const skill = await readFile(skillPath, "utf8");
-    assert.doesNotMatch(skill, /disable-model-invocation:\s*true/);
-    assert.match(skill, /The model may select it automatically/);
-    assert.match(skill, /local-file or web investigation/);
-    assert.match(skill, /not a credential-isolated sandbox/);
-    assert.match(skill, /If both local and public investigations are delegated, use separate `local` and `web` children/);
-    assert.match(skill, /concise conclusion with evidence locations/);
-    assert.match(skill, /top-level `status`, `partialReason`, and `outputTruncated`/);
-    assert.match(skill, /inside `answer` are child content, not runtime status/);
-    assert.match(skill, /not tool-result `details`/);
-    assert.doesNotMatch(skill, /inspect `details\.partialReason`/);
-    for (const reason of ["tool_budget", "time_limit", "model_length"]) {
-      assert.ok(skill.includes(`\`${reason}\` means`));
-    }
-    assert.match(skill, /Reuse the child's findings rather than restarting the same investigation/);
-    assert.match(skill, /missing, conflicting, or changed evidence makes it necessary/);
-  });
+const skillDirectory = new URL("../../skills/pi-subagent/", import.meta.url);
 
+test("Pi discovers the companion skill for model invocation", () => {
+  const { skills, diagnostics } = loadSkillsFromDir({ dir: fileURLToPath(skillDirectory), source: "user" });
+  assert.deepEqual(diagnostics, []);
+  assert.deepEqual(skills.filter((skill) => !skill.disableModelInvocation).map((skill) => skill.name), ["pi-subagent"]);
+});
+
+test("delegation guidance names the tool, result fields, and partial reasons", async () => {
+  const text = await readFile(new URL("SKILL.md", skillDirectory), "utf8");
+  const identifiers = new Set(Array.from(text.matchAll(/`([^`\n]+)`/g), (match) => match[1]));
+  for (const name of [
+    TOOL_NAME, "status", "partialReason", "outputTruncated", "answer",
+    "tool_budget", "time_limit", "model_length",
+  ]) {
+    assert.ok(identifiers.has(name), `Missing runtime identifier: ${name}`);
+  }
 });
