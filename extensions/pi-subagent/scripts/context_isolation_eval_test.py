@@ -191,7 +191,7 @@ class ContextEvaluationTests(unittest.TestCase):
             {"role": "assistant", "usage": {"input": 10, "cacheRead": 5, "cacheWrite": 2},
              "content": [{"type": "toolCall", "name": "read"}]},
             {"role": "toolResult", "toolName": "read", "content": [{"type": "text", "text": "가"}]},
-            {"role": "assistant", "usage": {"input": "ignored", "cacheRead": 8, "cacheWrite": 2},
+            {"role": "assistant", "stopReason": "stop", "usage": {"input": "ignored", "cacheRead": 8, "cacheWrite": 2},
              "content": [{"type": "text", "text": answer}]},
         ]
         self.assertEqual(self.run_context(messages, "direct"), {
@@ -207,6 +207,24 @@ class ContextEvaluationTests(unittest.TestCase):
             "has_raw_tool_syntax": False, "subagent_result_received": False, "result_text": "",
         })
 
+    def test_direct_score_requires_a_final_text_turn(self):
+        text = {"type": "text", "text": "fact-one fact-two fixture/incident.log:2"}
+        call = {"type": "toolCall", "name": "read"}
+        intermediate = {"role": "assistant", "stopReason": "toolUse", "content": [text, call]}
+        for reason, content in [("stop", []), ("stop", [text, call]), ("toolUse", [text]),
+                                ("length", [text]), ("error", [text]), ("aborted", [text])]:
+            with self.subTest(reason=reason, content=content):
+                row = self.run_context([intermediate, {"role": "assistant", "stopReason": reason,
+                                                       "content": content}], "direct")
+                self.assertEqual(row["fact_recall"], 0)
+                self.assertEqual(row["final_bytes"], 0)
+                self.assertFalse(row["result_contract_verified"])
+                self.assertFalse(row["has_evidence_location"])
+        recovered = self.run_context([intermediate, {"role": "assistant", "stopReason": "stop",
+                                                     "content": [text]}], "direct")
+        self.assertEqual(recovered["fact_recall"], 1)
+        self.assertTrue(recovered["result_contract_verified"])
+
     def test_delegated_metrics_use_child_answer_and_count_followup_investigation(self):
         answer = "FACT_one; fact-two fixture/incident.log:1"
         messages = context_messages()
@@ -216,7 +234,7 @@ class ContextEvaluationTests(unittest.TestCase):
         messages.extend([
             {"role": "assistant", "usage": {"input": 20}, "content": [{"type": "toolCall", "name": "grep"}]},
             {"role": "toolResult", "toolName": "grep", "content": [{"type": "text", "text": "after 한"}]},
-            {"role": "assistant", "usage": {"input": 30, "cacheRead": 4, "cacheWrite": 1},
+            {"role": "assistant", "stopReason": "stop", "usage": {"input": 30, "cacheRead": 4, "cacheWrite": 1},
              "content": [{"type": "text", "text": "parent-only"}]},
         ])
         self.assertEqual(self.run_context(messages, "subagent"), {
@@ -283,7 +301,7 @@ class ContextEvaluationTests(unittest.TestCase):
     def test_context_exit_code_requires_the_delegation_contract(self):
         args = argparse.Namespace(mode="context", main_model="offline/parent", main_thinking="off",
                                   repetitions=1, case="lookup", include_results=True, timeout_seconds=1)
-        direct = self.run_context([], "direct")
+        direct = self.run_context([{"role": "assistant", "stopReason": "stop", "content": "answer"}], "direct")
         valid = context_messages()
         for messages, expected in [(valid, 0), (valid + [copy.deepcopy(valid[0])], 1)]:
             delegated = self.run_context(messages, "subagent")
