@@ -35,29 +35,6 @@ export class ChildRunError extends Error {
   }
 }
 
-function childFailure(
-  error: unknown,
-  phase: SubagentFailurePhase,
-  snapshot: ChildJsonSnapshot,
-  startedAt: number,
-  exitCode?: number,
-  processDiagnostics: Pick<SubagentFailureDiagnostics, "guardReady" | "exitSignal"> = {},
-): ChildRunError {
-  const diagnostics: SubagentFailureDiagnostics = {
-    phase,
-    exitCode,
-    ...processDiagnostics,
-    stopReason: snapshot.stopReason,
-    durationMs: Date.now() - startedAt,
-    assistantMessages: snapshot.assistantMessageCount,
-    lastAssistantMode: snapshot.lastAssistantMode,
-    toolErrors: snapshot.toolErrorCount,
-    lastToolError: snapshot.lastToolError,
-    observations: snapshot.observations,
-  };
-  return new ChildRunError(boundedParentError(error, diagnostics), snapshot.usage);
-}
-
 type FinishedChild = {
   snapshot: ChildJsonSnapshot;
   files: RuntimeFiles;
@@ -127,27 +104,42 @@ export function selectPartialReason(input: {
   completedAt: number;
   softDeadline: number;
 }): PartialReason | undefined {
-  return input.stopReason === "length"
-    ? "model_length"
-    : input.hardLimitReached
-      ? "tool_budget"
-      : (input.finalOutputReceivedAt ?? input.completedAt) >= input.softDeadline ? "time_limit" : undefined;
+  if (input.stopReason === "length") return "model_length";
+  if (input.hardLimitReached) return "tool_budget";
+  if ((input.finalOutputReceivedAt ?? input.completedAt) >= input.softDeadline) return "time_limit";
+  return undefined;
 }
 
 export async function finishChildRun(run: FinishedChild): Promise<ChildResult> {
   const { snapshot, files, startedAt, completedAt, softDeadline, exitCode, exitSignal } = run;
+  const childFailure = (
+    error: unknown,
+    phase: SubagentFailurePhase,
+    failureExitCode?: number,
+    processDiagnostics: Pick<SubagentFailureDiagnostics, "guardReady" | "exitSignal"> = {},
+  ): ChildRunError => {
+    const diagnostics: SubagentFailureDiagnostics = {
+      phase,
+      exitCode: failureExitCode,
+      ...processDiagnostics,
+      stopReason: snapshot.stopReason,
+      durationMs: Date.now() - startedAt,
+      assistantMessages: snapshot.assistantMessageCount,
+      lastAssistantMode: snapshot.lastAssistantMode,
+      toolErrors: snapshot.toolErrorCount,
+      lastToolError: snapshot.lastToolError,
+      observations: snapshot.observations,
+    };
+    return new ChildRunError(boundedParentError(error, diagnostics), snapshot.usage);
+  };
   const interruption = classifyChildInterruption(run);
-  if (interruption) throw childFailure(
-    interruption.message, interruption.phase, snapshot, startedAt, interruption.exitCode,
-  );
+  if (interruption) throw childFailure(interruption.message, interruption.phase, interruption.exitCode);
   if (exitCode !== 0) {
     // Readiness is an observation, not a diagnosis of why startup failed.
     const guardReady = await assertChildReady(files.ready).then(() => true, () => false);
     throw childFailure(
       describeChildExit(exitCode, exitSignal, guardReady, snapshot),
       "process",
-      snapshot,
-      startedAt,
       exitSignal ? undefined : exitCode,
       { guardReady, exitSignal },
     );
@@ -157,19 +149,13 @@ export async function finishChildRun(run: FinishedChild): Promise<ChildResult> {
     await assertChildReady(files.ready);
     budget = await readBudgetTelemetry(files.budgetTelemetry);
   } catch (error) {
-    throw childFailure(error, "readiness", snapshot, startedAt, exitCode);
+    throw childFailure(error, "readiness", exitCode);
   }
   if (snapshot.stopReason === "error" || snapshot.stopReason === "aborted") {
-    throw childFailure(
-      snapshot.errorMessage || `Subagent stopped with reason ${snapshot.stopReason}`,
-      "model",
-      snapshot,
-      startedAt,
-      exitCode,
-    );
+    throw childFailure(snapshot.errorMessage || `Subagent stopped with reason ${snapshot.stopReason}`, "model", exitCode);
   }
   if (!snapshot.finalOutput.trim()) {
-    throw childFailure("Subagent finished without a final assistant answer", "output", snapshot, startedAt, exitCode);
+    throw childFailure("Subagent finished without a final assistant answer", "output", exitCode);
   }
   const partialReason = selectPartialReason({
     stopReason: snapshot.stopReason,
