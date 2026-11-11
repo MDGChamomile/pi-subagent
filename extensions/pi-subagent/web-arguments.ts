@@ -31,6 +31,11 @@ function validatePublicHttpUrl(raw: string): string | undefined {
   }
 }
 
+function nonEmptyStrings(value: unknown): string[] {
+  if (!Array.isArray(value)) return [];
+  return value.filter((entry): entry is string => typeof entry === "string" && entry.trim().length > 0);
+}
+
 function expandedSingleQueryCount(value: unknown): number {
   if (typeof value !== "string" || !value.trim()) return 0;
   const trimmed = value.trim();
@@ -38,7 +43,7 @@ function expandedSingleQueryCount(value: unknown): number {
     try {
       const parsed: unknown = JSON.parse(trimmed);
       if (Array.isArray(parsed) && parsed.every((entry) => typeof entry === "string")) {
-        return parsed.filter((entry) => entry.trim().length > 0).length;
+        return nonEmptyStrings(parsed).length;
       }
     } catch {
       // pi-web-access treats malformed JSON-shaped strings as one literal query.
@@ -48,24 +53,18 @@ function expandedSingleQueryCount(value: unknown): number {
 }
 
 function webSearchQueryCount(input: Record<string, unknown>): number {
-  if (Array.isArray(input.queries)) {
-    return input.queries.filter((query) => typeof query === "string" && query.trim().length > 0).length;
-  }
+  if (Array.isArray(input.queries)) return nonEmptyStrings(input.queries).length;
   return expandedSingleQueryCount(input.query);
 }
 
 function sourceCheckQueryCount(input: Record<string, unknown>): number {
   if (typeof input.claim !== "string" || !input.claim.trim()) return 0;
-  const requested = Array.isArray(input.queries)
-    ? input.queries.filter((query) => typeof query === "string" && query.trim().length > 0).length
-    : 0;
+  const requested = nonEmptyStrings(input.queries).length;
   return requested > 0 ? requested : 1;
 }
 
 function fetchContentTargetCount(input: Record<string, unknown>): number {
-  const urls = Array.isArray(input.urls)
-    ? input.urls.filter((url) => typeof url === "string" && url.trim().length > 0).map((url) => url.trim())
-    : [];
+  const urls = nonEmptyStrings(input.urls).map((url) => url.trim());
   if (urls.length > 0) return new Set(urls).size;
   return typeof input.url === "string" && input.url.trim().length > 0 ? 1 : 0;
 }
