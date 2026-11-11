@@ -2,9 +2,11 @@ import { StringDecoder } from "node:string_decoder";
 import type { Usage } from "@earendil-works/pi-ai";
 import { diagnosticToolName } from "./diagnostics.ts";
 import {
+  isRecord,
   MAX_JSON_LINE_BYTES,
   MAX_OBSERVATION_COUNT,
   OBSERVED_CHILD_EVENTS,
+  observedEventRecord,
   type ChildFailureObservations,
   type ObservedChildEvent,
 } from "./shared.ts";
@@ -89,8 +91,6 @@ export type ChildJsonSnapshot = {
 
 const MAX_OBSERVED_RECORD_BYTES = 4096;
 
-const isRecord = (value: unknown): value is Record<string, unknown> =>
-  value !== null && typeof value === "object" && !Array.isArray(value);
 const isPositiveInteger = (value: unknown) => Number.isSafeInteger(value) && (value as number) > 0;
 
 const OBSERVED_EVENT_VALIDATORS = {
@@ -121,8 +121,8 @@ export class ChildJsonCollector {
   private lineBytes = 0;
   private disposition: "unknown" | "capture" | "observe" | "discard" = "unknown";
   private capturedType: "message_end" | "compaction_end" | undefined;
-  private readonly eventCounts = Object.fromEntries(OBSERVED_CHILD_EVENTS.map((key) => [key, 0])) as Record<ObservedChildEvent, number>;
-  private readonly eventReceipts = Object.fromEntries(OBSERVED_CHILD_EVENTS.map((key) => [key, 0])) as Record<ObservedChildEvent, number>;
+  private readonly eventCounts = observedEventRecord(() => 0);
+  private readonly eventReceipts = observedEventRecord(() => 0);
   private pendingObservedType: ObservedChildEvent | undefined;
   private lastEvent: ObservedChildEvent | undefined;
   private lastEventAt: number | undefined;

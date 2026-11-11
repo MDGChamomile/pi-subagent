@@ -6,10 +6,12 @@ import { StringEnum } from "@earendil-works/pi-ai";
 import { Text, TruncatedText, truncateToWidth } from "@earendil-works/pi-tui";
 import { Type } from "typebox";
 import {
+  MAX_SCOPE_PATH_LENGTH,
   MAX_SCOPE_ROOTS,
   PRESET_NAMES,
   runtimeFilesIn,
   sanitizeDisplayText,
+  singleLineDisplayText,
   TOOL_NAME,
   type Capability,
   type ChildPolicy,
@@ -35,7 +37,7 @@ const CapabilitySchema = StringEnum(["local", "web"] as const, {
 });
 const Parameters = Type.Object({
   task: Type.String({ minLength: 1, maxLength: 12_000, description: "One focused local or web investigation and required deliverable" }),
-  scope: Type.Array(Type.String({ minLength: 1, maxLength: 4096 }), {
+  scope: Type.Array(Type.String({ minLength: 1, maxLength: MAX_SCOPE_PATH_LENGTH }), {
     minItems: 0,
     maxItems: MAX_SCOPE_ROOTS,
     description: "Existing local files/directories inside cwd; use [] for web-only research",
@@ -176,7 +178,7 @@ export default function piSubagentExtension(
         return new Text([title, ...inputs].join("\n"), 0, 0);
       }
       const task = typeof args?.task === "string"
-        ? sanitizeDisplayText(args.task).replace(/\s+/g, " ").trim()
+        ? singleLineDisplayText(args.task).trim()
         : "";
       const preview = truncateToWidth(task, 100);
       return new TruncatedText(title + (preview ? ` ${theme.fg("accent", preview)}` : ""), 0, 0);

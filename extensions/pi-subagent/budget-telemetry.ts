@@ -1,4 +1,5 @@
 import { readFile } from "node:fs/promises";
+import { isRecord } from "./shared.ts";
 
 export type BudgetTelemetry = {
   version: 1;
@@ -23,7 +24,7 @@ export async function readBudgetTelemetry(path: string): Promise<BudgetTelemetry
 }
 
 function parseBudgetTelemetry(parsed: unknown): BudgetTelemetry {
-  if (!parsed || typeof parsed !== "object" || Array.isArray(parsed)) {
+  if (!isRecord(parsed)) {
     throw new Error("Subagent budget telemetry is malformed");
   }
   const value = parsed as Record<string, unknown>;
