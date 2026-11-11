@@ -33,6 +33,7 @@ import { prepareWebCall } from "./web-arguments.ts";
 
 const FILE_TOOLS = new Set<string>(ALLOWED_FILE_TOOLS);
 const WEB_TOOLS = new Set<string>(ALLOWED_WEB_TOOLS);
+const SOFT_LIMIT_INSTRUCTION = "Use further calls only for essential missing evidence, then return the concise final answer.";
 const PARTIAL_ANSWER_INSTRUCTION = "Stop investigating and answer now using only evidence already gathered. Clearly identify unfinished work and coverage gaps; the runtime will mark the result as partial.";
 
 function loadPolicy(): { policy: ChildPolicy; policyPath: string } {
@@ -186,7 +187,7 @@ export default function childGuard(
     ledger.persist();
     requestFinalAnswer(`The child lifetime tool budget has been exhausted. ${PARTIAL_ANSWER_INSTRUCTION}`, "steer");
   };
-  const sendSoftBudgetNotice = (content = "The child lifetime tool-call soft limit has been reached. Use further calls only for essential missing evidence, then return the concise final answer.") => {
+  const sendSoftBudgetNotice = (content = `The child lifetime tool-call soft limit has been reached. ${SOFT_LIMIT_INSTRUCTION}`) => {
     if (finalizationRequested) return;
     try {
       pi.sendUserMessage(content, { deliverAs: "steer" });
@@ -383,7 +384,7 @@ export default function childGuard(
         if (reserved >= soft && !warnedWebResources.has(resource)) {
           warnedWebResources.add(resource);
           sendSoftBudgetNotice(
-            `The child lifetime web ${resource} soft limit has been reached: ${reserved}/${hard} reserved, ${hard - reserved} remaining. Use further calls only for essential missing evidence, then return the concise final answer.`,
+            `The child lifetime web ${resource} soft limit has been reached: ${reserved}/${hard} reserved, ${hard - reserved} remaining. ${SOFT_LIMIT_INSTRUCTION}`,
           );
           if (!policy) return policyUnavailable();
         }
