@@ -20,7 +20,8 @@ import { resolveWebExtensionPath } from "./web-provenance.ts";
 import { invocationLimitBlock, MAX_SUBAGENT_CALLS, ModelInvocationGate } from "./invocation-gate.ts";
 import { boundedParentError } from "./diagnostics.ts";
 import { formatResultSummary } from "./call-display.ts";
-import { ChildRunError, runChild } from "./subprocess.ts";
+import { runChild } from "./subprocess.ts";
+import { ChildRunError } from "./child-result.ts";
 import { loadPresetSettings, validatePresetSelection, type PresetSelection } from "./config.ts";
 import { registerSubagentSettingsCommand } from "./settings-command.ts";
 

@@ -31,7 +31,6 @@ import { boundedParentError } from "./diagnostics.ts";
 import { ChildJsonCollector } from "./child-stream.ts";
 
 import { finishChildRun, type ChildResult } from "./child-result.ts";
-export { assertChildReady, ChildRunError, selectPartialReason, type ChildResult } from "./child-result.ts";
 
 const CHILD_GUARD_PATH = fileURLToPath(new URL("./child-guard.ts", import.meta.url));
 function childSystemPrompt(policy: ChildPolicy): string {
