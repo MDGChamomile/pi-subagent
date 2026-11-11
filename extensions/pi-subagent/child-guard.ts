@@ -340,21 +340,11 @@ export default function childGuard(
         ? "The child lifetime tool-call hard limit has been exceeded; finalization has started"
         : "Finalization has started; return the final answer without further tool calls");
     };
-    const initialBlock = blockIfFinalizing();
-    if (initialBlock) return initialBlock;
-    const allowed = policy.capability === "local" ? FILE_TOOLS : WEB_TOOLS;
-    if (!allowed.has(event.toolName)) {
-      return block(`Tool ${event.toolName} is not allowed in the subagent. Use an available tool or return the final answer`);
-    }
-
-    if (!ownsTool(event.toolName, pi.getAllTools())) {
-      return block(`Tool ${event.toolName} ownership changed`, true);
-    }
-    if (FILE_TOOLS.has(event.toolName)) {
+    const admitLocalCall = async (activePolicy: ChildPolicy) => {
       const path = requestedPath(event.toolName, event.input);
       if (path === undefined) return block(`${event.toolName} requires a path`);
       try {
-        (event.input as Record<string, unknown>).path = await authorizeReadPath(policy, path);
+        (event.input as Record<string, unknown>).path = await authorizeReadPath(activePolicy, path);
       } catch (error) {
         return block(errorMessage(error));
       }
@@ -362,9 +352,8 @@ export default function childGuard(
       if (finalBlock) return finalBlock;
       permit();
       return;
-    }
-
-    if (WEB_TOOLS.has(event.toolName)) {
+    };
+    const admitWebCall = () => {
       const input = event.input && typeof event.input === "object" ? event.input as Record<string, unknown> : {};
       const prepared = prepareWebCall(event.toolName, input);
       if ("violation" in prepared) {
@@ -396,7 +385,19 @@ export default function childGuard(
       }
       permit();
       return;
+    };
+    const initialBlock = blockIfFinalizing();
+    if (initialBlock) return initialBlock;
+    const allowed = policy.capability === "local" ? FILE_TOOLS : WEB_TOOLS;
+    if (!allowed.has(event.toolName)) {
+      return block(`Tool ${event.toolName} is not allowed in the subagent. Use an available tool or return the final answer`);
     }
+
+    if (!ownsTool(event.toolName, pi.getAllTools())) {
+      return block(`Tool ${event.toolName} ownership changed`, true);
+    }
+    if (FILE_TOOLS.has(event.toolName)) return admitLocalCall(policy);
+    if (WEB_TOOLS.has(event.toolName)) return admitWebCall();
   });
 
   pi.on("tool_result", (event) => {
