@@ -1,9 +1,10 @@
-import { spawn } from "node:child_process";
+import { spawn, type ChildProcess } from "node:child_process";
 import { existsSync } from "node:fs";
 import { basename, relative, sep } from "node:path";
-import { setTimeout as delay } from "node:timers/promises";
 import { fileURLToPath } from "node:url";
-import { isProcessGroupGone, killProcessGroup, PARENT_LIVENESS_ENV, PARENT_LIVENESS_FD } from "./parent-liveness.ts";
+import {
+  isProcessGroupGone, killProcessGroup, PARENT_LIVENESS_ENV, PARENT_LIVENESS_FD, terminateProcessGroup,
+} from "./parent-liveness.ts";
 import {
   BUDGET_TELEMETRY_ENV,
   CHILD_FINALIZATION_GRACE_MS,
@@ -78,16 +79,17 @@ function getPiLauncher(): ChildLauncher {
   return { command: "pi", args: [] };
 }
 
+type ChildLaunchOptions = {
+  policy: ChildPolicy;
+  files: RuntimeFiles;
+  webExtensionPath?: string;
+  model: string;
+  thinking: Thinking;
+};
+
 /** Child Pi command line and environment; spawning and lifecycle remain in runChild. */
 export function buildChildInvocation(
-  options: {
-    policy: ChildPolicy;
-    files: RuntimeFiles;
-    webExtensionPath?: string;
-    model: string;
-    thinking: Thinking;
-    softDeadline: number;
-  },
+  options: ChildLaunchOptions & { softDeadline: number },
   launcher: ChildLauncher = getPiLauncher(),
   parentEnv: NodeJS.ProcessEnv = process.env,
 ): { command: string; args: string[]; env: NodeJS.ProcessEnv } {
@@ -137,13 +139,36 @@ export function buildChildInvocation(
   return { command: launcher.command, args: [...launcher.args, ...args], env };
 }
 
-export async function runChild(options: {
-  policy: ChildPolicy;
-  files: RuntimeFiles;
-  webExtensionPath?: string;
+function spawnChild(
+  invocation: { command: string; args: string[]; env: NodeJS.ProcessEnv },
+  cwd: string,
+  startedAt: number,
+) {
+  let child: ChildProcess;
+  try {
+    child = spawn(invocation.command, invocation.args, {
+      cwd,
+      env: invocation.env,
+      detached: process.platform !== "win32",
+      shell: false,
+      stdio: ["pipe", "pipe", "pipe", "pipe"],
+    });
+  } catch (error) {
+    throw new Error(boundedParentError(error, { phase: "spawn", durationMs: Date.now() - startedAt }));
+  }
+  const parentLivenessPipe = child.stdio[PARENT_LIVENESS_FD];
+  if (!child.stdin || !child.stdout || !child.stderr || !parentLivenessPipe) {
+    killProcessGroup(child.pid, "SIGKILL");
+    throw new Error(boundedParentError("Subagent process pipes are unavailable", {
+      phase: "spawn",
+      durationMs: Date.now() - startedAt,
+    }));
+  }
+  return { child, stdin: child.stdin, stdout: child.stdout, stderr: child.stderr, parentLivenessPipe };
+}
+
+export async function runChild(options: ChildLaunchOptions & {
   task: string;
-  model: string;
-  thinking: Thinking;
   signal?: AbortSignal;
   onUpdate?: (update: {
     content: Array<{ type: "text"; text: string }>;
@@ -174,26 +199,7 @@ export async function runChild(options: {
     softDeadline,
   }, options.launcherOverride);
 
-  let child: ReturnType<typeof spawn>;
-  try {
-    child = spawn(invocation.command, invocation.args, {
-      cwd: options.policy.cwd,
-      env: invocation.env,
-      detached: process.platform !== "win32",
-      shell: false,
-      stdio: ["pipe", "pipe", "pipe", "pipe"],
-    });
-  } catch (error) {
-    throw new Error(boundedParentError(error, { phase: "spawn", durationMs: Date.now() - startedAt }));
-  }
-  const parentLivenessPipe = child.stdio[PARENT_LIVENESS_FD];
-  if (!child.stdin || !child.stdout || !child.stderr || !parentLivenessPipe) {
-    killProcessGroup(child.pid, "SIGKILL");
-    throw new Error(boundedParentError("Subagent process pipes are unavailable", {
-      phase: "spawn",
-      durationMs: Date.now() - startedAt,
-    }));
-  }
+  const { child, stdin, stdout, stderr, parentLivenessPipe } = spawnChild(invocation, options.policy.cwd, startedAt);
   let timedOut = false;
   let aborted = false;
   let progressFailed = false;
@@ -210,21 +216,7 @@ export async function runChild(options: {
     // A failed spawn has no process group to clean up. Every child that received
     // a PID goes through the conservative group probe below.
     if (child.pid === undefined) return;
-    killProcessGroup(child.pid, "SIGTERM");
-    // The leader may close while descendants survive. Only confirmed group
-    // disappearance can end cleanup early; uncertain probes retain escalation.
-    stopCleanup = (async () => {
-      const deadline = performance.now() + (options.killGraceMs ?? 5_000);
-      while (!isProcessGroupGone(child.pid)) {
-        const remaining = deadline - performance.now();
-        if (remaining <= 0) {
-          killProcessGroup(child.pid, "SIGKILL");
-          return;
-        }
-        // Keep this timer referenced until the entire group is gone or killed.
-        await delay(Math.min(100, remaining));
-      }
-    })();
+    stopCleanup = terminateProcessGroup(child.pid, options.killGraceMs ?? 5_000);
   };
 
   const emitProgress = () => {
@@ -275,9 +267,9 @@ export async function runChild(options: {
   });
   try {
     parentLivenessPipe.on("error", () => undefined);
-    child.stdout.on("data", (chunk: Buffer) => collector.push(chunk));
-    child.stderr.resume();
-    child.stdin.on("error", () => undefined);
+    stdout.on("data", (chunk: Buffer) => collector.push(chunk));
+    stderr.resume();
+    stdin.on("error", () => undefined);
     options.signal?.addEventListener("abort", onAbort, { once: true });
     timeout = setTimeout(() => requestStop("timeout"), Math.max(0, hardDeadline - Date.now()));
     timeout.unref?.();
@@ -288,7 +280,7 @@ export async function runChild(options: {
       progressTimer.unref?.();
     }
     // Do not deliver the investigation when its first progress update failed.
-    if (!stopping) child.stdin.end(buildChildPrompt(options.task, options.policy));
+    if (!stopping) stdin.end(buildChildPrompt(options.task, options.policy));
     exitCode = await exited;
   } catch (error) {
     waitError = error;
