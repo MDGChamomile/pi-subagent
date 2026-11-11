@@ -1,5 +1,6 @@
 import { lstatSync, readFileSync, realpathSync, writeFileSync } from "node:fs";
 import { dirname, resolve } from "node:path";
+import type { AssistantMessage } from "@earendil-works/pi-ai";
 import type { ExtensionAPI, ExtensionContext, ToolInfo } from "@earendil-works/pi-coding-agent";
 import { cleanupPrivateRuntimeFiles, installParentLivenessMonitor } from "./parent-liveness.ts";
 import { validatePresetSelection, type PresetSelection } from "./config.ts";
@@ -120,6 +121,18 @@ function canonicalSourcePath(raw: unknown): string | undefined {
   }
 }
 
+function isFinalAnswer(message: AssistantMessage): boolean {
+  const content = message.content;
+  const hasToolCall = content.some((part) => part.type === "toolCall");
+  const hasText = content.some((part) => part.type === "text" && part.text.trim().length > 0);
+  return hasText
+    && !hasToolCall
+    && message.stopReason !== "error"
+    && message.stopReason !== "aborted"
+    && message.stopReason !== "toolUse"
+    && message.stopReason !== "length";
+}
+
 export default function childGuard(
   pi: ExtensionAPI,
   installLiveness = installParentLivenessMonitor,
@@ -197,15 +210,7 @@ export default function childGuard(
 
   pi.on("turn_end", (event) => {
     if (event.message.role !== "assistant") return;
-    const content = event.message.content;
-    const hasToolCall = content.some((part) => part.type === "toolCall");
-    const hasText = content.some((part) => part.type === "text" && part.text.trim().length > 0);
-    finalAnswerSeen = hasText
-      && !hasToolCall
-      && event.message.stopReason !== "error"
-      && event.message.stopReason !== "aborted"
-      && event.message.stopReason !== "toolUse"
-      && event.message.stopReason !== "length";
+    finalAnswerSeen = isFinalAnswer(event.message);
   });
 
   pi.on("agent_start", () => {
