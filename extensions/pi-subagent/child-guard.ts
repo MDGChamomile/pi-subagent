@@ -1,5 +1,6 @@
 import { lstatSync, readFileSync, realpathSync, writeFileSync } from "node:fs";
 import { dirname, resolve } from "node:path";
+import type { AssistantMessage } from "@earendil-works/pi-ai";
 import type { ExtensionAPI, ExtensionContext, ToolInfo } from "@earendil-works/pi-coding-agent";
 import { cleanupPrivateRuntimeFiles, installParentLivenessMonitor } from "./parent-liveness.ts";
 import { validatePresetSelection, type PresetSelection } from "./config.ts";
@@ -26,12 +27,13 @@ import {
   type ChildPolicy,
   type RuntimeFiles,
 } from "./shared.ts";
-import type { BudgetTelemetry } from "./budget-telemetry.ts";
+import { BudgetLedger } from "./budget-telemetry.ts";
 import { authorizeReadPath, isWithin } from "./path-policy.ts";
 import { prepareWebCall } from "./web-arguments.ts";
 
 const FILE_TOOLS = new Set<string>(ALLOWED_FILE_TOOLS);
 const WEB_TOOLS = new Set<string>(ALLOWED_WEB_TOOLS);
+const SOFT_LIMIT_INSTRUCTION = "Use further calls only for essential missing evidence, then return the concise final answer.";
 const PARTIAL_ANSWER_INSTRUCTION = "Stop investigating and answer now using only evidence already gathered. Clearly identify unfinished work and coverage gaps; the runtime will mark the result as partial.";
 
 function loadPolicy(): { policy: ChildPolicy; policyPath: string } {
@@ -120,6 +122,18 @@ function canonicalSourcePath(raw: unknown): string | undefined {
   }
 }
 
+function isFinalAnswer(message: AssistantMessage): boolean {
+  const content = message.content;
+  const hasToolCall = content.some((part) => part.type === "toolCall");
+  const hasText = content.some((part) => part.type === "text" && part.text.trim().length > 0);
+  return hasText
+    && !hasToolCall
+    && message.stopReason !== "error"
+    && message.stopReason !== "aborted"
+    && message.stopReason !== "toolUse"
+    && message.stopReason !== "length";
+}
+
 export default function childGuard(
   pi: ExtensionAPI,
   installLiveness = installParentLivenessMonitor,
@@ -134,20 +148,7 @@ export default function childGuard(
   let policyError: string | undefined;
   let guardReady = false;
   let startupExitCode: number = CHILD_GUARD_EXIT_CODES.initialization;
-  const validatedToolCallIds = new Set<string>();
-  const permittedToolCallIds = new Set<string>();
-  const deniedToolCallIds = new Set<string>();
   const warnedWebResources = new Set<"queries" | "content targets">();
-  const budget: BudgetTelemetry = {
-    version: 1,
-    toolCallsAttempted: 0,
-    toolCallsExecuted: 0,
-    deniedCalls: 0,
-    queryCount: 0,
-    fetchTargetCount: 0,
-    softLimitReached: false,
-    hardLimitReached: false,
-  };
 
   // Local tools must be Pi built-ins; web tools must come from the explicitly loaded extension file.
   const ownsTool = (name: string, tools: ToolInfo[]) => {
@@ -164,30 +165,8 @@ export default function childGuard(
     invalidatePolicy(message);
     pi.setActiveTools([]);
   };
-  let lastPersistedBudget: string | undefined;
-  const persistBudget = () => {
-    if (!runtimeFiles) return;
-    const snapshot = JSON.stringify(budget);
-    if (snapshot === lastPersistedBudget) return;
-    try {
-      writeFileSync(runtimeFiles.budgetTelemetry, snapshot, { encoding: "utf8", mode: 0o600 });
-    } catch (error) {
-      // The parent derives tool_budget status only from this file. Pi may continue
-      // after a hook error, so a stale snapshot must not let the child finish normally.
-      failClosed(`could not persist budget telemetry: ${errorMessage(error)}`);
-      throw error;
-    }
-    // Record only successful writes, so the event that changes a reservation or
-    // terminal state always persists it synchronously.
-    lastPersistedBudget = snapshot;
-  };
-  const markDenied = (toolCallId: string) => {
-    if (!deniedToolCallIds.has(toolCallId)) {
-      deniedToolCallIds.add(toolCallId);
-      budget.deniedCalls += 1;
-    }
-    persistBudget();
-  };
+  const ledger = new BudgetLedger((error) => failClosed(`could not persist budget telemetry: ${errorMessage(error)}`));
+  const { budget } = ledger;
   const timeLimitReached = () => softDeadline !== undefined && Date.now() >= softDeadline;
   const requestFinalAnswer = (content: string, deliverAs: "steer" | "followUp") => {
     if (finalAnswerSeen || finalizationRequested) return;
@@ -205,11 +184,10 @@ export default function childGuard(
   };
   const requestBudgetPartialAnswer = () => {
     budget.hardLimitReached = true;
-    budget.partialReason = "tool_budget";
-    persistBudget();
+    ledger.persist();
     requestFinalAnswer(`The child lifetime tool budget has been exhausted. ${PARTIAL_ANSWER_INSTRUCTION}`, "steer");
   };
-  const sendSoftBudgetNotice = (content = "The child lifetime tool-call soft limit has been reached. Use further calls only for essential missing evidence, then return the concise final answer.") => {
+  const sendSoftBudgetNotice = (content = `The child lifetime tool-call soft limit has been reached. ${SOFT_LIMIT_INSTRUCTION}`) => {
     if (finalizationRequested) return;
     try {
       pi.sendUserMessage(content, { deliverAs: "steer" });
@@ -223,6 +201,7 @@ export default function childGuard(
     policy = loaded.policy;
     const files = loadRuntimeFiles(loaded.policyPath);
     runtimeFiles = files;
+    ledger.attach(files.budgetTelemetry);
     installLiveness(() => cleanupPrivateRuntimeFiles(files));
     softDeadline = loadSoftDeadline();
     if (policy.capability === "web") webExtensionPath = loadWebExtensionPath();
@@ -232,15 +211,7 @@ export default function childGuard(
 
   pi.on("turn_end", (event) => {
     if (event.message.role !== "assistant") return;
-    const content = event.message.content;
-    const hasToolCall = content.some((part) => part.type === "toolCall");
-    const hasText = content.some((part) => part.type === "text" && part.text.trim().length > 0);
-    finalAnswerSeen = hasText
-      && !hasToolCall
-      && event.message.stopReason !== "error"
-      && event.message.stopReason !== "aborted"
-      && event.message.stopReason !== "toolUse"
-      && event.message.stopReason !== "length";
+    finalAnswerSeen = isFinalAnswer(event.message);
   });
 
   pi.on("agent_start", () => {
@@ -265,7 +236,7 @@ export default function childGuard(
 
   pi.on("session_shutdown", () => {
     if (softDeadlineTimer) clearTimeout(softDeadlineTimer);
-    persistBudget();
+    ledger.persist();
     // Session shutdown can precede process exit while other handles remain.
     // The unreferenced liveness pipe must stay armed until the process exits.
   });
@@ -323,9 +294,7 @@ export default function childGuard(
     }
     startupExitCode = CHILD_GUARD_EXIT_CODES.readiness;
     try {
-      const snapshot = JSON.stringify(budget);
-      writeFileSync(runtimeFiles.budgetTelemetry, snapshot, { encoding: "utf8", mode: 0o600, flag: "wx" });
-      lastPersistedBudget = snapshot;
+      ledger.publishInitial(runtimeFiles.budgetTelemetry);
       writeFileSync(runtimeFiles.ready, READY_MARKER, { encoding: "utf8", mode: 0o600, flag: "wx" });
     } catch (error) {
       failClosed(`could not publish guard readiness: ${errorMessage(error)}`);
@@ -345,23 +314,23 @@ export default function childGuard(
       const limits = LIFETIME_TOOL_CALL_LIMITS[policy.capability];
       if (!budget.softLimitReached && budget.toolCallsAttempted >= limits.soft) {
         budget.softLimitReached = true;
-        persistBudget();
+        ledger.persist();
         sendSoftBudgetNotice();
       }
       if (budget.toolCallsAttempted > limits.hard) requestBudgetPartialAnswer();
     }
-    persistBudget();
+    ledger.persist();
   });
 
   pi.on("tool_call", async (event) => {
-    validatedToolCallIds.add(event.toolCallId);
+    ledger.validatedToolCallIds.add(event.toolCallId);
     const block = (reason: string, terminate?: true) => {
-      markDenied(event.toolCallId);
+      ledger.markDenied(event.toolCallId);
       return { block: true as const, reason, ...(terminate ? { terminate } : {}) };
     };
     const permit = () => {
-      permittedToolCallIds.add(event.toolCallId);
-      persistBudget();
+      ledger.permittedToolCallIds.add(event.toolCallId);
+      ledger.persist();
     };
     const policyUnavailable = () => block(`Subagent policy is unavailable: ${policyError ?? "unknown error"}`, true);
 
@@ -377,21 +346,11 @@ export default function childGuard(
         ? "The child lifetime tool-call hard limit has been exceeded; finalization has started"
         : "Finalization has started; return the final answer without further tool calls");
     };
-    const initialBlock = blockIfFinalizing();
-    if (initialBlock) return initialBlock;
-    const allowed = policy.capability === "local" ? FILE_TOOLS : WEB_TOOLS;
-    if (!allowed.has(event.toolName)) {
-      return block(`Tool ${event.toolName} is not allowed in the subagent. Use an available tool or return the final answer`);
-    }
-
-    if (!ownsTool(event.toolName, pi.getAllTools())) {
-      return block(`Tool ${event.toolName} ownership changed`, true);
-    }
-    if (FILE_TOOLS.has(event.toolName)) {
+    const admitLocalCall = async (activePolicy: ChildPolicy) => {
       const path = requestedPath(event.toolName, event.input);
       if (path === undefined) return block(`${event.toolName} requires a path`);
       try {
-        (event.input as Record<string, unknown>).path = await authorizeReadPath(policy, path);
+        (event.input as Record<string, unknown>).path = await authorizeReadPath(activePolicy, path);
       } catch (error) {
         return block(errorMessage(error));
       }
@@ -399,9 +358,8 @@ export default function childGuard(
       if (finalBlock) return finalBlock;
       permit();
       return;
-    }
-
-    if (WEB_TOOLS.has(event.toolName)) {
+    };
+    const admitWebCall = () => {
       const input = event.input && typeof event.input === "object" ? event.input as Record<string, unknown> : {};
       const prepared = prepareWebCall(event.toolName, input);
       if ("violation" in prepared) {
@@ -426,27 +384,39 @@ export default function childGuard(
         if (reserved >= soft && !warnedWebResources.has(resource)) {
           warnedWebResources.add(resource);
           sendSoftBudgetNotice(
-            `The child lifetime web ${resource} soft limit has been reached: ${reserved}/${hard} reserved, ${hard - reserved} remaining. Use further calls only for essential missing evidence, then return the concise final answer.`,
+            `The child lifetime web ${resource} soft limit has been reached: ${reserved}/${hard} reserved, ${hard - reserved} remaining. ${SOFT_LIMIT_INSTRUCTION}`,
           );
           if (!policy) return policyUnavailable();
         }
       }
       permit();
       return;
+    };
+    const initialBlock = blockIfFinalizing();
+    if (initialBlock) return initialBlock;
+    const allowed = policy.capability === "local" ? FILE_TOOLS : WEB_TOOLS;
+    if (!allowed.has(event.toolName)) {
+      return block(`Tool ${event.toolName} is not allowed in the subagent. Use an available tool or return the final answer`);
     }
+
+    if (!ownsTool(event.toolName, pi.getAllTools())) {
+      return block(`Tool ${event.toolName} ownership changed`, true);
+    }
+    if (FILE_TOOLS.has(event.toolName)) return admitLocalCall(policy);
+    if (WEB_TOOLS.has(event.toolName)) return admitWebCall();
   });
 
   pi.on("tool_result", (event) => {
-    if (!permittedToolCallIds.delete(event.toolCallId)) return;
+    if (!ledger.permittedToolCallIds.delete(event.toolCallId)) return;
     budget.toolCallsExecuted += 1;
-    persistBudget();
+    ledger.persist();
   });
 
   pi.on("tool_execution_end", (event) => {
-    if (!validatedToolCallIds.has(event.toolCallId)) markDenied(event.toolCallId);
-    validatedToolCallIds.delete(event.toolCallId);
-    permittedToolCallIds.delete(event.toolCallId);
-    deniedToolCallIds.delete(event.toolCallId);
+    if (!ledger.validatedToolCallIds.has(event.toolCallId)) ledger.markDenied(event.toolCallId);
+    ledger.validatedToolCallIds.delete(event.toolCallId);
+    ledger.permittedToolCallIds.delete(event.toolCallId);
+    ledger.deniedToolCallIds.delete(event.toolCallId);
   });
 
   pi.on("user_bash", () => ({

@@ -5,10 +5,11 @@ import {
   MAX_OBSERVATION_COUNT,
   MAX_PARENT_ERROR_BYTES,
   OBSERVED_CHILD_EVENTS,
+  observedEventRecord,
   sanitizeDisplayText,
+  singleLineDisplayText,
   utf8Prefix,
   type ChildFailureObservations,
-  type ObservedChildEvent,
   type SubagentFailureDiagnostics,
 } from "./shared.ts";
 
@@ -31,15 +32,15 @@ function truncateUtf8WithMarker(
 }
 
 function safeDiagnosticText(value: string): string {
-  return sanitizeDisplayText(value).replace(/\s+/g, " ").slice(0, 80);
+  return singleLineDisplayText(value).slice(0, 80);
 }
 
 function safeObservations(value: ChildFailureObservations): ChildFailureObservations {
   const bounded = (n: number, max = MAX_OBSERVATION_COUNT) =>
     Number.isFinite(n) ? Math.min(max, Math.max(0, Math.trunc(n))) : 0;
   return {
-    counts: Object.fromEntries(OBSERVED_CHILD_EVENTS.map((key) => [key, bounded(value.counts[key])])) as Record<ObservedChildEvent, number>,
-    receipts: Object.fromEntries(OBSERVED_CHILD_EVENTS.map((key) => [key, bounded(value.receipts[key])])) as Record<ObservedChildEvent, number>,
+    counts: observedEventRecord((key) => bounded(value.counts[key])),
+    receipts: observedEventRecord((key) => bounded(value.receipts[key])),
     ...(OBSERVED_CHILD_EVENTS.includes(value.lastEvent!) ? { lastEvent: value.lastEvent } : {}),
     ...(Number.isFinite(value.lastEventAgeMs) ? { lastEventAgeMs: bounded(value.lastEventAgeMs!, 2_147_483_647) } : {}),
     lastEventValidated: value.lastEventValidated === true,

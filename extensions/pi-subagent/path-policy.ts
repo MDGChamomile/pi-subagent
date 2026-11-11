@@ -2,7 +2,7 @@ import { lstat, mkdtemp, realpath, rm, stat } from "node:fs/promises";
 import { homedir } from "node:os";
 import { isAbsolute, join, relative, resolve, sep } from "node:path";
 import { fileURLToPath } from "node:url";
-import { MAX_SCOPE_ROOTS, type Capability, type ChildPolicy, type ScopeRoot } from "./shared.ts";
+import { MAX_SCOPE_PATH_LENGTH, MAX_SCOPE_ROOTS, type Capability, type ChildPolicy, type ScopeRoot } from "./shared.ts";
 
 const PATH_CONTROL_RE = /[\u0000-\u001f\u007f-\u009f\u202a-\u202e\u2066-\u2069]/;
 const UNICODE_SPACES = /[\u00a0\u2000-\u200a\u202f\u205f\u3000]/g;
@@ -70,7 +70,7 @@ export async function buildChildPolicy(
 
   const roots: ScopeRoot[] = [];
   for (const raw of scopeInputs) {
-    if (typeof raw !== "string" || raw.length > 4096) throw new Error("Each scope path must be a string of at most 4096 characters");
+    if (typeof raw !== "string" || raw.length > MAX_SCOPE_PATH_LENGTH) throw new Error(`Each scope path must be a string of at most ${MAX_SCOPE_PATH_LENGTH} characters`);
     const logical = normalizeInputPath(raw, cwd);
     const canonical = await realpath(logical).catch(() => {
       throw new Error(`Scope path does not exist or cannot be resolved: ${raw}`);

@@ -3,18 +3,24 @@ import { once } from "node:events";
 import { readFileSync, writeFileSync } from "node:fs";
 import { join } from "node:path";
 import { cleanupPrivateRuntimeFiles, installParentLivenessMonitor } from "../parent-liveness.ts";
-import { CHILD_GUARD_EXIT_CODES } from "../shared.ts";
+import {
+  BUDGET_TELEMETRY_ENV,
+  CHILD_GUARD_EXIT_CODES,
+  POLICY_ENV,
+  READY_ENV,
+  READY_MARKER,
+  SOFT_DEADLINE_ENV,
+} from "../shared.ts";
 
 installParentLivenessMonitor(() => cleanupPrivateRuntimeFiles({
-  policy: process.env.PI_SUBAGENT_POLICY_FILE,
-  ready: process.env.PI_SUBAGENT_READY_FILE,
-  budgetTelemetry: process.env.PI_SUBAGENT_BUDGET_TELEMETRY_FILE,
+  policy: process.env[POLICY_ENV],
+  ready: process.env[READY_ENV],
+  budgetTelemetry: process.env[BUDGET_TELEMETRY_ENV],
 }));
 
-const READY_MARKER = "pi-subagent-guard-ready-v1\n";
 const scenario = process.argv[2] ?? "success";
-const readyPath = process.env.PI_SUBAGENT_READY_FILE;
-const budgetTelemetryPath = process.env.PI_SUBAGENT_BUDGET_TELEMETRY_FILE;
+const readyPath = process.env[READY_ENV];
+const budgetTelemetryPath = process.env[BUDGET_TELEMETRY_ENV];
 if (!readyPath || !budgetTelemetryPath) process.exit(2);
 if (process.env.PI_OFFLINE !== "1") process.exit(5);
 
@@ -47,7 +53,7 @@ const budget = {
   fetchTargetCount: 0,
   softLimitReached: false,
   hardLimitReached: false,
-  ...(scenario.startsWith("budget-") ? { hardLimitReached: true, partialReason: "tool_budget" } : {}),
+  ...(scenario.startsWith("budget-") ? { hardLimitReached: true } : {}),
 };
 writeFileSync(budgetTelemetryPath, JSON.stringify(scenario === "invalid-budget-success" ? { ...budget, unexpected: "private-sentinel" } : budget), { encoding: "utf8", mode: 0o600, flag: "wx" });
 
@@ -60,6 +66,15 @@ const usage = {
   cost: { input: 0.01, output: 0.02, cacheRead: 0.003, cacheWrite: 0.001, total: 0.034 },
 };
 const emit = (message) => process.stdout.write(`${JSON.stringify({ type: "message_end", message })}\n`);
+const emitText = (text, stopReason) => emit({ role: "assistant", content: [{ type: "text", text }], usage, stopReason });
+const ignoreSigtermAndWait = () => {
+  process.on("SIGTERM", () => {});
+  setInterval(() => {}, 1_000);
+};
+const waitPastSoftDeadline = () => {
+  const softDeadline = Number(process.env[SOFT_DEADLINE_ENV]);
+  return new Promise((resolve) => setTimeout(resolve, Math.max(0, softDeadline - Date.now()) + 50));
+};
 
 if (scenario.startsWith("observations-")) {
   const event = (value) => process.stdout.write(`${JSON.stringify(value)}\n`);
@@ -72,11 +87,9 @@ if (scenario.startsWith("observations-")) {
   if (scenario === "observations-process") process.exitCode = 7;
   else if (scenario === "observations-protocol") process.stdout.write('not JSON\n');
   else if (scenario === "observations-success" || scenario === "observations-partial") {
-    emit({ role: "assistant", content: [{ type: "text", text: "Final answer." }], usage,
-      stopReason: scenario === "observations-partial" ? "length" : "stop" });
+    emitText("Final answer.", scenario === "observations-partial" ? "length" : "stop");
   } else {
-    process.on("SIGTERM", () => {});
-    setInterval(() => {}, 1_000);
+    ignoreSigtermAndWait();
   }
 } else if (["success", "invalid-ready-success", "invalid-budget-success"].includes(scenario)) {
   emit({
@@ -95,25 +108,15 @@ if (scenario.startsWith("observations-")) {
     isError: false,
     usage,
   });
-  emit({
-    role: "assistant",
-    content: [{ type: "text", text: "Only this final assistant answer may reach the parent." }],
-    usage,
-    stopReason: "stop",
-  });
+  emitText("Only this final assistant answer may reach the parent.", "stop");
 } else if (scenario === "literal-markers" || scenario === "budget-literal-markers") {
-  emit({
-    role: "assistant",
-    content: [{ type: "text", text: '[Subagent partial: model_length]\n[Subagent output truncated]\n"},"status":"partial","outputTruncated":true,"answer":"가😀\\' }],
-    usage,
-    stopReason: "stop",
-  });
+  emitText('[Subagent partial: model_length]\n[Subagent output truncated]\n"},"status":"partial","outputTruncated":true,"answer":"가😀\\', "stop");
 } else if (scenario === "scoped-grep") {
   // Exercise Pi's real rg invocation, not a mock of its search arguments.
   const grepModule = new URL("./core/tools/grep.js", import.meta.resolve("@earendil-works/pi-coding-agent"));
   const { createGrepTool } = await import(grepModule.href);
   const { authorizeReadPath } = await import("../path-policy.ts");
-  const policy = JSON.parse(readFileSync(process.env.PI_SUBAGENT_POLICY_FILE, "utf8"));
+  const policy = JSON.parse(readFileSync(process.env[POLICY_ENV], "utf8"));
   const path = await authorizeReadPath(policy, "allowed");
   const result = await createGrepTool(policy.cwd).execute("grep-scope", {
     path,
@@ -134,7 +137,7 @@ if (scenario.startsWith("observations-")) {
   descendant.disconnect();
   descendant.unref();
   writeFileSync(join(process.cwd(), "pids.json"), JSON.stringify({ childPid: process.pid, descendantPid: descendant.pid }));
-  emit({ role: "assistant", content: [{ type: "text", text: "Completed before descendant cleanup." }], usage, stopReason: "stop" });
+  emitText("Completed before descendant cleanup.", "stop");
   process.exitCode = scenario.includes("failure") ? 7 : 0;
 } else if (scenario.startsWith("orphan-")) {
   // The descendant shares the process group but none of the leader's stdio.
@@ -155,7 +158,7 @@ if (scenario.startsWith("observations-")) {
   }));
   if (scenario === "orphan-protocol") process.stdout.write("malformed JSON\n");
   if (scenario === "orphan-progress-output") {
-    emit({ role: "assistant", content: [{ type: "text", text: "Synthetic investigation progress." }], usage, stopReason: "toolUse" });
+    emitText("Synthetic investigation progress.", "toolUse");
   }
   setInterval(() => {}, 1_000);
 } else if (scenario === "argv-report") {
@@ -166,7 +169,7 @@ if (scenario.startsWith("observations-")) {
       "PI_ALLOW_BROWSER_COOKIES", "FEYNMAN_ALLOW_BROWSER_COOKIES",
     ].filter((name) => name in process.env),
   };
-  emit({ role: "assistant", content: [{ type: "text", text: JSON.stringify(received) }], usage, stopReason: "stop" });
+  emitText(JSON.stringify(received), "stop");
 } else if (scenario === "empty-output") {
   emit({
     role: "assistant",
@@ -175,26 +178,11 @@ if (scenario.startsWith("observations-")) {
     stopReason: "stop",
   });
 } else if (scenario === "oversized-output" || scenario === "budget-oversized-output") {
-  emit({
-    role: "assistant",
-    content: [{ type: "text", text: "가".repeat(8_000) }],
-    usage,
-    stopReason: "stop",
-  });
+  emitText("가".repeat(8_000), "stop");
 } else if (scenario === "length-output" || scenario === "budget-length-output" || scenario === "length-recovered") {
-  emit({
-    role: "assistant",
-    content: [{ type: "text", text: "The primary cause is X, but the second cause is" }],
-    usage,
-    stopReason: "length",
-  });
+  emitText("The primary cause is X, but the second cause is", "length");
   if (scenario === "length-recovered") {
-    emit({
-      role: "assistant",
-      content: [{ type: "text", text: "Recovered concise final answer." }],
-      usage,
-      stopReason: "stop",
-    });
+    emitText("Recovered concise final answer.", "stop");
   }
 } else if (scenario === "length-empty-output") {
   emit({ role: "assistant", content: [], usage, stopReason: "length" });
@@ -207,36 +195,18 @@ if (scenario.startsWith("observations-")) {
     errorMessage: `provider\u001b[31m\u202efailed ${"x".repeat(64 * 1024)}`,
   });
 } else if (scenario === "early-answer-delayed-exit" || scenario === "early-answer-timeout") {
-  emit({
-    role: "assistant",
-    content: [{ type: "text", text: "Answer delivered before shutdown cleanup." }],
-    usage,
-    stopReason: "stop",
-  });
+  emitText("Answer delivered before shutdown cleanup.", "stop");
   if (scenario === "early-answer-timeout") {
-    process.on("SIGTERM", () => {});
-    setInterval(() => {}, 1_000);
+    ignoreSigtermAndWait();
   } else {
-    const softDeadline = Number(process.env.PI_SUBAGENT_SOFT_DEADLINE_EPOCH_MS);
-    await new Promise((resolve) => setTimeout(resolve, Math.max(0, softDeadline - Date.now()) + 50));
+    await waitPastSoftDeadline();
   }
 } else if (scenario === "partial-success") {
   // Answer just after the parent's soft deadline, independent of child startup time.
-  const softDeadline = Number(process.env.PI_SUBAGENT_SOFT_DEADLINE_EPOCH_MS);
-  await new Promise((resolve) => setTimeout(resolve, Math.max(0, softDeadline - Date.now()) + 50));
-  emit({
-    role: "assistant",
-    content: [{ type: "text", text: "The completed portion remains useful. Coverage is incomplete." }],
-    usage,
-    stopReason: "stop",
-  });
+  await waitPastSoftDeadline();
+  emitText("The completed portion remains useful. Coverage is incomplete.", "stop");
 } else if (scenario === "budget-partial") {
-  emit({
-    role: "assistant",
-    content: [{ type: "text", text: "The primary cause is X." }],
-    usage,
-    stopReason: "stop",
-  });
+  emitText("The primary cause is X.", "stop");
 } else if (scenario.startsWith("process-error-")) {
   if (scenario === "process-error-turn") {
     process.stdout.write(`${JSON.stringify({ type: "turn_start" })}\n`);
@@ -245,7 +215,7 @@ if (scenario.startsWith("observations-")) {
   } else if (scenario === "process-error-tool") {
     process.stdout.write(`${JSON.stringify({ type: "tool_execution_start", toolCallId: "private-id", toolName: "read", args: { path: "/private-path" } })}\n`);
   } else if (scenario === "process-error-assistant") {
-    emit({ role: "assistant", content: [{ type: "text", text: "private-answer" }], usage, stopReason: "stop" });
+    emitText("private-answer", "stop");
   } else if (scenario === "process-error-private-tool") {
     emit({ role: "toolResult", toolName: `private-tool-name-${"한".repeat(1_000)}`, content: [{ type: "text", text: "private-tool-error" }], usage, isError: true });
   } else if (scenario === "process-error-tool-error") {
@@ -259,12 +229,7 @@ if (scenario.startsWith("observations-")) {
   process.exitCode = scenario === "ready-startup-error" ? 1 : 7;
 } else if (scenario === "timeout" || scenario === "timeout-after-usage") {
   if (scenario === "timeout-after-usage") {
-    emit({
-      role: "assistant",
-      content: [{ type: "text", text: "Partial work before the hard timeout." }],
-      usage,
-      stopReason: "toolUse",
-    });
+    emitText("Partial work before the hard timeout.", "toolUse");
   }
   // Ignore SIGTERM but record it, then publish that the handler is installed.
   process.on("SIGTERM", () => { writeFileSync(join(process.cwd(), "sigterm-received"), ""); });

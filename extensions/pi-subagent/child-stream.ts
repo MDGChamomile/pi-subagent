@@ -2,9 +2,11 @@ import { StringDecoder } from "node:string_decoder";
 import type { Usage } from "@earendil-works/pi-ai";
 import { diagnosticToolName } from "./diagnostics.ts";
 import {
+  isRecord,
   MAX_JSON_LINE_BYTES,
   MAX_OBSERVATION_COUNT,
   OBSERVED_CHILD_EVENTS,
+  observedEventRecord,
   type ChildFailureObservations,
   type ObservedChildEvent,
 } from "./shared.ts";
@@ -41,16 +43,18 @@ function addUsage(total: Usage, value: unknown): void {
   }
 }
 
+function isTextPart(part: unknown): part is { type: "text"; text: string } {
+  if (!part || typeof part !== "object") return false;
+  const item = part as { type?: unknown; text?: unknown };
+  return item.type === "text" && typeof item.text === "string";
+}
+
 function assistantText(message: unknown): string {
   if (!message || typeof message !== "object") return "";
   const value = message as { role?: unknown; content?: unknown };
   if (value.role !== "assistant" || !Array.isArray(value.content)) return "";
   return value.content
-    .filter((part): part is { type: "text"; text: string } => {
-      if (!part || typeof part !== "object") return false;
-      const item = part as { type?: unknown; text?: unknown };
-      return item.type === "text" && typeof item.text === "string";
-    })
+    .filter(isTextPart)
     .map((part) => part.text)
     .join("\n");
 }
@@ -59,11 +63,7 @@ type AssistantMode = "none" | "empty" | "text" | "tool" | "mixed";
 
 function assistantMode(message: { content?: unknown }): AssistantMode {
   if (!Array.isArray(message.content)) return "empty";
-  const hasText = message.content.some((part) => {
-    if (!part || typeof part !== "object") return false;
-    const item = part as { type?: unknown; text?: unknown };
-    return item.type === "text" && typeof item.text === "string" && item.text.trim().length > 0;
-  });
+  const hasText = message.content.some((part) => isTextPart(part) && part.text.trim().length > 0);
   const hasTool = message.content.some((part) =>
     Boolean(part && typeof part === "object" && (part as { type?: unknown }).type === "toolCall")
   );
@@ -89,6 +89,24 @@ export type ChildJsonSnapshot = {
 
 const MAX_OBSERVED_RECORD_BYTES = 4096;
 
+const isPositiveInteger = (value: unknown) => Number.isSafeInteger(value) && (value as number) > 0;
+
+const OBSERVED_EVENT_VALIDATORS = {
+  turn_start: () => true,
+  tool_execution_start: (event) =>
+    typeof event.toolCallId === "string" && typeof event.toolName === "string" && isRecord(event.args),
+  tool_execution_end: (event) =>
+    typeof event.toolCallId === "string" && typeof event.toolName === "string" && isRecord(event.result)
+    && typeof event.isError === "boolean",
+  // Pi's JSON mode emits delta-only updates without the SDK's cumulative message.
+  message_update: (event) => isRecord(event.assistantMessageEvent) && typeof event.assistantMessageEvent.type === "string"
+    && ["start", "text_start", "text_delta", "text_end", "thinking_start", "thinking_delta", "thinking_end", "toolcall_start", "toolcall_delta", "toolcall_end"].includes(event.assistantMessageEvent.type),
+  auto_retry_start: (event) =>
+    isPositiveInteger(event.attempt) && isPositiveInteger(event.maxAttempts)
+    && typeof event.delayMs === "number" && Number.isFinite(event.delayMs) && event.delayMs >= 0,
+  auto_retry_end: (event) => isPositiveInteger(event.attempt) && typeof event.success === "boolean",
+} satisfies Record<ObservedChildEvent, (event: Record<string, unknown>) => boolean>;
+
 /**
  * Consumes Pi's LF-delimited JSON stream while retaining only the last eligible
  * assistant answer. Intermediate assistant turns and ordinary child tool output are
@@ -101,8 +119,8 @@ export class ChildJsonCollector {
   private lineBytes = 0;
   private disposition: "unknown" | "capture" | "observe" | "discard" = "unknown";
   private capturedType: "message_end" | "compaction_end" | undefined;
-  private readonly eventCounts = Object.fromEntries(OBSERVED_CHILD_EVENTS.map((key) => [key, 0])) as Record<ObservedChildEvent, number>;
-  private readonly eventReceipts = Object.fromEntries(OBSERVED_CHILD_EVENTS.map((key) => [key, 0])) as Record<ObservedChildEvent, number>;
+  private readonly eventCounts = observedEventRecord(() => 0);
+  private readonly eventReceipts = observedEventRecord(() => 0);
   private pendingObservedType: ObservedChildEvent | undefined;
   private lastEvent: ObservedChildEvent | undefined;
   private lastEventAt: number | undefined;
@@ -212,9 +230,7 @@ export class ChildJsonCollector {
     const bytes = Buffer.byteLength(value);
     if (this.disposition === "observe" && this.lineBytes + bytes > MAX_OBSERVED_RECORD_BYTES) {
       this.observationsIncomplete = true;
-      this.disposition = "discard";
-      this.lineBuffer = "";
-      this.lineBytes = 0;
+      this.discardLine();
       return;
     }
     this.lineBuffer += value;
@@ -234,14 +250,10 @@ export class ChildJsonCollector {
       this.observeReceipt(this.pendingObservedType);
       if (this.lineBytes > MAX_OBSERVED_RECORD_BYTES) {
         this.observationsIncomplete = true;
-        this.disposition = "discard";
-        this.lineBuffer = "";
-        this.lineBytes = 0;
+        this.discardLine();
       }
     } else {
-      this.disposition = "discard";
-      this.lineBuffer = "";
-      this.lineBytes = 0;
+      this.discardLine();
     }
     return this.disposition;
   }
@@ -311,42 +323,37 @@ export class ChildJsonCollector {
   private observeReceipt(type: ObservedChildEvent): void {
     // A recognized prefix is evidence of bytes arriving, not of valid JSON or
     // actual execution. Keep these counts separate from validated events.
-    if (this.eventReceipts[type] === MAX_OBSERVATION_COUNT) this.observationsIncomplete = true;
-    else this.eventReceipts[type]++;
-    this.lastEvent = type;
-    this.lastEventAt = performance.now();
-    this.lastEventValidated = false;
+    this.recordEvent(this.eventReceipts, type, false);
   }
 
   private observe(event: Record<string, unknown>): void {
     const type = event.type as ObservedChildEvent;
-    const object = (value: unknown): value is Record<string, unknown> =>
-      value !== null && typeof value === "object" && !Array.isArray(value);
-    const positiveInteger = (value: unknown) => Number.isSafeInteger(value) && (value as number) > 0;
-    const valid = type === "turn_start"
-      || (type === "tool_execution_start" && typeof event.toolCallId === "string" && typeof event.toolName === "string" && object(event.args))
-      || (type === "tool_execution_end" && typeof event.toolCallId === "string" && typeof event.toolName === "string" && object(event.result) && typeof event.isError === "boolean")
-      // Pi's JSON mode emits delta-only updates without the SDK's cumulative message.
-      || (type === "message_update" && object(event.assistantMessageEvent) && typeof event.assistantMessageEvent.type === "string"
-        && ["start", "text_start", "text_delta", "text_end", "thinking_start", "thinking_delta", "thinking_end", "toolcall_start", "toolcall_delta", "toolcall_end"].includes(event.assistantMessageEvent.type))
-      || (type === "auto_retry_start" && positiveInteger(event.attempt) && positiveInteger(event.maxAttempts) && typeof event.delayMs === "number" && Number.isFinite(event.delayMs) && event.delayMs >= 0)
-      || (type === "auto_retry_end" && positiveInteger(event.attempt) && typeof event.success === "boolean");
-    if (!valid) {
+    if (!OBSERVED_EVENT_VALIDATORS[type](event)) {
       this.observationsIncomplete = true;
       return;
     }
-    if (this.eventCounts[type] === MAX_OBSERVATION_COUNT) this.observationsIncomplete = true;
-    else this.eventCounts[type]++;
+    this.recordEvent(this.eventCounts, type, true);
     if (this.eventCounts.tool_execution_end > this.eventCounts.tool_execution_start) this.observationsIncomplete = true;
+  }
+
+  private recordEvent(counts: Record<ObservedChildEvent, number>, type: ObservedChildEvent, validated: boolean): void {
+    if (counts[type] === MAX_OBSERVATION_COUNT) this.observationsIncomplete = true;
+    else counts[type]++;
     this.lastEvent = type;
     this.lastEventAt = performance.now();
-    this.lastEventValidated = true;
+    this.lastEventValidated = validated;
   }
 
   private fail(message: string): void {
     if (this.protocolError) return;
     this.protocolError = message;
     this.onProtocolError?.(message);
+  }
+
+  private discardLine(): void {
+    this.disposition = "discard";
+    this.lineBuffer = "";
+    this.lineBytes = 0;
   }
 
   private resetLine(): void {

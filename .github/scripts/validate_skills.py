@@ -53,9 +53,12 @@ def validate_relative_links(documents: list[Path]) -> list[str]:
     for document in documents:
         text = document.read_text(encoding="utf-8")
         for target in re.findall(r"\[[^]]*\]\(([^)]+)\)", text):
-            if re.match(r"(?:[a-z][a-z\d+.-]*:|//|#)", target, re.IGNORECASE):
+            destination = target.strip()
+            if destination.startswith("<") and destination.endswith(">"):
+                destination = destination[1:-1]
+            if re.match(r"(?:[a-z][a-z\d+.-]*:|//|#)", destination, re.IGNORECASE):
                 continue
-            path = (document.parent / target.split("#", 1)[0]).resolve()
+            path = (document.parent / destination.split("#", 1)[0]).resolve()
             if not path.exists():
                 failures.append(f"broken link: {document} -> {target}")
     return failures

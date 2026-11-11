@@ -55,7 +55,7 @@ for (const failure of ["once", "persistent"] as const) {
       await writeFile(files.policy, JSON.stringify(await buildChildPolicy(root, ["evidence.txt"], "local")), { mode: 0o600 });
       session = await createOfflineSession({
         root, model, tools: [...ALLOWED_FILE_TOOLS], systemPrompt: "Offline budget test.",
-        extensionFactories: [(pi) => childGuard(pi, () => () => undefined)],
+        extensionFactories: [(pi) => childGuard(pi, () => undefined)],
       });
       await session.bindExtensions({ onError: () => undefined });
       const hardLimit = LIFETIME_TOOL_CALL_LIMITS.local.hard;
@@ -113,7 +113,6 @@ test("accepts only content-free budget telemetry fields", async () => {
       fetchTargetCount: 5,
       softLimitReached: false,
       hardLimitReached: true,
-      partialReason: "tool_budget",
     };
     await writeFile(telemetryFile, JSON.stringify(telemetry));
     assert.deepEqual(await readBudgetTelemetry(telemetryFile), telemetry);
@@ -122,7 +121,7 @@ test("accepts only content-free budget telemetry fields", async () => {
     await assert.rejects(() => readBudgetTelemetry(telemetryFile), /malformed/);
     await writeFile(telemetryFile, JSON.stringify({ ...telemetry, queryCount: -1 }));
     await assert.rejects(() => readBudgetTelemetry(telemetryFile), /malformed/);
-    for (const partialReason of ["time_limit", "model_length"]) {
+    for (const partialReason of ["tool_budget", "time_limit", "model_length"]) {
       await writeFile(telemetryFile, JSON.stringify({ ...telemetry, partialReason }));
       await assert.rejects(() => readBudgetTelemetry(telemetryFile), /malformed/);
     }

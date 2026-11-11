@@ -67,7 +67,6 @@ childGuard({
   sendUserMessage() { throw new Error("private runtime message failure"); },
 }, () => {
   if (scenario === "liveness-failure") throw new Error("synthetic liveness failure");
-  return () => {};
 });
 // Use real Pi dispatch (which catches thrown handlers). Only the context/registry
 // and the transport are doubles; neither credentials nor network are involved.

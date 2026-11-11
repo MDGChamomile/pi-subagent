@@ -1,6 +1,7 @@
 import { rmdirSync, unlinkSync } from "node:fs";
 import { Socket } from "node:net";
 import { dirname } from "node:path";
+import { setTimeout as delay } from "node:timers/promises";
 import type { RuntimeFiles } from "./shared.ts";
 
 export const PARENT_LIVENESS_ENV = "PI_SUBAGENT_PARENT_LIVENESS_FD";
@@ -31,6 +32,23 @@ export function isProcessGroupGone(pid: number | undefined): boolean {
   return false;
 }
 
+/** Sends SIGTERM to the group, then SIGKILL after `graceMs` unless the group is confirmed gone. */
+export async function terminateProcessGroup(pid: number | undefined, graceMs: number): Promise<void> {
+  killProcessGroup(pid, "SIGTERM");
+  // The leader may close while descendants survive. Only confirmed group
+  // disappearance can end cleanup early; uncertain probes retain escalation.
+  const deadline = performance.now() + graceMs;
+  while (!isProcessGroupGone(pid)) {
+    const remaining = deadline - performance.now();
+    if (remaining <= 0) {
+      killProcessGroup(pid, "SIGKILL");
+      return;
+    }
+    // Keep this timer referenced until the entire group is gone or killed.
+    await delay(Math.min(100, remaining));
+  }
+}
+
 function terminateOwnProcessGroup(): void {
   killProcessGroup(process.pid, "SIGKILL");
   process.exit(1);
@@ -40,7 +58,7 @@ function terminateOwnProcessGroup(): void {
  * Keeps the child coupled to its parent without keeping the child event loop alive.
  * The parent owns the write end; abrupt parent death closes it and produces EOF here.
  */
-export function installParentLivenessMonitor(beforeTerminate?: () => void): () => void {
+export function installParentLivenessMonitor(beforeTerminate?: () => void): void {
   if (process.env[PARENT_LIVENESS_ENV] !== String(PARENT_LIVENESS_FD)) {
     throw new Error("parent liveness pipe is unavailable");
   }
@@ -61,10 +79,4 @@ export function installParentLivenessMonitor(beforeTerminate?: () => void): () =
   pipe.once("error", terminate);
   pipe.resume();
   pipe.unref();
-
-  return () => {
-    if (!armed) return;
-    armed = false;
-    pipe.destroy();
-  };
 }
