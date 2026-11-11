@@ -1,10 +1,10 @@
 import { chmod, rm, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
-import type { ExtensionAPI } from "@earendil-works/pi-coding-agent";
-import { StringEnum } from "@earendil-works/pi-ai";
+import type { ExtensionAPI, ExtensionContext } from "@earendil-works/pi-coding-agent";
+import { StringEnum, type Usage } from "@earendil-works/pi-ai";
 import { Text, TruncatedText, truncateToWidth } from "@earendil-works/pi-tui";
-import { Type } from "typebox";
+import { Type, type Static } from "typebox";
 import {
   MAX_SCOPE_PATH_LENGTH,
   MAX_SCOPE_ROOTS,
@@ -15,7 +15,10 @@ import {
   TOOL_NAME,
   type Capability,
   type ChildPolicy,
+  type PartialReason,
   type Preset,
+  type ResultStatus,
+  type Thinking,
 } from "./shared.ts";
 import { buildChildPolicy, makeCanonicalTempDirectory } from "./path-policy.ts";
 import { resolveWebExtensionPath } from "./web-provenance.ts";
@@ -46,9 +49,117 @@ const Parameters = Type.Object({
   preset: PresetSchema,
 }, { additionalProperties: false });
 
+type SubagentDetails = {
+  capability: Capability;
+  preset: Preset;
+  model: string;
+  thinking: Thinking;
+  scopeRoots: number;
+  webEnabled: boolean;
+  status: ResultStatus;
+  partialReason?: PartialReason;
+  toolCallsAttempted: number;
+  toolCallsExecuted: number;
+  deniedCalls: number;
+  queryCount: number;
+  fetchTargetCount: number;
+  softLimitReached: boolean;
+  hardLimitReached: boolean;
+  durationMs: number;
+  exitCode: number;
+  stopReason?: string;
+  outputTruncated: boolean;
+  contextTokens: number;
+  usage: Usage;
+};
+
+type ExtensionRuntime = { runChild: typeof runChild; removeTempDirectory: typeof rm };
+
+type PreparedRun = {
+  capability: Capability;
+  preset: Preset;
+  model: string;
+  thinking: Thinking;
+  webExtensionPath: string | undefined;
+  policy: ChildPolicy;
+};
+
+async function runInTempDirectory(
+  runtime: ExtensionRuntime,
+  run: PreparedRun & Pick<Parameters<typeof runChild>[0], "task" | "signal" | "onUpdate">,
+): Promise<{ content: Array<{ type: "text"; text: string }>; details: SubagentDetails; usage: Usage }> {
+  const { capability, preset, model, thinking, webExtensionPath, policy } = run;
+  let tempDir: string;
+  try {
+    tempDir = await makeCanonicalTempDirectory(join(tmpdir(), "pi-subagent-"));
+  } catch (error) {
+    throw new Error(boundedParentError(error, { phase: "setup" }));
+  }
+  let executionError: unknown;
+  let completedUsage: ChildRunError["usage"] | undefined;
+  let childStarted = false;
+  try {
+    await chmod(tempDir, 0o700);
+    const files = runtimeFilesIn(tempDir);
+    await writeFile(files.policy, JSON.stringify(policy), { encoding: "utf8", mode: 0o600, flag: "wx" });
+    childStarted = true;
+    const result = await runtime.runChild({
+      policy,
+      files,
+      webExtensionPath,
+      task: run.task,
+      model,
+      thinking,
+      signal: run.signal,
+      onUpdate: run.onUpdate,
+    });
+    completedUsage = result.usage;
+    return {
+      content: [{ type: "text", text: result.output }],
+      details: {
+        capability,
+        preset,
+        model,
+        thinking,
+        scopeRoots: policy.roots.length,
+        webEnabled: capability === "web",
+        status: result.status,
+        partialReason: result.partialReason,
+        toolCallsAttempted: result.budget.toolCallsAttempted,
+        toolCallsExecuted: result.budget.toolCallsExecuted,
+        deniedCalls: result.budget.deniedCalls,
+        queryCount: result.budget.queryCount,
+        fetchTargetCount: result.budget.fetchTargetCount,
+        softLimitReached: result.budget.softLimitReached,
+        hardLimitReached: result.budget.hardLimitReached,
+        durationMs: result.durationMs,
+        exitCode: result.exitCode,
+        stopReason: result.stopReason,
+        outputTruncated: result.outputTruncated,
+        contextTokens: result.contextTokens,
+        usage: result.usage,
+      },
+      usage: result.usage,
+    };
+  } catch (error) {
+    executionError = error;
+    if (!childStarted) throw new Error(boundedParentError(error, { phase: "setup" }));
+    throw error;
+  } finally {
+    try {
+      await runtime.removeTempDirectory(tempDir, { recursive: true, force: true });
+    } catch (cleanupError) {
+      if (executionError === undefined) {
+        const message = boundedParentError(cleanupError, { phase: "cleanup" });
+        throw completedUsage ? new ChildRunError(message, completedUsage) : new Error(message);
+      }
+    }
+  }
+}
+
 export default function piSubagentExtension(
   pi: ExtensionAPI,
-  runtime = { runChild, removeTempDirectory: rm },
+  runtime: ExtensionRuntime = { runChild, removeTempDirectory: rm },
 ): void {
   registerSubagentSettingsCommand(pi);
   const gate = new ModelInvocationGate();
@@ -62,6 +173,40 @@ export default function piSubagentExtension(
     gate.endRun();
     failedUsage.clear();
   };
+  const preflight = async (
+    toolCallId: string,
+    params: Static<typeof Parameters>,
+    ctx: Pick<ExtensionContext, "cwd" | "modelRegistry">,
+  ): Promise<PreparedRun> => {
+    const verified = sourceVerified();
+    if (!gate.beginPreflight(toolCallId) || !verified) {
+      throw new Error(boundedParentError(
+        verified ? `pi_subagent allows at most ${MAX_SUBAGENT_CALLS} model-selected calls per parent agent run`
+          : TOOL_SOURCE_FAILURE,
+        { phase: "preflight" },
+      ));
+    }
+    const capability = params.capability as Capability;
+    const preset = params.preset as Preset;
+    let selection: PresetSelection;
+    let webExtensionPath: string | undefined;
+    let policy: ChildPolicy;
+    try {
+      if (params.task.includes("\0")) throw new Error("task must not contain NUL bytes");
+      selection = (await loadPresetSettings())[preset];
+      validatePresetSelection(selection, ctx.modelRegistry);
+      if (capability === "web") webExtensionPath = await resolveWebExtensionPath(pi.getAllTools());
+      policy = await buildChildPolicy(ctx.cwd, params.scope, capability);
+    } catch (error) {
+      gate.rejectPreflight(toolCallId);
+      throw new Error(boundedParentError(error, { phase: "preflight" }));
+    }
+    const { model, thinking } = selection;
+    if (!gate.commit(toolCallId)) {
+      throw new Error(boundedParentError("pi_subagent invocation permit is invalid or already consumed", { phase: "preflight" }));
+    }
+    return { capability, preset, model, thinking, webExtensionPath, policy };
+  };
 
   pi.registerTool({
     name: TOOL_NAME,
@@ -71,100 +216,8 @@ export default function piSubagentExtension(
     parameters: Parameters,
     async execute(toolCallId, params, signal, onUpdate, ctx) {
       try {
-        const verified = sourceVerified();
-        if (!gate.beginPreflight(toolCallId) || !verified) {
-          throw new Error(boundedParentError(
-            verified ? `pi_subagent allows at most ${MAX_SUBAGENT_CALLS} model-selected calls per parent agent run`
-              : TOOL_SOURCE_FAILURE,
-            { phase: "preflight" },
-          ));
-        }
-        const capability = params.capability as Capability;
-        const preset = params.preset as Preset;
-        let selection: PresetSelection;
-        let webExtensionPath: string | undefined;
-        let policy: ChildPolicy;
-        try {
-          if (params.task.includes("\0")) throw new Error("task must not contain NUL bytes");
-          selection = (await loadPresetSettings())[preset];
-          validatePresetSelection(selection, ctx.modelRegistry);
-          if (capability === "web") webExtensionPath = await resolveWebExtensionPath(pi.getAllTools());
-          policy = await buildChildPolicy(ctx.cwd, params.scope, capability);
-        } catch (error) {
-          gate.rejectPreflight(toolCallId);
-          throw new Error(boundedParentError(error, { phase: "preflight" }));
-        }
-        const { model, thinking } = selection;
-        if (!gate.commit(toolCallId)) {
-          throw new Error(boundedParentError("pi_subagent invocation permit is invalid or already consumed", { phase: "preflight" }));
-        }
-
-        let tempDir: string;
-        try {
-          tempDir = await makeCanonicalTempDirectory(join(tmpdir(), "pi-subagent-"));
-        } catch (error) {
-          throw new Error(boundedParentError(error, { phase: "setup" }));
-        }
-        let executionError: unknown;
-        let completedUsage: ChildRunError["usage"] | undefined;
-        let childStarted = false;
-        try {
-          await chmod(tempDir, 0o700);
-          const files = runtimeFilesIn(tempDir);
-          await writeFile(files.policy, JSON.stringify(policy), { encoding: "utf8", mode: 0o600, flag: "wx" });
-          childStarted = true;
-          const result = await runtime.runChild({
-            policy,
-            files,
-            webExtensionPath,
-            task: params.task,
-            model,
-            thinking,
-            signal,
-            onUpdate,
-          });
-          completedUsage = result.usage;
-          return {
-            content: [{ type: "text", text: result.output }],
-            details: {
-              capability,
-              preset,
-              model,
-              thinking,
-              scopeRoots: policy.roots.length,
-              webEnabled: capability === "web",
-              status: result.status,
-              partialReason: result.partialReason,
-              toolCallsAttempted: result.budget.toolCallsAttempted,
-              toolCallsExecuted: result.budget.toolCallsExecuted,
-              deniedCalls: result.budget.deniedCalls,
-              queryCount: result.budget.queryCount,
-              fetchTargetCount: result.budget.fetchTargetCount,
-              softLimitReached: result.budget.softLimitReached,
-              hardLimitReached: result.budget.hardLimitReached,
-              durationMs: result.durationMs,
-              exitCode: result.exitCode,
-              stopReason: result.stopReason,
-              outputTruncated: result.outputTruncated,
-              contextTokens: result.contextTokens,
-              usage: result.usage,
-            },
-            usage: result.usage,
-          };
-        } catch (error) {
-          executionError = error;
-          if (!childStarted) throw new Error(boundedParentError(error, { phase: "setup" }));
-          throw error;
-        } finally {
-          try {
-            await runtime.removeTempDirectory(tempDir, { recursive: true, force: true });
-          } catch (cleanupError) {
-            if (executionError === undefined) {
-              const message = boundedParentError(cleanupError, { phase: "cleanup" });
-              throw completedUsage ? new ChildRunError(message, completedUsage) : new Error(message);
-            }
-          }
-        }
+        const prepared = await preflight(toolCallId, params, ctx);
+        return await runInTempDirectory(runtime, { ...prepared, task: params.task, signal, onUpdate });
       } catch (error) {
         if (error instanceof ChildRunError) failedUsage.set(toolCallId, error.usage);
         throw new Error(boundedParentError(error));
@@ -188,12 +241,7 @@ export default function piSubagentExtension(
       const output = text?.type === "text" ? text.text : "";
       if (isPartial) return new Text(theme.fg("muted", output), 0, 0);
 
-      const details = result.details as {
-        status?: "complete" | "partial";
-        outputTruncated?: boolean;
-        durationMs?: number;
-        contextTokens?: number;
-      } | undefined;
+      const details = result.details as Partial<SubagentDetails> | undefined;
       if (!details?.status || details.durationMs === undefined || details.contextTokens === undefined) {
         return new Text(output, 0, 0);
       }
