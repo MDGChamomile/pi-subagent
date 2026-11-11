@@ -43,16 +43,18 @@ function addUsage(total: Usage, value: unknown): void {
   }
 }
 
+function isTextPart(part: unknown): part is { type: "text"; text: string } {
+  if (!part || typeof part !== "object") return false;
+  const item = part as { type?: unknown; text?: unknown };
+  return item.type === "text" && typeof item.text === "string";
+}
+
 function assistantText(message: unknown): string {
   if (!message || typeof message !== "object") return "";
   const value = message as { role?: unknown; content?: unknown };
   if (value.role !== "assistant" || !Array.isArray(value.content)) return "";
   return value.content
-    .filter((part): part is { type: "text"; text: string } => {
-      if (!part || typeof part !== "object") return false;
-      const item = part as { type?: unknown; text?: unknown };
-      return item.type === "text" && typeof item.text === "string";
-    })
+    .filter(isTextPart)
     .map((part) => part.text)
     .join("\n");
 }
@@ -61,11 +63,7 @@ type AssistantMode = "none" | "empty" | "text" | "tool" | "mixed";
 
 function assistantMode(message: { content?: unknown }): AssistantMode {
   if (!Array.isArray(message.content)) return "empty";
-  const hasText = message.content.some((part) => {
-    if (!part || typeof part !== "object") return false;
-    const item = part as { type?: unknown; text?: unknown };
-    return item.type === "text" && typeof item.text === "string" && item.text.trim().length > 0;
-  });
+  const hasText = message.content.some((part) => isTextPart(part) && part.text.trim().length > 0);
   const hasTool = message.content.some((part) =>
     Boolean(part && typeof part === "object" && (part as { type?: unknown }).type === "toolCall")
   );
@@ -232,9 +230,7 @@ export class ChildJsonCollector {
     const bytes = Buffer.byteLength(value);
     if (this.disposition === "observe" && this.lineBytes + bytes > MAX_OBSERVED_RECORD_BYTES) {
       this.observationsIncomplete = true;
-      this.disposition = "discard";
-      this.lineBuffer = "";
-      this.lineBytes = 0;
+      this.discardLine();
       return;
     }
     this.lineBuffer += value;
@@ -254,14 +250,10 @@ export class ChildJsonCollector {
       this.observeReceipt(this.pendingObservedType);
       if (this.lineBytes > MAX_OBSERVED_RECORD_BYTES) {
         this.observationsIncomplete = true;
-        this.disposition = "discard";
-        this.lineBuffer = "";
-        this.lineBytes = 0;
+        this.discardLine();
       }
     } else {
-      this.disposition = "discard";
-      this.lineBuffer = "";
-      this.lineBytes = 0;
+      this.discardLine();
     }
     return this.disposition;
   }
@@ -331,11 +323,7 @@ export class ChildJsonCollector {
   private observeReceipt(type: ObservedChildEvent): void {
     // A recognized prefix is evidence of bytes arriving, not of valid JSON or
     // actual execution. Keep these counts separate from validated events.
-    if (this.eventReceipts[type] === MAX_OBSERVATION_COUNT) this.observationsIncomplete = true;
-    else this.eventReceipts[type]++;
-    this.lastEvent = type;
-    this.lastEventAt = performance.now();
-    this.lastEventValidated = false;
+    this.recordEvent(this.eventReceipts, type, false);
   }
 
   private observe(event: Record<string, unknown>): void {
@@ -344,18 +332,28 @@ export class ChildJsonCollector {
       this.observationsIncomplete = true;
       return;
     }
-    if (this.eventCounts[type] === MAX_OBSERVATION_COUNT) this.observationsIncomplete = true;
-    else this.eventCounts[type]++;
+    this.recordEvent(this.eventCounts, type, true);
     if (this.eventCounts.tool_execution_end > this.eventCounts.tool_execution_start) this.observationsIncomplete = true;
+  }
+
+  private recordEvent(counts: Record<ObservedChildEvent, number>, type: ObservedChildEvent, validated: boolean): void {
+    if (counts[type] === MAX_OBSERVATION_COUNT) this.observationsIncomplete = true;
+    else counts[type]++;
     this.lastEvent = type;
     this.lastEventAt = performance.now();
-    this.lastEventValidated = true;
+    this.lastEventValidated = validated;
   }
 
   private fail(message: string): void {
     if (this.protocolError) return;
     this.protocolError = message;
     this.onProtocolError?.(message);
+  }
+
+  private discardLine(): void {
+    this.disposition = "discard";
+    this.lineBuffer = "";
+    this.lineBytes = 0;
   }
 
   private resetLine(): void {
