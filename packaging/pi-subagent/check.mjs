@@ -5,7 +5,24 @@ import { tmpdir } from "node:os";
 import { dirname, join, resolve } from "node:path";
 import { fileURLToPath } from "node:url";
 import { buildPackage, packageFiles, releaseUrls, renderExtensionReadme, renderPackageReadme, stagingDirectory } from "./build.mjs";
-import { MIN_WEB_EXTENSION_VERSION, SUBAGENT_PRESETS } from "../../extensions/pi-subagent/shared.ts";
+import {
+  CHILD_FINALIZATION_GRACE_MS,
+  CHILD_TIMEOUT_MS,
+  LIFETIME_TOOL_CALL_LIMITS,
+  LIFETIME_WEB_FETCH_TARGET_LIMIT,
+  LIFETIME_WEB_FETCH_TARGET_SOFT_LIMIT,
+  LIFETIME_WEB_QUERY_LIMIT,
+  LIFETIME_WEB_QUERY_SOFT_LIMIT,
+  MAX_FINAL_BYTES,
+  MAX_JSON_LINE_BYTES,
+  MAX_OBSERVATION_COUNT,
+  MAX_PARENT_ERROR_BYTES,
+  MAX_SCOPE_PATH_LENGTH,
+  MAX_SCOPE_ROOTS,
+  MAX_SOURCE_CHECK_FETCH_TARGETS_PER_CALL,
+  MIN_WEB_EXTENSION_VERSION,
+  SUBAGENT_PRESETS,
+} from "../../extensions/pi-subagent/shared.ts";
 
 // A future version must update every generated release URL without source edits.
 const packageRoot = dirname(fileURLToPath(import.meta.url));
@@ -155,6 +172,64 @@ for (const replacement of [
   assert.throws(() => checkPresets(sourceReadme.replace(row, replacement)), {
     code: "ERR_ASSERTION",
     message: /canonical README preset contract is inaccurate/,
+  });
+}
+
+// The extension guide must state the runtime limits, not separately maintained copies.
+const documentedLimits = {
+  scopeRoots: MAX_SCOPE_ROOTS,
+  scopePathLength: MAX_SCOPE_PATH_LENGTH,
+  finalizationMinutes: CHILD_FINALIZATION_GRACE_MS / 60_000,
+  hardLimitMinutes: CHILD_TIMEOUT_MS / 60_000,
+  localToolCallSoft: LIFETIME_TOOL_CALL_LIMITS.local.soft,
+  localToolCallHard: LIFETIME_TOOL_CALL_LIMITS.local.hard,
+  webToolCallSoft: LIFETIME_TOOL_CALL_LIMITS.web.soft,
+  webToolCallHard: LIFETIME_TOOL_CALL_LIMITS.web.hard,
+  webQuerySoft: LIFETIME_WEB_QUERY_SOFT_LIMIT,
+  webQueryLimit: LIFETIME_WEB_QUERY_LIMIT,
+  fetchTargetSoft: LIFETIME_WEB_FETCH_TARGET_SOFT_LIMIT,
+  fetchTargetLimit: LIFETIME_WEB_FETCH_TARGET_LIMIT,
+  sourceCheckFetchTargets: MAX_SOURCE_CHECK_FETCH_TARGETS_PER_CALL,
+  finalKiB: MAX_FINAL_BYTES / 1024,
+  jsonRecordMiB: MAX_JSON_LINE_BYTES / 1024 / 1024,
+  parentErrorKiB: MAX_PARENT_ERROR_BYTES / 1024,
+  observationCount: MAX_OBSERVATION_COUNT,
+};
+const limitPhrases = (limits) => [
+  `returns at most ${limits.finalKiB} KiB of runtime-owned status fields`,
+  `It requires 1–${limits.scopeRoots} existing files or directories`,
+  `each scope path is limited to ${limits.scopePathLength.toLocaleString("en-US")} characters`,
+  `then a ${limits.finalizationMinutes}-minute text-finalization window within the ${limits.hardLimitMinutes}-minute hard limit`,
+  // The hard limit allows that many attempts; the guard stops the next one.
+  `| Tool-call budget | Warn at ${limits.localToolCallSoft} attempts; stop before attempt ${limits.localToolCallHard + 1} | Warn at ${limits.webToolCallSoft} attempts; stop before attempt ${limits.webToolCallHard + 1} |`,
+  `| Executed web queries | — | Warn at ${limits.webQuerySoft} reserved queries; limit ${limits.webQueryLimit} |`,
+  `| Executed fetch/content targets | — | Warn at ${limits.fetchTargetSoft} reserved targets; limit ${limits.fetchTargetLimit} |`,
+  `| Final answer | ${limits.finalKiB} KiB | ${limits.finalKiB} KiB |`,
+  `| Captured JSON record | ${limits.jsonRecordMiB} MiB | ${limits.jsonRecordMiB} MiB |`,
+  `(\`min(${limits.sourceCheckFetchTargets}, queries × results per query)\`)`,
+  `fits within the ${limits.finalKiB} KiB cap`,
+  `capped at ${limits.parentErrorKiB} KiB`,
+  `the ${limits.jsonRecordMiB} MiB-bounded JSON fallback`,
+  `Counters saturate at ${limits.observationCount.toLocaleString("en-US")}`,
+  `within the ${limits.parentErrorKiB} KiB total failure-error cap`,
+  `the ${limits.jsonRecordMiB} MiB JSON record cap`,
+];
+const checkLimits = (text) => {
+  for (const phrase of limitPhrases(documentedLimits)) {
+    assert.ok(text.includes(phrase), `extension README limits do not match shared.ts; expected: ${phrase}`);
+  }
+};
+checkLimits(sourceExtensionReadme);
+
+// Negative controls must reject each stale documented limit.
+for (const key of Object.keys(documentedLimits)) {
+  const stalePhrases = limitPhrases({ ...documentedLimits, [key]: documentedLimits[key] + 1 });
+  const staleReadme = limitPhrases(documentedLimits).reduce(
+    (text, phrase, index) => text.replace(phrase, stalePhrases[index]), sourceExtensionReadme,
+  );
+  assert.throws(() => checkLimits(staleReadme), {
+    code: "ERR_ASSERTION",
+    message: /extension README limits do not match shared\.ts/,
   });
 }
 
