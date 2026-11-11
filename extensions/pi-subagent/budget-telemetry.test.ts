@@ -55,7 +55,7 @@ for (const failure of ["once", "persistent"] as const) {
       await writeFile(files.policy, JSON.stringify(await buildChildPolicy(root, ["evidence.txt"], "local")), { mode: 0o600 });
       session = await createOfflineSession({
         root, model, tools: [...ALLOWED_FILE_TOOLS], systemPrompt: "Offline budget test.",
-        extensionFactories: [(pi) => childGuard(pi, () => () => undefined)],
+        extensionFactories: [(pi) => childGuard(pi, () => undefined)],
       });
       await session.bindExtensions({ onError: () => undefined });
       const hardLimit = LIFETIME_TOOL_CALL_LIMITS.local.hard;

@@ -92,7 +92,7 @@ const resourceLoader = new DefaultResourceLoader({
       compactionAttempts++;
       assert.equal(event.reason, "threshold");
     }),
-    (pi) => childGuard(pi, () => () => undefined),
+    (pi) => childGuard(pi, () => undefined),
   ],
 });
 await resourceLoader.reload();

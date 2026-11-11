@@ -58,7 +58,7 @@ function terminateOwnProcessGroup(): void {
  * Keeps the child coupled to its parent without keeping the child event loop alive.
  * The parent owns the write end; abrupt parent death closes it and produces EOF here.
  */
-export function installParentLivenessMonitor(beforeTerminate?: () => void): () => void {
+export function installParentLivenessMonitor(beforeTerminate?: () => void): void {
   if (process.env[PARENT_LIVENESS_ENV] !== String(PARENT_LIVENESS_FD)) {
     throw new Error("parent liveness pipe is unavailable");
   }
@@ -79,10 +79,4 @@ export function installParentLivenessMonitor(beforeTerminate?: () => void): () =
   pipe.once("error", terminate);
   pipe.resume();
   pipe.unref();
-
-  return () => {
-    if (!armed) return;
-    armed = false;
-    pipe.destroy();
-  };
 }

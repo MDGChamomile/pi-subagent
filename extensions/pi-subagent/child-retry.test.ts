@@ -32,7 +32,7 @@ for (const scenario of ["retry", "length"] as const) {
       session = await createOfflineSession({
         root, model, tools: [...ALLOWED_FILE_TOOLS], systemPrompt: "Offline lifecycle test.",
         settings: { compaction: { enabled: false }, retry: { enabled: true, maxRetries: 1, baseDelayMs: 1 } },
-        extensionFactories: [(pi) => childGuard(pi, () => () => undefined)],
+        extensionFactories: [(pi) => childGuard(pi, () => undefined)],
       });
       const extensionErrors: unknown[] = [];
       await session.bindExtensions({ onError: (error) => { extensionErrors.push(error); } });

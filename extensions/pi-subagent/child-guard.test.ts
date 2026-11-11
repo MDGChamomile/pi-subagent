@@ -76,7 +76,7 @@ async function createHarness(
       sentUserMessages.push({ content, options });
     },
   };
-  childGuard(pi as any, () => () => undefined);
+  childGuard(pi as any, () => undefined);
 
   const emit = async (name: string, event: any = {}, ctx: any = {}) => {
     let result: any;
