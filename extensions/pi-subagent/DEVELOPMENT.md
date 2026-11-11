@@ -61,3 +61,28 @@ Replace `/path/to/pi-web-access/index.ts` with your package's resolved entry fil
 The helper loads last in the parent, keeps `pi-web-access` tools registered with their original provenance, activates only `pi_subagent`, and blocks other parent tool calls. The helper is not loaded in the child; the existing test observer and production guard remain in place, and package/version/entry-point checks are unchanged. No CLI tool allowlist is applied to the web-smoke parent, because Pi would remove the web tools from its registry rather than merely hiding them from the model. The smoke fetches IANA's example-domain documentation without searching, requires a test-only observation of a successful single-target `fetch_content` call with nonempty content, requires verbatim body evidence for both the documentation purpose and registration/transfer restriction, and fails on any parent investigation or loader call. The fetch observation records only target-match and success booleans, never URLs, content, or credentials; this does not expand production telemetry. Offline tests verify command assembly, early failures, and helper behavior; live provider/web compatibility requires a separately authorized smoke run.
 
 `npm test` runs every TypeScript `*.test.ts` file and the Python evaluation-contract tests; the test files describe current coverage. Some tests run real Pi SDK sessions with synthetic data, but no offline test establishes live compatibility. `provider-guard.test.ts` exercises only the built-in `openai-codex-responses` SSE path, with synthetic in-memory OAuth-shaped data, a stubbed fetch response, and network socket attempts blocked; it does not cover WebSocket, other providers, live compatibility, or the full CLI subprocess path. `selection-guard.test.ts` uses test doubles for the model context and transport. Scheduled canaries run from the default branch; a local pass does not mean a canary has run. Opt-in smoke tests cover live model selection and the local/web runtime boundaries.
+
+## Runtime module map
+
+The parent Pi process loads `index.ts`. Each child Pi process loads `child-guard.ts`, after the trusted web extension in web runs, and no other extension. Modules loaded in the child (the `child` and `both` rows) must not import parent-only modules. The packaged root `index.ts` only forwards to the parent entry point; tests, fixtures, `test-support.ts`, and `scripts/` are not runtime modules.
+
+| Module | Process | Responsibility |
+| --- | --- | --- |
+| `child-guard.ts` | child | Child entry point: loads the policy, verifies tool ownership, publishes readiness, admits or blocks each tool call, and enforces budgets, the soft deadline, finalization, and model selection |
+| `web-arguments.ts` | child | Validates web tool arguments against the pinned allowlist, normalizes them, and computes each call's query and fetch-target cost |
+| `shared.ts` | both | Tool names, limits, environment names, presets, shared types, and small helpers |
+| `config.ts` | both | Preset settings parsing and validation; the parent resolves selections and the child verifies its effective model and thinking |
+| `path-policy.ts` | both | Builds the canonical scope policy in the parent and authorizes each requested read path in the child |
+| `parent-liveness.ts` | both | Child parent-death monitor and runtime-file cleanup; parent process-group termination |
+| `budget-telemetry.ts` | both | Budget telemetry format, written by the child's `BudgetLedger` and read and validated by the parent |
+| `index.ts` | parent | Parent entry point: registers the `pi_subagent` tool and settings command, runs preflight, and renders calls and results |
+| `subprocess.ts` | parent | Builds the child prompt and invocation, spawns the child, and owns deadlines, cancellation, and process-group cleanup |
+| `child-stream.ts` | parent | Parses the child JSON stream, keeps the last eligible answer and usage, and records bounded failure observations |
+| `child-result.ts` | parent | Checks readiness and budget telemetry and resolves a finished run into a result or `ChildRunError` |
+| `envelope.ts` | parent | Serializes the byte-capped result envelope |
+| `diagnostics.ts` | parent | Bounded, content-free failure diagnostics in parent error text |
+| `call-display.ts` | parent | Progress, elapsed-time, and injected-context formatting |
+| `invocation-gate.ts` | parent | Per-run `pi_subagent` call limit |
+| `web-provenance.ts` | parent | Resolves the installed `pi-web-access` entry and checks its package name, version, and tool provenance |
+| `settings-command.ts` | parent | `/pi-subagent-settings` workflow and locked, atomic settings writes |
+| `settings-picker.ts` | parent | Searchable selection list for the settings command |
