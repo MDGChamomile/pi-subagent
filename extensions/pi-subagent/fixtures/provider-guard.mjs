@@ -50,13 +50,12 @@ globalThis.fetch = async (_url, options) => {
   });
 };
 
-// Import only after the isolated environment and network tripwires exist.
+// Import only after the isolated environment and network tripwires exist; the
+// spawning test preloads the SDK mapper.
 const { default: childGuard } = await import("../child-guard.ts");
 const {
   ALLOWED_FILE_TOOLS, BUDGET_TELEMETRY_ENV, MODEL_SELECTION_ENV, POLICY_ENV, READY_ENV, READY_MARKER, runtimeFilesIn,
 } = await import("../shared.ts");
-// The spawning test preloads the SDK mapper; retain this dynamic import after
-// the isolated environment and network tripwires have been installed.
 const { createAgentSession, DefaultResourceLoader, ModelRuntime, SessionManager, SettingsManager } =
   await import("@earendil-works/pi-coding-agent");
 const files = runtimeFilesIn(root);

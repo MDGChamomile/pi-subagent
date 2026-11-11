@@ -16,7 +16,6 @@ export class ModelInvocationGate {
   private readonly authorizedToolCallIds = new Map<string, "authorized" | "preflight">();
 
   startRun(): void {
-    if (this.runOpen) return;
     this.runOpen = true;
   }
 

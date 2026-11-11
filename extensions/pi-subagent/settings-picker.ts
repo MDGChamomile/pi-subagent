@@ -1,6 +1,5 @@
 import type { ExtensionCommandContext, Theme } from "@earendil-works/pi-coding-agent";
 import { Input, Key, SelectList, fuzzyFilter, matchesKey, truncateToWidth, type KeybindingsManager, type SelectItem } from "@earendil-works/pi-tui";
-
 import { sanitizeDisplayText } from "./shared.ts";
 
 const oneLine = (text: string) => sanitizeDisplayText(text).replace(/\s+/g, " ");
