@@ -22,6 +22,7 @@ WEB_SMOKE_PARENT = Path(__file__).with_name("web-smoke-parent.ts")
 SMOKE_WEB_URL = "https://www.iana.org/help/example-domains"
 SMOKE_WEB_QUOTE = "not available for registration or transfer"
 SMOKE_WEB_PURPOSE = "maintained for documentation purposes"
+MAX_RESULT_BYTES = 12 * 1024
 TOOL_SYNTAX_RE = re.compile(r"(?:^|\s)(?:to=|functions\.)\w+", re.I)
 EVIDENCE_RE = re.compile(r"(?:fixture[/\\][^\s`:]+(?::\d+(?:-\d+)?)?|(?:incident|metrics|production|transfer)\.[a-z]+(?::\d+(?:-\d+)?)?)", re.I)
 
@@ -141,7 +142,7 @@ def parse_result_envelope(body: str, details: dict[str, Any]) -> dict[str, Any] 
             or (status == "complete") != (reason is None)
             or not isinstance(envelope["outputTruncated"], bool)
             or not isinstance(envelope["answer"], str)
-            or len(body.encode("utf-8")) > 12 * 1024):
+            or len(body.encode("utf-8")) > MAX_RESULT_BYTES):
         return None
     if (details.get("status") != status or details.get("partialReason") != reason
             or details.get("outputTruncated") is not envelope["outputTruncated"]):
@@ -293,27 +294,41 @@ def _evaluate_context_output(
     last_answer = transcript.last_answer()
     result_text = last_answer.body if last_answer else ""
     child_details = last_answer.details if last_answer else {}
-    delegation_checks = {
-        "exactly_one_call": len(transcript.subagent_calls) == 1,
-        "requested_preset_and_scope": requested_call_matches(
-            transcript.subagent_calls, capability="local", preset=child_preset, scope=["fixture"]),
-        "exactly_one_result": len(transcript.subagent_results) == 1,
-        "no_tool_error": not any(result.is_error for result in transcript.subagent_results),
-        "reported_preset": child_details.get("preset") == child_preset,
-        "reported_capability": child_details.get("capability") == "local",
-    } if arm == "subagent" else {
-        "no_subagent_call_or_result": not transcript.subagent_calls and not transcript.subagent_results,
-    }
-    observed_checks = runtime_checks(observations, **selection) if arm == "subagent" else {}
-    envelope = parse_result_envelope(result_text, child_details) if arm == "subagent" else None
-    # Never substitute a parent answer for a missing or malformed delegated result.
-    quality_text = (envelope["answer"] if envelope is not None else "") if arm == "subagent" else transcript.final_text
+    if arm == "subagent":
+        delegation_checks = {
+            "exactly_one_call": len(transcript.subagent_calls) == 1,
+            "requested_preset_and_scope": requested_call_matches(
+                transcript.subagent_calls, capability="local", preset=child_preset, scope=["fixture"]),
+            "exactly_one_result": len(transcript.subagent_results) == 1,
+            "no_tool_error": not any(result.is_error for result in transcript.subagent_results),
+            "reported_preset": child_details.get("preset") == child_preset,
+            "reported_capability": child_details.get("capability") == "local",
+        }
+        observed_checks = runtime_checks(observations, **selection)
+        envelope = parse_result_envelope(result_text, child_details)
+        # Never substitute a parent answer for a missing or malformed delegated result.
+        quality_text = envelope["answer"] if envelope is not None else ""
+        reported_preset = child_preset
+        result_contract_verified = envelope is not None
+        runtime_configuration_verified = (
+            all(observed_checks.values()) and child_details.get("model") == selection["model"]
+            and child_details.get("thinking") == selection["thinking"]
+        )
+    else:
+        delegation_checks = {
+            "no_subagent_call_or_result": not transcript.subagent_calls and not transcript.subagent_results,
+        }
+        observed_checks = {}
+        quality_text = transcript.final_text
+        reported_preset = None
+        result_contract_verified = bool(transcript.final_text)
+        runtime_configuration_verified = True
     matched = _count_expected_facts(quality_text, case.expected_groups)
     return {
         "case": case.name,
         "profile": case.profile,
         "arm": arm,
-        "child_preset": child_preset if arm == "subagent" else None,
+        "child_preset": reported_preset,
         "child_model": child_details.get("model"),
         "child_thinking": child_details.get("thinking"),
         "child_status": child_details.get("status"),
@@ -321,11 +336,8 @@ def _evaluate_context_output(
         "runtime_checks": observed_checks,
         "delegation_checks": delegation_checks,
         "delegation_contract_verified": all(delegation_checks.values()),
-        "result_contract_verified": bool(transcript.final_text) if arm == "direct" else envelope is not None,
-        "runtime_configuration_verified": arm == "direct" or (
-            all(observed_checks.values()) and child_details.get("model") == selection["model"]
-            and child_details.get("thinking") == selection["thinking"]
-        ),
+        "result_contract_verified": result_contract_verified,
+        "runtime_configuration_verified": runtime_configuration_verified,
         "duration_ms": duration_ms,
         "max_parent_prompt_tokens": max(transcript.prompt_tokens, default=0),
         "parent_tool_result_bytes": transcript.tool_result_bytes,
@@ -345,7 +357,9 @@ def _evaluate_context_output(
 
 
 def _count_expected_facts(answer: str, expected_groups: tuple[tuple[str, ...], ...]) -> int:
-    normalize = lambda value: " ".join(re.sub(r"[^0-9a-z가-힣]+", " ", value.casefold()).split())
+    def normalize(value: str) -> str:
+        return " ".join(re.sub(r"[^0-9a-z가-힣]+", " ", value.casefold()).split())
+
     normalized_quality = normalize(answer)
     return sum(any(normalize(candidate) in normalized_quality for candidate in group) for group in expected_groups)
 
@@ -371,7 +385,7 @@ def evaluate_smoke(output: str, observations: list[dict[str, Any]], *, capabilit
         "no_tool_error": not errors,
         "valid_result_envelope": envelope is not None,
         "non_empty_answer": bool(answer.strip()),
-        "within_12_kib": bool(result_text) and len(result_text.encode("utf-8")) <= 12 * 1024,
+        "within_12_kib": bool(result_text) and len(result_text.encode("utf-8")) <= MAX_RESULT_BYTES,
         "no_raw_tool_syntax": bool(answer) and not bool(TOOL_SYNTAX_RE.search(answer)),
         "expected_fact": (capability == "local" and "plain-final-answer" in answer)
             or (capability == "web" and SMOKE_WEB_PURPOSE in answer.casefold() and SMOKE_WEB_QUOTE in answer.casefold()),
@@ -532,22 +546,15 @@ def main() -> int:
         write_fixture(cwd)
         for _ in range(args.repetitions):
             for case in selected:
-                results.append(run_pi(
-                    cwd=cwd,
-                    main_model=args.main_model,
-                    main_thinking=args.main_thinking,
-                    case=case,
-                    arm="direct",
-                    timeout_seconds=args.timeout_seconds,
-                ))
-                results.append(run_pi(
-                    cwd=cwd,
-                    main_model=args.main_model,
-                    main_thinking=args.main_thinking,
-                    case=case,
-                    arm="subagent",
-                    timeout_seconds=args.timeout_seconds,
-                ))
+                for arm in ("direct", "subagent"):
+                    results.append(run_pi(
+                        cwd=cwd,
+                        main_model=args.main_model,
+                        main_thinking=args.main_thinking,
+                        case=case,
+                        arm=arm,
+                        timeout_seconds=args.timeout_seconds,
+                    ))
     if not args.include_results:
         for result in results:
             result.pop("result_text", None)

@@ -35,6 +35,7 @@ def runtime_exports(*names: str) -> dict[str, Any]:
     return json.loads(completed.stdout)
 
 
+@functools.cache
 def load_presets() -> dict[str, dict[str, str]]:
     presets = runtime_exports("SUBAGENT_PRESETS").get("SUBAGENT_PRESETS")
     if not isinstance(presets, dict) or not presets:
