@@ -47,7 +47,7 @@ const budget = {
   fetchTargetCount: 0,
   softLimitReached: false,
   hardLimitReached: false,
-  ...(scenario.startsWith("budget-") ? { hardLimitReached: true, partialReason: "tool_budget" } : {}),
+  ...(scenario.startsWith("budget-") ? { hardLimitReached: true } : {}),
 };
 writeFileSync(budgetTelemetryPath, JSON.stringify(scenario === "invalid-budget-success" ? { ...budget, unexpected: "private-sentinel" } : budget), { encoding: "utf8", mode: 0o600, flag: "wx" });
 

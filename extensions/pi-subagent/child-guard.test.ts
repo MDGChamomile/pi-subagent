@@ -143,7 +143,7 @@ test("parent reads the guard's initial, admitted, denied, and exhausted telemetr
     }
     assert.deepEqual(await readBudgetTelemetry(telemetryFile), {
       ...initial, toolCallsAttempted: hard + 1, toolCallsExecuted: 1, deniedCalls: hard,
-      softLimitReached: true, hardLimitReached: true, partialReason: "tool_budget",
+      softLimitReached: true, hardLimitReached: true,
     });
   } finally {
     await harness.cleanup();
@@ -226,7 +226,7 @@ describe("pi-subagent child guard", () => {
         if (attempt === limits.soft) assert.equal(tracked.writes.at(-1)!.softLimitReached, true);
       }
       assert.equal(tracked.writes.at(-1)!.hardLimitReached, true);
-      assert.equal(tracked.writes.at(-1)!.partialReason, "tool_budget");
+      assert.equal(tracked.writes.at(-1)!.partialReason, undefined);
       assert.deepEqual(harness.getActiveTools(), []);
       assert.equal(harness.getSentUserMessages().length, 2);
     } finally {
@@ -651,7 +651,7 @@ describe("pi-subagent child guard", () => {
       assert.equal(telemetry.deniedCalls, 2);
       assert.equal(telemetry.softLimitReached, true);
       assert.equal(telemetry.hardLimitReached, true);
-      assert.equal(telemetry.partialReason, "tool_budget");
+      assert.equal(telemetry.partialReason, undefined);
     } finally {
       await harness.cleanup();
     }

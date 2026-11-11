@@ -113,7 +113,6 @@ test("accepts only content-free budget telemetry fields", async () => {
       fetchTargetCount: 5,
       softLimitReached: false,
       hardLimitReached: true,
-      partialReason: "tool_budget",
     };
     await writeFile(telemetryFile, JSON.stringify(telemetry));
     assert.deepEqual(await readBudgetTelemetry(telemetryFile), telemetry);
@@ -122,7 +121,7 @@ test("accepts only content-free budget telemetry fields", async () => {
     await assert.rejects(() => readBudgetTelemetry(telemetryFile), /malformed/);
     await writeFile(telemetryFile, JSON.stringify({ ...telemetry, queryCount: -1 }));
     await assert.rejects(() => readBudgetTelemetry(telemetryFile), /malformed/);
-    for (const partialReason of ["time_limit", "model_length"]) {
+    for (const partialReason of ["tool_budget", "time_limit", "model_length"]) {
       await writeFile(telemetryFile, JSON.stringify({ ...telemetry, partialReason }));
       await assert.rejects(() => readBudgetTelemetry(telemetryFile), /malformed/);
     }

@@ -205,7 +205,6 @@ export default function childGuard(
   };
   const requestBudgetPartialAnswer = () => {
     budget.hardLimitReached = true;
-    budget.partialReason = "tool_budget";
     persistBudget();
     requestFinalAnswer(`The child lifetime tool budget has been exhausted. ${PARTIAL_ANSWER_INSTRUCTION}`, "steer");
   };

@@ -10,7 +10,6 @@ export type BudgetTelemetry = {
   fetchTargetCount: number;
   softLimitReached: boolean;
   hardLimitReached: boolean;
-  partialReason?: "tool_budget";
 };
 
 export async function readBudgetTelemetry(path: string): Promise<BudgetTelemetry> {
@@ -30,7 +29,7 @@ function parseBudgetTelemetry(parsed: unknown): BudgetTelemetry {
   const value = parsed as Record<string, unknown>;
   const allowedKeys = new Set<string>([
     "version", "toolCallsAttempted", "toolCallsExecuted", "deniedCalls", "queryCount", "fetchTargetCount",
-    "softLimitReached", "hardLimitReached", "partialReason",
+    "softLimitReached", "hardLimitReached",
   ] satisfies (keyof BudgetTelemetry)[]);
   const integerKeys = [
     "toolCallsAttempted", "toolCallsExecuted", "deniedCalls", "queryCount", "fetchTargetCount",
@@ -41,7 +40,6 @@ function parseBudgetTelemetry(parsed: unknown): BudgetTelemetry {
     || integerKeys.some((key) => !Number.isSafeInteger(value[key]) || (value[key] as number) < 0)
     || typeof value.softLimitReached !== "boolean"
     || typeof value.hardLimitReached !== "boolean"
-    || (value.partialReason !== undefined && value.partialReason !== "tool_budget")
   ) {
     throw new Error("Subagent budget telemetry is malformed");
   }
