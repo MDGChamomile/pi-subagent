@@ -89,6 +89,26 @@ export type ChildJsonSnapshot = {
 
 const MAX_OBSERVED_RECORD_BYTES = 4096;
 
+const isRecord = (value: unknown): value is Record<string, unknown> =>
+  value !== null && typeof value === "object" && !Array.isArray(value);
+const isPositiveInteger = (value: unknown) => Number.isSafeInteger(value) && (value as number) > 0;
+
+const OBSERVED_EVENT_VALIDATORS = {
+  turn_start: () => true,
+  tool_execution_start: (event) =>
+    typeof event.toolCallId === "string" && typeof event.toolName === "string" && isRecord(event.args),
+  tool_execution_end: (event) =>
+    typeof event.toolCallId === "string" && typeof event.toolName === "string" && isRecord(event.result)
+    && typeof event.isError === "boolean",
+  // Pi's JSON mode emits delta-only updates without the SDK's cumulative message.
+  message_update: (event) => isRecord(event.assistantMessageEvent) && typeof event.assistantMessageEvent.type === "string"
+    && ["start", "text_start", "text_delta", "text_end", "thinking_start", "thinking_delta", "thinking_end", "toolcall_start", "toolcall_delta", "toolcall_end"].includes(event.assistantMessageEvent.type),
+  auto_retry_start: (event) =>
+    isPositiveInteger(event.attempt) && isPositiveInteger(event.maxAttempts)
+    && typeof event.delayMs === "number" && Number.isFinite(event.delayMs) && event.delayMs >= 0,
+  auto_retry_end: (event) => isPositiveInteger(event.attempt) && typeof event.success === "boolean",
+} satisfies Record<ObservedChildEvent, (event: Record<string, unknown>) => boolean>;
+
 /**
  * Consumes Pi's LF-delimited JSON stream while retaining only the last eligible
  * assistant answer. Intermediate assistant turns and ordinary child tool output are
@@ -320,18 +340,7 @@ export class ChildJsonCollector {
 
   private observe(event: Record<string, unknown>): void {
     const type = event.type as ObservedChildEvent;
-    const object = (value: unknown): value is Record<string, unknown> =>
-      value !== null && typeof value === "object" && !Array.isArray(value);
-    const positiveInteger = (value: unknown) => Number.isSafeInteger(value) && (value as number) > 0;
-    const valid = type === "turn_start"
-      || (type === "tool_execution_start" && typeof event.toolCallId === "string" && typeof event.toolName === "string" && object(event.args))
-      || (type === "tool_execution_end" && typeof event.toolCallId === "string" && typeof event.toolName === "string" && object(event.result) && typeof event.isError === "boolean")
-      // Pi's JSON mode emits delta-only updates without the SDK's cumulative message.
-      || (type === "message_update" && object(event.assistantMessageEvent) && typeof event.assistantMessageEvent.type === "string"
-        && ["start", "text_start", "text_delta", "text_end", "thinking_start", "thinking_delta", "thinking_end", "toolcall_start", "toolcall_delta", "toolcall_end"].includes(event.assistantMessageEvent.type))
-      || (type === "auto_retry_start" && positiveInteger(event.attempt) && positiveInteger(event.maxAttempts) && typeof event.delayMs === "number" && Number.isFinite(event.delayMs) && event.delayMs >= 0)
-      || (type === "auto_retry_end" && positiveInteger(event.attempt) && typeof event.success === "boolean");
-    if (!valid) {
+    if (!OBSERVED_EVENT_VALIDATORS[type](event)) {
       this.observationsIncomplete = true;
       return;
     }
