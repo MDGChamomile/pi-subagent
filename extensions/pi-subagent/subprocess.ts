@@ -149,7 +149,7 @@ function spawnChild(
     child = spawn(invocation.command, invocation.args, {
       cwd,
       env: invocation.env,
-      detached: process.platform !== "win32",
+      detached: true,
       shell: false,
       stdio: ["pipe", "pipe", "pipe", "pipe"],
     });
@@ -257,8 +257,7 @@ export async function runChild(options: ChildLaunchOptions & {
       if (progressTimer) clearInterval(progressTimer);
       // Descendants can outlive a natural exit and even hold stdout/stderr open,
       // delaying close. Reuse bounded group cleanup without changing the result.
-      // Never signal a possibly reused single PID after exit on native Windows.
-      if (process.platform !== "win32" && !isProcessGroupGone(child.pid)) requestStop("exit");
+      if (!isProcessGroupGone(child.pid)) requestStop("exit");
     });
     child.once("close", (code, signal) => {
       exitSignal = signal ?? undefined;
