@@ -56,7 +56,7 @@ The parent Pi process loads `index.ts`. Each child Pi process loads `child-guard
 
 | Module | Process | Responsibility |
 | --- | --- | --- |
-| `child-guard.ts` | child | Child entry point: loads the policy, verifies tool ownership, publishes readiness, admits or blocks each tool call, and enforces budgets, the soft deadline, finalization, and model selection |
+| `child-guard.ts` | child | Child entry point: loads the policy, verifies web tool ownership, publishes readiness, admits or blocks each tool call, and enforces the tool-call budget, the soft deadline, finalization, and model selection |
 | `web-arguments.ts` | child | Validates web tool arguments against the pinned allowlist, normalizes them, and computes each call's query and fetch-target cost |
 | `shared.ts` | both | Tool names, limits, environment names, presets, shared types, and small helpers |
 | `config.ts` | both | Preset settings parsing and validation; the parent resolves selections and the child verifies its effective model and thinking |

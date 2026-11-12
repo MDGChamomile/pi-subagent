@@ -10,7 +10,7 @@ Run focused, bounded investigations in an ephemeral child Pi process while keepi
 
 `@mdgchamomile/pi-subagent` bundles two parts that work together:
 
-- **`pi_subagent` extension** — enforces scope, tool ownership, resource budgets, lifecycle, telemetry, and output boundaries.
+- **`pi_subagent` extension** — enforces scope, web tool ownership, resource budgets, lifecycle, telemetry, and output boundaries.
 - **Companion skill** — guides the parent in deciding when to delegate and selecting the appropriate capability and model preset.
 
 ## See it in action
