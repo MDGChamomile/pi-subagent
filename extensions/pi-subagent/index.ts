@@ -30,8 +30,6 @@ import { ChildRunError } from "./child-result.ts";
 import { loadPresetSettings, validatePresetSelection, type PresetSelection } from "./config.ts";
 import { registerSubagentSettingsCommand } from "./settings-command.ts";
 
-const TOOL_SOURCE_FAILURE = "pi_subagent tool source could not be verified. Do not retry; continue with successful sibling results or investigate in the parent";
-
 const PresetSchema = StringEnum(PRESET_NAMES, {
   description: "Child model preset: lookup-standard for fact-finding, analysis-standard for synthesis, or review-standard for adversarial review",
 });
@@ -165,10 +163,7 @@ export default function piSubagentExtension(
   const gate = new ModelInvocationGate();
   // Pi turns thrown tool errors into fresh results; reattach the child's nested usage in tool_result.
   const failedUsage = new Map<string, ChildRunError["usage"]>();
-  let ownSourcePath: string | undefined;
 
-  const currentOwnSource = () => pi.getAllTools().find((tool) => tool.name === TOOL_NAME)?.sourceInfo?.path;
-  const sourceVerified = () => !!ownSourcePath && currentOwnSource() === ownSourcePath;
   const clearRun = () => {
     gate.endRun();
     failedUsage.clear();
@@ -178,11 +173,9 @@ export default function piSubagentExtension(
     params: Static<typeof Parameters>,
     ctx: Pick<ExtensionContext, "cwd" | "modelRegistry">,
   ): Promise<PreparedRun> => {
-    const verified = sourceVerified();
-    if (!gate.beginPreflight(toolCallId) || !verified) {
+    if (!gate.start(toolCallId)) {
       throw new Error(boundedParentError(
-        verified ? `pi_subagent allows at most ${MAX_SUBAGENT_CALLS} model-selected calls per parent agent run`
-          : TOOL_SOURCE_FAILURE,
+        `pi_subagent allows at most ${MAX_SUBAGENT_CALLS} model-selected calls per parent agent run`,
         { phase: "preflight" },
       ));
     }
@@ -198,13 +191,9 @@ export default function piSubagentExtension(
       if (capability === "web") webExtensionPath = await resolveWebExtensionPath(pi.getAllTools());
       policy = await buildChildPolicy(ctx.cwd, params.scope, capability);
     } catch (error) {
-      gate.rejectPreflight(toolCallId);
       throw new Error(boundedParentError(error, { phase: "preflight" }));
     }
     const { model, thinking } = selection;
-    if (!gate.commit(toolCallId)) {
-      throw new Error(boundedParentError("pi_subagent invocation permit is invalid or already consumed", { phase: "preflight" }));
-    }
     return { capability, preset, model, thinking, webExtensionPath, policy };
   };
 
@@ -253,17 +242,13 @@ export default function piSubagentExtension(
     },
   });
 
-  pi.on("session_start", () => {
-    ownSourcePath = currentOwnSource();
-    clearRun();
-  });
+  pi.on("session_start", clearRun);
   pi.on("agent_start", () => {
     failedUsage.clear();
     gate.startRun();
   });
   pi.on("tool_call", (event) => {
     if (event.toolName !== TOOL_NAME) return;
-    if (!sourceVerified()) return { block: true, reason: TOOL_SOURCE_FAILURE };
     if (!gate.authorize(event.toolCallId)) return invocationLimitBlock();
   });
   pi.on("tool_result", (event) => {
