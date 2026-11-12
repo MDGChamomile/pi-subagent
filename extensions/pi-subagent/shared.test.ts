@@ -2,7 +2,7 @@ import assert from "node:assert/strict";
 import { describe, test } from "node:test";
 import {
   CHILD_FINALIZATION_GRACE_MS, CHILD_GUARD_EXIT_CODES, CHILD_TIMEOUT_MS,
-  LIFETIME_TOOL_CALL_LIMITS, LIFETIME_WEB_FETCH_TARGET_LIMIT, LIFETIME_WEB_QUERY_LIMIT,
+  LIFETIME_TOOL_CALL_LIMIT,
   MIN_WEB_EXTENSION_VERSION, modelRef, PRESET_NAMES, SUBAGENT_PRESETS, THINKING_LEVELS, sanitizeDisplayText,
   splitModelRef,
 } from "./shared.ts";
@@ -14,12 +14,7 @@ describe("pi-subagent public contract", () => {
     assert.equal(CHILD_TIMEOUT_MS, 20 * 60 * 1000);
     assert.equal(CHILD_FINALIZATION_GRACE_MS, 2 * 60 * 1000);
     assert.equal(MAX_SUBAGENT_CALLS, 3);
-    assert.deepEqual(LIFETIME_TOOL_CALL_LIMITS, {
-      local: { soft: 36, hard: 48 },
-      web: { soft: 30, hard: 40 },
-    });
-    assert.equal(LIFETIME_WEB_QUERY_LIMIT, 32);
-    assert.equal(LIFETIME_WEB_FETCH_TARGET_LIMIT, 50);
+    assert.deepEqual(LIFETIME_TOOL_CALL_LIMIT, { local: 48, web: 40 });
     // Default models and the web minimum change between releases; package validation
     // ties the README to these values, so only their shape is fixed here.
     assert.match(MIN_WEB_EXTENSION_VERSION, /^\d+\.\d+\.\d+$/);

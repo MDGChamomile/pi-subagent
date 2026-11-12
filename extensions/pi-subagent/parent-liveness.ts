@@ -16,14 +16,14 @@ export function cleanupPrivateRuntimeFiles(files: RuntimeFiles): void {
 
 export function killProcessGroup(pid: number | undefined, signal: NodeJS.Signals): void {
   if (!pid) return;
-  // A failed POSIX group signal must not target a potentially reused single PID.
-  try { process.kill(process.platform === "win32" ? pid : -pid, signal); } catch {}
+  // A failed group signal must not target a potentially reused single PID.
+  try { process.kill(-pid, signal); } catch {}
 }
 
 /** Only ESRCH proves that the POSIX process group has disappeared. */
 export function isProcessGroupGone(pid: number | undefined): boolean {
-  // Missing PIDs and native Windows retain the full escalation grace period.
-  if (!pid || process.platform === "win32") return false;
+  // A missing PID retains the full escalation grace period.
+  if (!pid) return false;
   try {
     process.kill(-pid, 0);
   } catch (error) {

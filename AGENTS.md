@@ -6,7 +6,7 @@ Pi Subagent delegates bounded, read-only investigations to ephemeral child Pi pr
 
 ## Core boundaries
 
-- Preserve explicit local scope, canonical path checks, tool provenance, and separate local and web capabilities. Children must not write files, execute shell commands or tests, persist Pi sessions, or recursively delegate.
+- Preserve explicit local scope, canonical path checks, web tool provenance, and separate local and web capabilities. Children must not write files, execute shell commands or tests, persist Pi sessions, or recursively delegate.
 - Preserve resource budgets, cancellation and process cleanup, readiness verification, bounded output, and the distinction between runtime-owned status and untrusted child content.
 - Keep telemetry content-free: do not include tasks, paths, queries, URLs, source content, credentials, or private sessions in execution metadata. Never commit private data or local machine configuration.
 - This is an application-level capability boundary, not an OS, network, or credential-isolated sandbox. Do not claim stronger isolation.
@@ -14,7 +14,7 @@ Pi Subagent delegates bounded, read-only investigations to ephemeral child Pi pr
 
 ## Source map
 
-- `extensions/pi-subagent/`: TypeScript runtime, regression tests, and current evaluation scripts. Read the [extension guide](extensions/pi-subagent/README.md) when changing runtime contracts and the [runtime module map](extensions/pi-subagent/DEVELOPMENT.md#runtime-module-map) for which modules run in the parent or child.
+- `extensions/pi-subagent/`: TypeScript runtime, regression tests, and live smoke scripts. Read the [extension guide](extensions/pi-subagent/README.md) when changing runtime contracts and the [runtime module map](extensions/pi-subagent/DEVELOPMENT.md#runtime-module-map) for which modules run in the parent or child.
 - `skills/pi-subagent/`: delegation guidance; keep it consistent with enforced runtime capabilities.
 - `packaging/pi-subagent/`: maintained assembly and validation code. Do not hand-edit generated `dist/`. Read [package maintenance](packaging/pi-subagent/DEVELOPMENT.md) for packaging or release work.
 - `.github/scripts/`: skill validation plus Python tests for it and for the publish workflow's release-tag gate.

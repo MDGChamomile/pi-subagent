@@ -49,9 +49,6 @@ const budget = {
   toolCallsAttempted: 0,
   toolCallsExecuted: 0,
   deniedCalls: 0,
-  queryCount: 0,
-  fetchTargetCount: 0,
-  softLimitReached: false,
   hardLimitReached: false,
   ...(scenario.startsWith("budget-") ? { hardLimitReached: true } : {}),
 };

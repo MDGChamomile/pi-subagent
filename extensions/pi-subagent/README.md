@@ -40,7 +40,7 @@ Follow the README's [first investigation](../../README.md#first-investigation) f
 
 1. The parent calls `pi_subagent` with one focused task, a capability, an explicit scope, and a preset.
 2. The parent extension canonicalizes the authorized scope and starts one ephemeral `pi --mode json --print --no-session` child process.
-3. The child guard validates tool ownership, publishes a private readiness marker, and validates each local or web tool call before execution.
+3. The child guard validates web tool ownership, publishes a private readiness marker, and validates each local or web tool call before execution.
 4. The parent-side collector discards intermediate child turns and tool results. After the child exits, the parent verifies readiness before accepting the last valid non-tool assistant answer, sanitizing control characters, and limiting its size.
 5. The TUI reports per-call progress and, when settled, the elapsed time and estimated context injected into the parent.
 
@@ -48,7 +48,7 @@ Follow the README's [first investigation](../../README.md#first-investigation) f
 
 Collection, control-character sanitization, and result assembly run in the parent extension. Complete/partial calls return bounded answer text and separate host-only metadata; failures return bounded error text. Sanitization does not redact source quotations from the final answer. `--no-session` disables persisted Pi sessions, not in-memory context or private runtime files.
 
-The README maintains the [per-run call limits](../../README.md#capabilities), including parallel calls and the corrected retry after a preflight validation failure.
+The README maintains the [per-run call limits](../../README.md#capabilities), including parallel calls and calls that fail preflight validation.
 
 ## Runtime contract
 
@@ -101,15 +101,13 @@ The runtime applies these per-child limits:
 | Limit | `local` | `web` |
 | --- | --- | --- |
 | Investigation deadline | 18 minutes, then a 2-minute text-finalization window within the 20-minute hard limit | Same |
-| Tool-call budget | Warn at 36 attempts; stop before attempt 49 | Warn at 30 attempts; stop before attempt 41 |
-| Executed web queries | — | Warn at 24 reserved queries; limit 32 |
-| Executed fetch/content targets | — | Warn at 38 reserved targets; limit 50 |
+| Tool-call budget | Stop before attempt 49 | Stop before attempt 41 |
 | Final answer | 12 KiB | 12 KiB |
 | Captured JSON record | 6 MiB | 6 MiB |
 
 The JSON record cap accommodates Pi's default 4.5 MiB base64 image payload plus text and metadata. Larger `message_end` or `compaction_end` records still fail closed; this is not an unlimited or arbitrary multi-image response allowance. Intermediate image content is discarded, not returned to the parent.
 
-- The parent accepts a final answer only after the child guard validates policy and tool ownership and publishes its readiness marker.
+- The parent accepts a final answer only after the child guard validates the policy and web tool ownership and publishes its readiness marker.
 - Intermediate assistant turns and investigation tool results are discarded. The collector retains only the last assistant message containing non-empty text without a tool call or terminal model error, then sanitizes and bounds it.
 - A tool-only or token-limited ending gets at most one tool-disabled finalization follow-up. Model errors and aborted turns do not trigger this fallback; Pi owns automatic retry decisions, and existing deadline and tool-budget limits remain enforced. A zero-exit child that still has no final answer is rejected.
 - The collapsed call title shows `pi_subagent` and a task preview capped at 100 terminal columns; the entire title is further truncated to fit one row in narrower terminals. Scope and other inputs are hidden. Expanding the row reveals the full task, scope, capability, and preset as JSON-escaped values. This affects display only, not execution inputs or scope enforcement.
@@ -120,9 +118,8 @@ The JSON record cap accommodates Pi's default 4.5 MiB base64 image payload plus 
 - A failed first progress update stops the child before the investigation prompt is delivered; later progress failures stop the ongoing investigation. The parent returns a `progress` failure after cleanup, without forwarding callback error text.
 - The direct child's exit alone does not end the wait when descendants may survive, so shutdown can extend beyond the investigation deadline. On POSIX, natural success and error exits also trigger the same bounded cleanup if descendants remain, including descendants holding stdout/stderr open. The investigation timer ends at the direct child's exit, so this cleanup preserves the original result or process failure rather than relabelling it as a timeout. Normal completion without remaining descendants does not add this wait.
 - If the last answer still has `stopReason: "length"`, its available text is returned as `partial` with `partialReason: "model_length"`, never as complete. This reason takes precedence over a simultaneous budget or time limit. `outputTruncated` continues to report only truncation by the runtime's byte cap.
-- Allowed and denied tool attempts both count. A soft warning leaves later calls available; a hard stop disables tools, reuses text finalization, and returns a `partial` result with `partialReason: "tool_budget"`.
-- Web calls reserve their full cost synchronously during sequential Pi tool preflight, before parallel execution: `web_search` charges its normalized `query`/`queries`; `source_check` charges its effective queries and, with `fetchContent: true`, conservatively up to five result pages (`min(5, queries × results per query)`); `fetch_content` charges its normalized unique `url`/`urls`; and each `get_search_content` retrieval charges one content target. A call whose queries or targets would cross either limit does not execute or consume query/fetch counters. It also starts tool-disabled finalization, so later calls cannot spend the remaining budget. A returned answer is `partial` with `partialReason: "tool_budget"` unless the higher-priority `model_length` reason applies; finalization can still fail instead of returning an answer. Each resource gets one soft warning after an admitted reservation first reaches or crosses its warning threshold, reporting reserved and remaining counts without queries or URLs. These notices do not disable tools or mark the result partial; the tool-attempt warning and hard limit apply independently.
-- A dedicated parent-liveness pipe makes the child remove private runtime files and terminate its POSIX process group if the parent exits abruptly. The unreferenced monitor stays armed after session shutdown until the child process actually exits. The implementation has a native-Windows fallback that terminates the child process itself, but native Windows is not officially supported or tested.
+- Allowed and denied tool attempts both count. Reaching the limit disables tools, reuses text finalization, and returns a `partial` result with `partialReason: "tool_budget"` unless the higher-priority `model_length` reason applies; finalization can still fail instead of returning an answer. Web queries and fetch targets have per-call input bounds but no separate lifetime budget.
+- A dedicated parent-liveness pipe makes the child remove private runtime files and terminate its POSIX process group if the parent exits abruptly. The unreferenced monitor stays armed after session shutdown until the child process actually exits. Native Windows is not supported.
 - Final diff, audit, test, and retrieval validation stays with the parent when it holds the edited files or may need to make follow-up fixes.
 
 Only the bounded result text (`content`) enters the parent model context. Every successful call returns this JSON envelope:
@@ -142,7 +139,7 @@ Parent tool-result `details` retain content-free execution and budget metadata f
 
 ### Local runs
 
-The child guard canonicalizes every requested path, replaces the tool input with that authorized canonical path, and blocks paths outside the explicit scope, including lexical, absolute, and symlink escapes. Local working directories, scope roots, and per-call canonical paths must remain unchanged by Pi's tool path normalization. Paths containing Unicode spaces introduced by file-URL decoding or symlink resolution are rejected rather than silently targeting a different file; ordinary spaces and Unicode letters remain supported. It independently verifies that every enabled local tool is Pi-owned. Local children do not inherit `RIPGREP_CONFIG_PATH`, preventing user-configured options such as `--follow` from widening recursive grep searches beyond the authorized scope; the parent's environment is unchanged. Local runs do not resolve or load the web extension.
+The child guard canonicalizes every requested path, replaces the tool input with that authorized canonical path, and blocks paths outside the explicit scope, including lexical, absolute, and symlink escapes. Local working directories, scope roots, and per-call canonical paths must remain unchanged by Pi's tool path normalization. Paths containing Unicode spaces introduced by file-URL decoding or symlink resolution are rejected rather than silently targeting a different file; ordinary spaces and Unicode letters remain supported. The child loads no extension besides the guard, so its local tools are Pi's built-ins. Local children do not inherit `RIPGREP_CONFIG_PATH`, preventing user-configured options such as `--follow` from widening recursive grep searches beyond the authorized scope; the parent's environment is unchanged. Local runs do not resolve or load the web extension.
 
 ### Web runs
 
@@ -156,13 +153,13 @@ An input rejected by argument validation blocks only that call, allowing the chi
 
 ### Trust model and data flow
 
-Before every provider request, the child requires successful guard initialization, tool ownership validation, and readiness publication in addition to the selected model/thinking. Pi sends compaction summaries without its provider-request hook, so the child applies the same checks when a compaction starts. A compaction that starts after the child's final answer is cancelled instead: the ephemeral child would not use the summary, and the parent's hard deadline still applies until the child exits. Startup failure stops the child before transmission; the parent also independently requires the readiness marker before accepting any answer.
+Before every provider request, the child requires successful guard initialization, web tool ownership validation, and readiness publication in addition to the selected model/thinking. Pi sends compaction summaries without its provider-request hook, so the child applies the same checks when a compaction starts. A compaction that starts after the child's final answer is cancelled instead: the ephemeral child would not use the summary, and the parent's hard deadline still applies until the child exits. Startup failure stops the child before transmission; the parent also independently requires the readiness marker before accepting any answer.
 
 Errors returned to the parent are control-character-sanitized and capped at 4 KiB; failure diagnostics omit tasks, paths, assistant text, and tool-result contents. The last failed tool is recorded only when its name exactly matches a supported local or web tool; unknown or malformed names become the fixed value `unknown` before collection and again at serialization. Child stderr is discarded, while reported child usage, including compaction summaries, is attached to the parent tool result on success and failure.
 
 Unexpected process-exit diagnostics include whether a valid guard readiness marker was observed (`guardReady`) and the exit code or termination signal (`exitSignal`). An absent or invalid marker does not by itself identify the cause of failure. A generic nonzero exit with valid readiness but no observed investigation activity adds a fixed hint to check the selected preset's provider authentication, model access, and `/pi-subagent-settings`. This is troubleshooting guidance, not an authentication diagnosis; it is omitted for signals, guard-owned failures, incomplete observations, or observed assistant messages, tool errors, or tracked activity.
 
-Guard-owned exit codes distinguish `initialization` (70), `toolOwnership` (71), `readiness` (72), `modelSelection` (73), and `runtime` (74) failures using fixed, content-free parent messages. A budget-notice or final-answer message failure after readiness is a `runtime` failure; subsequent provider requests remain blocked. A budget telemetry write failure also disables tools and blocks subsequent provider requests, because the parent derives the `tool_budget` status only from that telemetry; the call then fails instead of returning a complete or partial result.
+Guard-owned exit codes distinguish `initialization` (70), `toolOwnership` (71), `readiness` (72), `modelSelection` (73), and `runtime` (74) failures using fixed, content-free parent messages. A final-answer message failure after readiness is a `runtime` failure; subsequent provider requests remain blocked. A budget telemetry write failure also disables tools and blocks subsequent provider requests, because the parent derives the `tool_budget` status only from that telemetry; the call then fails instead of returning a complete or partial result.
 
 Failures after collector creation also include model-visible `observations` in the bounded error suffix; they are not host-only details. The parent retains fixed `counts` for validated `turn_start`, assistant `message_update`, tool execution start/end, and automatic retry start/end events. Separate `receipts` count recognized allowlisted type prefixes, even for oversized or malformed records; these do not imply valid events.
 
@@ -178,7 +175,7 @@ This is an application-level capability boundary, not an OS or network sandbox. 
 
 ## Evaluation
 
-The source checkout includes opt-in context evaluation against synthetic fixtures. Historical pilots are limited calibration results, not evidence of universal quality or speed improvements. See the [development evaluation guide](DEVELOPMENT.md#evaluation) for procedures and frozen historical evidence. Live evaluation sends inputs to providers and consumes usage; it requires separate authorization.
+Historical pilots are limited calibration results, not evidence of universal quality or speed improvements. See the [development evaluation guide](DEVELOPMENT.md#evaluation) for the frozen historical evidence and earlier evaluation scripts.
 
 ## Verification
 

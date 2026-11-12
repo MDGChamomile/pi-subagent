@@ -11,7 +11,7 @@ import {
   ALLOWED_FILE_TOOLS,
   ALLOWED_WEB_TOOLS,
   BUDGET_TELEMETRY_ENV,
-  LIFETIME_TOOL_CALL_LIMITS,
+  LIFETIME_TOOL_CALL_LIMIT,
   POLICY_ENV,
   READY_ENV,
   READY_MARKER,
@@ -125,7 +125,7 @@ test("parent reads the guard's initial, admitted, denied, and exhausted telemetr
     await harness.emit("session_start");
     const initial = {
       version: 1, toolCallsAttempted: 0, toolCallsExecuted: 0, deniedCalls: 0,
-      queryCount: 0, fetchTargetCount: 0, softLimitReached: false, hardLimitReached: false,
+      hardLimitReached: false,
     };
     assert.deepEqual(await readBudgetTelemetry(telemetryFile), initial);
     await harness.callTool({ toolName: "read", toolCallId: "admitted", input: { path: "allowed/inside.txt" } });
@@ -136,13 +136,13 @@ test("parent reads the guard's initial, admitted, denied, and exhausted telemetr
     assert.deepEqual(await readBudgetTelemetry(telemetryFile), {
       ...initial, toolCallsAttempted: 2, toolCallsExecuted: 1, deniedCalls: 1,
     });
-    const hard = LIFETIME_TOOL_CALL_LIMITS.local.hard;
+    const hard = LIFETIME_TOOL_CALL_LIMIT.local;
     for (let attempt = 3; attempt <= hard + 1; attempt++) {
       await harness.callTool({ toolName: "bash", toolCallId: `denied-${attempt}`, input: {} });
     }
     assert.deepEqual(await readBudgetTelemetry(telemetryFile), {
       ...initial, toolCallsAttempted: hard + 1, toolCallsExecuted: 1, deniedCalls: hard,
-      softLimitReached: true, hardLimitReached: true,
+      hardLimitReached: true,
     });
   } finally {
     await harness.cleanup();
@@ -179,7 +179,7 @@ function trackBudgetWrites(t: TestContext) {
 }
 
 describe("pi-subagent child guard", () => {
-  test("skips unchanged local snapshots but persists web reservations before execution", async (t) => {
+  test("skips unchanged telemetry snapshots", async (t) => {
     const tracked = trackBudgetWrites(t);
     try {
       for (const capability of ["local", "web"] as const) {
@@ -194,11 +194,8 @@ describe("pi-subagent child guard", () => {
           await harness.emit("tool_execution_start", { ...event, args: event.input });
           assert.equal(tracked.writes.length, 2);
           assert.equal(await harness.emit("tool_call", event), undefined);
-          assert.equal(tracked.writes.length, capability === "local" ? 2 : 3);
-          const admitted = await harness.getBudgetTelemetry();
-          assert.equal(admitted.queryCount, capability === "web" ? 1 : 0);
-          assert.equal(admitted.fetchTargetCount, capability === "web" ? 1 : 0);
-          assert.equal(admitted.toolCallsExecuted, 0, "web reservation is recorded before execution");
+          assert.equal(tracked.writes.length, 2);
+          assert.equal((await harness.getBudgetTelemetry()).toolCallsExecuted, 0);
           await harness.emit("tool_result", event);
           assert.deepEqual(tracked.writes.at(-1), await harness.getBudgetTelemetry());
           assert.equal(tracked.writes.at(-1)!.toolCallsExecuted, 1);
@@ -211,23 +208,21 @@ describe("pi-subagent child guard", () => {
     } finally { tracked.restore(); }
   });
 
-  test("writes each changed soft/hard-limit snapshot once and preserves final budget state", async (t) => {
+  test("writes each changed snapshot once and preserves final budget state", async (t) => {
     const tracked = trackBudgetWrites(t);
     const harness = await createHarness(["allowed"]);
     try {
       await harness.emit("session_start");
-      const limits = LIFETIME_TOOL_CALL_LIMITS.local;
-      for (let attempt = 1; attempt <= limits.hard + 1; attempt++) {
+      for (let attempt = 1; attempt <= LIFETIME_TOOL_CALL_LIMIT.local + 1; attempt++) {
         const previous = tracked.writes.length;
         await harness.emit("tool_execution_start", { toolCallId: `snapshot-${attempt}`, toolName: "read", args: {} });
         assert.equal(tracked.writes.length, previous + 1, `attempt ${attempt} should write once`);
         assert.deepEqual(tracked.writes.at(-1), await harness.getBudgetTelemetry());
-        if (attempt === limits.soft) assert.equal(tracked.writes.at(-1)!.softLimitReached, true);
       }
       assert.equal(tracked.writes.at(-1)!.hardLimitReached, true);
       assert.equal(tracked.writes.at(-1)!.partialReason, undefined);
       assert.deepEqual(harness.getActiveTools(), []);
-      assert.equal(harness.getSentUserMessages().length, 2);
+      assert.equal(harness.getSentUserMessages().length, 1);
     } finally {
       try { await harness.cleanup(); } finally { tracked.restore(); }
     }
@@ -256,7 +251,7 @@ describe("pi-subagent child guard", () => {
     const harness = await createHarness(["allowed"]);
     try {
       await harness.emit("session_start");
-      for (let attempt = 1; attempt <= LIFETIME_TOOL_CALL_LIMITS.local.hard; attempt++) {
+      for (let attempt = 1; attempt <= LIFETIME_TOOL_CALL_LIMIT.local; attempt++) {
         assert.equal(await harness.callTool({
           toolName: "read", toolCallId: `within-${attempt}`, input: { path: "allowed/inside.txt" },
         }), undefined);
@@ -271,33 +266,6 @@ describe("pi-subagent child guard", () => {
       assert.equal(blocked?.block, true);
       assert.equal(blocked?.terminate, true);
       assert.match(blocked?.reason, /policy is unavailable.*budget telemetry/);
-    } finally {
-      try { await harness.cleanup(); } finally { tracked.restore(); }
-    }
-  });
-
-  test("a failed web budget telemetry write blocks later web calls", async (t) => {
-    const tracked = trackBudgetWrites(t);
-    const harness = await createHarness([], "web");
-    try {
-      await harness.emit("session_start");
-      for (let index = 0; index < 8; index++) {
-        assert.equal(await harness.callTool({
-          toolName: "web_search", toolCallId: `four-queries-${index}`, input: { queries: ["a", "b", "c", "d"] },
-        }), undefined);
-      }
-      const event = { toolName: "web_search", toolCallId: "over-query-budget", input: { query: "one" } };
-      await harness.emit("tool_execution_start", { ...event, args: event.input });
-      tracked.failNext();
-      // Pi blocks a call whose tool_call handler throws.
-      await assert.rejects(harness.emit("tool_call", event), /synthetic telemetry write failure/);
-      await harness.emit("tool_execution_end", { ...event, result: {}, isError: true });
-      const blocked = await harness.callTool({
-        toolName: "get_search_content", toolCallId: "after-failed-write", input: { responseId: "synthetic" },
-      });
-      assert.equal(blocked?.block, true);
-      assert.equal(blocked?.terminate, true);
-      assert.deepEqual(harness.getActiveTools(), []);
     } finally {
       try { await harness.cleanup(); } finally { tracked.restore(); }
     }
@@ -332,25 +300,6 @@ describe("pi-subagent child guard", () => {
         toolName: "web_search",
         toolCallId: "changed",
         input: { query: "test" },
-      });
-      assert.equal(changedOwner.block, true);
-      assert.equal(changedOwner.terminate, true);
-      assert.match(changedOwner.reason, /ownership changed/);
-    } finally {
-      await harness.cleanup();
-    }
-  });
-
-  test("terminates when a local tool stops being a Pi built-in after startup", async () => {
-    const harness = await createHarness(["allowed"]);
-    try {
-      await harness.emit("session_start");
-      assert.deepEqual(harness.getActiveTools(), [...ALLOWED_FILE_TOOLS]);
-      harness.tools.find((tool) => tool.name === "read")!.sourceInfo.source = "local";
-      const changedOwner = await harness.emit("tool_call", {
-        toolName: "read",
-        toolCallId: "changed",
-        input: { path: "allowed/inside.txt" },
       });
       assert.equal(changedOwner.block, true);
       assert.equal(changedOwner.terminate, true);
@@ -565,7 +514,7 @@ describe("pi-subagent child guard", () => {
     }
   });
 
-  test("warns once at the local soft limit, allows through hard, then finalizes on the next attempt", async () => {
+  test("allows calls through the local limit, then finalizes on the next attempt", async () => {
     const harness = await createHarness(["allowed"], "local");
     try {
       await harness.emit("session_start");
@@ -574,30 +523,21 @@ describe("pi-subagent child guard", () => {
         toolCallId: `local-budget-${index}`,
         input: { path: "allowed/inside.txt" },
       });
-      for (let index = 1; index < LIFETIME_TOOL_CALL_LIMITS.local.soft; index++) {
+      for (let index = 1; index <= LIFETIME_TOOL_CALL_LIMIT.local; index++) {
         assert.equal(await callRead(index), undefined);
       }
       assert.equal(harness.getSentUserMessages().length, 0);
 
-      assert.equal(await callRead(LIFETIME_TOOL_CALL_LIMITS.local.soft), undefined);
-      assert.equal(harness.getSentUserMessages().length, 1);
-      assert.match(harness.getSentUserMessages()[0]!.content, /soft limit/);
-      for (let index = LIFETIME_TOOL_CALL_LIMITS.local.soft + 1; index <= LIFETIME_TOOL_CALL_LIMITS.local.hard; index++) {
-        assert.equal(await callRead(index), undefined);
-      }
-      assert.equal(harness.getSentUserMessages().filter((message) => message.content.includes("soft limit")).length, 1);
-
-      const overHard = await callRead(LIFETIME_TOOL_CALL_LIMITS.local.hard + 1);
+      const overHard = await callRead(LIFETIME_TOOL_CALL_LIMIT.local + 1);
       assert.equal(overHard.block, true);
       assert.match(overHard.reason, /hard limit/);
       assert.deepEqual(harness.getActiveTools(), []);
-      const blockedAfterFinalization = await callRead(LIFETIME_TOOL_CALL_LIMITS.local.hard + 2);
+      const blockedAfterFinalization = await callRead(LIFETIME_TOOL_CALL_LIMIT.local + 2);
       assert.equal(blockedAfterFinalization.block, true);
       const telemetry = await harness.getBudgetTelemetry();
       assert.equal(telemetry.toolCallsAttempted, 50);
       assert.equal(telemetry.toolCallsExecuted, 48);
       assert.equal(telemetry.deniedCalls, 2);
-      assert.equal(telemetry.softLimitReached, true);
       assert.equal(telemetry.hardLimitReached, true);
       assert.equal(telemetry.partialReason, undefined);
     } finally {
@@ -605,11 +545,11 @@ describe("pi-subagent child guard", () => {
     }
   });
 
-  test("counts denied attempts and applies the lower web hard limit", async () => {
+  test("counts denied attempts and applies the lower web limit", async () => {
     const local = await createHarness(["allowed"], "local");
     try {
       await local.emit("session_start");
-      for (let index = 1; index <= LIFETIME_TOOL_CALL_LIMITS.local.hard; index++) {
+      for (let index = 1; index <= LIFETIME_TOOL_CALL_LIMIT.local; index++) {
         await local.rejectBeforeGuard("read", `invalid-arguments-${index}`);
       }
       await local.rejectBeforeGuard("read", "invalid-arguments-hard-stop");
@@ -626,7 +566,7 @@ describe("pi-subagent child guard", () => {
     const web = await createHarness([], "web");
     try {
       await web.emit("session_start");
-      for (let index = 1; index <= LIFETIME_TOOL_CALL_LIMITS.web.hard; index++) {
+      for (let index = 1; index <= LIFETIME_TOOL_CALL_LIMIT.web; index++) {
         assert.equal(await web.callTool({
           toolName: "web_search",
           toolCallId: `web-budget-${index}`,
@@ -648,195 +588,10 @@ describe("pi-subagent child guard", () => {
     }
   });
 
-  test("warns once per web resource at its soft threshold without stopping tools", async () => {
-    const harness = await createHarness([], "web");
-    let callId = 0;
-    const call = (toolName: string, input: Record<string, unknown>) => harness.callTool({
-      toolName, toolCallId: `resource-notice-${callId++}`, input,
-    });
-    try {
-      await harness.emit("session_start");
-      for (let index = 0; index < 5; index++) {
-        assert.equal(await call("web_search", { queries: ["a", "b", "c", "d"] }), undefined);
-      }
-      assert.equal(await call("web_search", { queries: ["a", "b", "c"] }), undefined);
-      for (let index = 0; index < 7; index++) {
-        assert.equal(await call("fetch_content", {
-          urls: Array.from({ length: 5 }, (_, n) => `https://example.com/private/${n}`),
-        }), undefined);
-      }
-      assert.equal(await call("fetch_content", { urls: ["https://a.example", "https://b.example"] }), undefined);
-      assert.equal(harness.getSentUserMessages().length, 0);
-      // A rejected input must not reserve cost or trigger a resource warning.
-      assert.equal((await call("source_check", {
-        claim: "private claim", queries: ["private query"], numResults: 11, fetchContent: true,
-      })).block, true);
-      assert.equal(harness.getSentUserMessages().length, 0);
-      const before = await harness.getBudgetTelemetry();
-      assert.equal(before.queryCount, 23);
-      assert.equal(before.fetchTargetCount, 37);
-
-      assert.equal(await call("source_check", {
-        claim: "private claim", queries: ["private query"], numResults: 1, fetchContent: true,
-      }), undefined);
-      const notices = harness.getSentUserMessages();
-      assert.equal(notices.length, 2);
-      assert.match(notices[0]!.content, /queries.*24\/32.*8 remaining/);
-      assert.match(notices[1]!.content, /content targets.*38\/50.*12 remaining/);
-      for (const notice of notices) {
-        assert.deepEqual(notice.options, { deliverAs: "steer" });
-        assert.doesNotMatch(notice.content, /private|https?:|partial|Stop investigating/);
-      }
-      assert.deepEqual(harness.getActiveTools(), [...ALLOWED_WEB_TOOLS]);
-      assert.equal(await call("get_search_content", { responseId: "response", urlIndex: 0 }), undefined);
-      assert.equal(await call("web_search", { query: "another query" }), undefined);
-      assert.equal(notices.length, 2);
-      const after = await harness.getBudgetTelemetry();
-      assert.equal(after.queryCount, 25);
-      assert.equal(after.fetchTargetCount, 39);
-      assert.equal(after.softLimitReached, false); // Tracks tool attempts only, not resource notices.
-      assert.equal(after.hardLimitReached, false);
-      assert.equal(after.partialReason, undefined);
-      assert.deepEqual(Object.keys(after).sort(), Object.keys(before).sort());
-    } finally {
-      await harness.cleanup();
-    }
-  });
-
-  test("warns when an admitted fetch batch jumps over the soft threshold", async () => {
+  test("rejects a JSON-encoded query batch over the per-call limit", async () => {
     const harness = await createHarness([], "web");
     try {
       await harness.emit("session_start");
-      for (let index = 0; index < 8; index++) {
-        assert.equal(await harness.callTool({
-          toolName: "fetch_content", toolCallId: `fetch-jump-${index}`,
-          input: { urls: Array.from({ length: 5 }, (_, n) => `https://example.com/${n}`) },
-        }), undefined);
-        assert.equal(harness.getSentUserMessages().length, index === 7 ? 1 : 0);
-      }
-      assert.match(harness.getSentUserMessages()[0]!.content, /content targets.*40\/50.*10 remaining/);
-      assert.deepEqual(harness.getActiveTools(), [...ALLOWED_WEB_TOOLS]);
-    } finally {
-      await harness.cleanup();
-    }
-  });
-
-  test("fails closed if a web resource notice cannot be delivered", async () => {
-    const harness = await createHarness([], "web");
-    try {
-      await harness.emit("session_start");
-      harness.failUserMessages();
-      for (let index = 0; index < 5; index++) {
-        assert.equal(await harness.callTool({
-          toolName: "web_search", toolCallId: `notice-failure-${index}`,
-          input: { queries: ["a", "b", "c", "d"] },
-        }), undefined);
-      }
-      const blocked = await harness.callTool({
-        toolName: "web_search", toolCallId: "notice-failure-threshold",
-        input: { queries: ["a", "b", "c", "d"] },
-      });
-      assert.equal(blocked.block, true);
-      assert.equal(blocked.terminate, true);
-      assert.match(blocked.reason, /could not send the tool budget warning/);
-      assert.deepEqual(harness.getActiveTools(), []);
-      const telemetry = await harness.getBudgetTelemetry();
-      assert.equal(telemetry.toolCallsExecuted, 5);
-      assert.equal(telemetry.deniedCalls, 1);
-    } finally {
-      await harness.cleanup();
-    }
-  });
-
-  test("reserves cumulative query and fetch targets before executing an over-budget batch", async () => {
-    const queries = await createHarness([], "web");
-    try {
-      await queries.emit("session_start");
-      for (let index = 0; index < 7; index++) {
-        assert.equal(await queries.callTool({
-          toolName: "web_search",
-          toolCallId: `four-queries-${index}`,
-          input: { queries: ["a", "b", "c", "d"] },
-        }), undefined);
-      }
-      assert.equal(await queries.callTool({
-        toolName: "web_search",
-        toolCallId: "three-queries",
-        input: { queries: ["a", "b", "c"] },
-      }), undefined);
-      const overBudgetInput = { queries: ["a", "b"], workflow: "summary-review" };
-      const blockedBatch = await queries.callTool({
-        toolName: "web_search",
-        toolCallId: "over-query-budget",
-        input: overBudgetInput,
-      });
-      assert.equal(blockedBatch.block, true);
-      assert.equal(overBudgetInput.workflow, "summary-review");
-      assert.match(blockedBatch.reason, /query\/fetch budget/);
-      assert.equal(queries.getSentUserMessages().filter((notice) => notice.content.includes("web queries")).length, 1);
-      const blockedAfterFinalization = await queries.callTool({
-        toolName: "web_search",
-        toolCallId: "query-after-finalization",
-        input: { query: "one" },
-      });
-      assert.equal(blockedAfterFinalization.block, true);
-      const telemetry = await queries.getBudgetTelemetry();
-      assert.equal(telemetry.queryCount, 31);
-      assert.equal(telemetry.toolCallsExecuted, 8);
-      assert.equal(telemetry.deniedCalls, 2);
-    } finally {
-      await queries.cleanup();
-    }
-
-    const fetches = await createHarness([], "web");
-    try {
-      await fetches.emit("session_start");
-      for (let index = 0; index < 9; index++) {
-        assert.equal(await fetches.callTool({
-          toolName: "fetch_content",
-          toolCallId: `five-urls-${index}`,
-          input: { urls: Array.from({ length: 5 }, (_, urlIndex) => `https://example.com/${index}/${urlIndex}`) },
-        }), undefined);
-      }
-      assert.equal(await fetches.callTool({
-        toolName: "fetch_content",
-        toolCallId: "four-urls",
-        input: { urls: ["https://a.example", "https://b.example", "https://c.example", "https://d.example"] },
-      }), undefined);
-      const blockedBatch = await fetches.callTool({
-        toolName: "fetch_content",
-        toolCallId: "over-fetch-budget",
-        input: { urls: ["https://e.example", "https://f.example"] },
-      });
-      assert.equal(blockedBatch.block, true);
-      const telemetry = await fetches.getBudgetTelemetry();
-      assert.equal(telemetry.fetchTargetCount, 49);
-      assert.equal(fetches.getSentUserMessages().filter((notice) => notice.content.includes("web content targets")).length, 1);
-      assert.equal(telemetry.toolCallsExecuted, 10);
-      assert.equal(telemetry.deniedCalls, 1);
-    } finally {
-      await fetches.cleanup();
-    }
-  });
-
-  test("charges source_check fetchContent conservatively and content retrieval as one target", async () => {
-    const harness = await createHarness([], "web");
-    try {
-      await harness.emit("session_start");
-      assert.equal(await harness.callTool({
-        toolName: "source_check",
-        toolCallId: "source-check-cost",
-        input: { claim: "claim", queries: ["one", "two"], numResults: 2, fetchContent: true },
-      }), undefined);
-      assert.equal(await harness.callTool({
-        toolName: "get_search_content",
-        toolCallId: "content-retrieval-cost",
-        input: { responseId: "response-1", urlIndex: 0 },
-      }), undefined);
-      const telemetry = await harness.getBudgetTelemetry();
-      assert.equal(telemetry.queryCount, 2);
-      assert.equal(telemetry.fetchTargetCount, 5);
-
       const encodedBatch = await harness.callTool({
         toolName: "web_search",
         toolCallId: "encoded-over-per-call-limit",
@@ -844,9 +599,6 @@ describe("pi-subagent child guard", () => {
       });
       assert.equal(encodedBatch.block, true);
       assert.match(encodedBatch.reason, /at most 4 queries/);
-      const afterDenial = await harness.getBudgetTelemetry();
-      assert.equal(afterDenial.queryCount, 2);
-      assert.equal(afterDenial.fetchTargetCount, 5);
     } finally {
       await harness.cleanup();
     }

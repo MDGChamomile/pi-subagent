@@ -46,18 +46,6 @@ def load_presets() -> dict[str, dict[str, str]]:
     return presets
 
 
-@functools.cache
-def investigation_tools() -> frozenset[str]:
-    """Tools a child may use; the same calls in the parent count as direct investigation."""
-    allowlists = runtime_exports("ALLOWED_FILE_TOOLS", "ALLOWED_WEB_TOOLS")
-    if len(allowlists) != 2 or not all(
-        isinstance(tools, list) and tools and all(isinstance(tool, str) for tool in tools)
-        for tools in allowlists.values()
-    ):
-        raise ValueError("Runtime tool allowlists are unavailable")
-    return frozenset(tool for tools in allowlists.values() for tool in tools)
-
-
 def observed_cli(root: Path) -> list[str]:
     executable = shutil.which("pi")
     if not executable:
