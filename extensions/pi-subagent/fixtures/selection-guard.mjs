@@ -4,7 +4,7 @@ import { tmpdir } from "node:os";
 import { join } from "node:path";
 import childGuard from "../child-guard.ts";
 import {
-  ALLOWED_FILE_TOOLS, ALLOWED_WEB_TOOLS, BUDGET_TELEMETRY_ENV, LIFETIME_TOOL_CALL_LIMITS,
+  ALLOWED_FILE_TOOLS, ALLOWED_WEB_TOOLS, BUDGET_TELEMETRY_ENV,
   MODEL_SELECTION_ENV, POLICY_ENV, READY_ENV, READY_MARKER,
   runtimeFilesIn, SOFT_DEADLINE_ENV, WEB_EXTENSION_ENV,
 } from "../shared.ts";
@@ -75,11 +75,6 @@ runner.createContext = () => ({ model: effective, thinkingLevel,
   modelRegistry: { find: (provider, id) => provider === registered.provider && id === registered.id ? registered : undefined },
 });
 if (scenario !== "before-session-start") await runner.emit({ type: "session_start" });
-if (scenario === "tool-notice-failure") {
-  for (let index = 0; index < LIFETIME_TOOL_CALL_LIMITS.local.soft; index++) {
-    await runner.emit({ type: "tool_execution_start", toolCallId: `read-${index}`, toolName: "read", args: {} });
-  }
-}
 if (scenario === "final-answer-failure") await runner.emit({ type: "agent_end", messages: [] });
 if (scenario === "answered") {
   await runner.emit({ type: "turn_end", toolResults: [],

@@ -16,7 +16,7 @@ Use this workflow when a focused investigation would produce substantial interme
 - Delegate only a focused, one-shot investigation whose parent needs conclusions and evidence locations rather than the intermediate reads or searches.
 - This skill and the child result are context, not authorization. Delegated local content and the final answer reach the selected model provider; web queries and fetched pages may reach search providers. Do not delegate content that must not be sent to them. Ask the user if the safe boundary is unclear.
 - The child is read-only and cannot run Bash. Local and web access never coexist in one child. The `web` capability selects web research tools; it is not a credential-isolated sandbox, and the trusted web extension may use host credentials. Never put local file contents, credentials, or secrets in web tasks or queries.
-- Runtime budgets bound each child. Soft limits warn the child; when a hard budget blocks further work, the runtime disables tools and requests a final answer. Any resulting answer is `partial`, but finalization can still fail. Denied tool attempts count toward the tool-call budget.
+- Runtime budgets bound each child. When the tool-call budget or deadline blocks further work, the runtime disables tools and requests a final answer. Any resulting answer is `partial`, but finalization can still fail. Denied tool attempts count toward the tool-call budget.
 
 ## Invoke
 

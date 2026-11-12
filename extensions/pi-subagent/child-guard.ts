@@ -10,11 +10,7 @@ import {
   BUDGET_TELEMETRY_ENV,
   CHILD_GUARD_EXIT_CODES,
   errorMessage,
-  LIFETIME_TOOL_CALL_LIMITS,
-  LIFETIME_WEB_FETCH_TARGET_LIMIT,
-  LIFETIME_WEB_FETCH_TARGET_SOFT_LIMIT,
-  LIFETIME_WEB_QUERY_LIMIT,
-  LIFETIME_WEB_QUERY_SOFT_LIMIT,
+  LIFETIME_TOOL_CALL_LIMIT,
   MAX_SCOPE_ROOTS,
   modelRef,
   POLICY_ENV,
@@ -33,7 +29,6 @@ import { prepareWebCall } from "./web-arguments.ts";
 
 const FILE_TOOLS = new Set<string>(ALLOWED_FILE_TOOLS);
 const WEB_TOOLS = new Set<string>(ALLOWED_WEB_TOOLS);
-const SOFT_LIMIT_INSTRUCTION = "Use further calls only for essential missing evidence, then return the concise final answer.";
 const PARTIAL_ANSWER_INSTRUCTION = "Stop investigating and answer now using only evidence already gathered. Clearly identify unfinished work and coverage gaps; the runtime will mark the result as partial.";
 
 function loadPolicy(): { policy: ChildPolicy; policyPath: string } {
@@ -140,7 +135,6 @@ export default function childGuard(
   let policyError: string | undefined;
   let guardReady = false;
   let startupExitCode: number = CHILD_GUARD_EXIT_CODES.initialization;
-  const warnedWebResources = new Set<"queries" | "content targets">();
 
   // Web tools must come from the explicitly loaded extension file.
   const ownsTool = (name: string, tools: ToolInfo[]) => {
@@ -178,14 +172,6 @@ export default function childGuard(
     budget.hardLimitReached = true;
     ledger.persist();
     requestFinalAnswer(`The child lifetime tool budget has been exhausted. ${PARTIAL_ANSWER_INSTRUCTION}`, "steer");
-  };
-  const sendSoftBudgetNotice = (content = `The child lifetime tool-call soft limit has been reached. ${SOFT_LIMIT_INSTRUCTION}`) => {
-    if (finalizationRequested) return;
-    try {
-      pi.sendUserMessage(content, { deliverAs: "steer" });
-    } catch (error) {
-      failClosed(`could not send the tool budget warning: ${errorMessage(error)}`);
-    }
   };
 
   try {
@@ -301,15 +287,7 @@ export default function childGuard(
 
   pi.on("tool_execution_start", () => {
     budget.toolCallsAttempted += 1;
-    if (policy) {
-      const limits = LIFETIME_TOOL_CALL_LIMITS[policy.capability];
-      if (!budget.softLimitReached && budget.toolCallsAttempted >= limits.soft) {
-        budget.softLimitReached = true;
-        ledger.persist();
-        sendSoftBudgetNotice();
-      }
-      if (budget.toolCallsAttempted > limits.hard) requestBudgetPartialAnswer();
-    }
+    if (policy && budget.toolCallsAttempted > LIFETIME_TOOL_CALL_LIMIT[policy.capability]) requestBudgetPartialAnswer();
     ledger.persist();
   });
 
@@ -332,7 +310,7 @@ export default function childGuard(
       if (!policy) return policyUnavailable();
       if (!expired && !finalizationRequested) return;
       const hardLimitExceeded = budget.hardLimitReached
-        && budget.toolCallsAttempted > LIFETIME_TOOL_CALL_LIMITS[policy.capability].hard;
+        && budget.toolCallsAttempted > LIFETIME_TOOL_CALL_LIMIT[policy.capability];
       return block(hardLimitExceeded
         ? "The child lifetime tool-call hard limit has been exceeded; finalization has started"
         : "Finalization has started; return the final answer without further tool calls");
@@ -356,30 +334,7 @@ export default function childGuard(
       if ("violation" in prepared) {
         return block(`${prepared.violation}. Retry with allowed bounded inputs or return the final answer.`);
       }
-      const { cost } = prepared;
-      if (
-        budget.queryCount + cost.queries > LIFETIME_WEB_QUERY_LIMIT
-        || budget.fetchTargetCount + cost.fetchTargets > LIFETIME_WEB_FETCH_TARGET_LIMIT
-      ) {
-        requestBudgetPartialAnswer();
-        return block("The child lifetime web query/fetch budget would be exceeded; finalization has started");
-      }
       Object.assign(input, prepared.input);
-      // Pi preflights sibling calls sequentially. Reserve synchronously before execution so a parallel batch cannot oversubscribe.
-      budget.queryCount += cost.queries;
-      budget.fetchTargetCount += cost.fetchTargets;
-      for (const [resource, reserved, soft, hard] of [
-        ["queries", budget.queryCount, LIFETIME_WEB_QUERY_SOFT_LIMIT, LIFETIME_WEB_QUERY_LIMIT],
-        ["content targets", budget.fetchTargetCount, LIFETIME_WEB_FETCH_TARGET_SOFT_LIMIT, LIFETIME_WEB_FETCH_TARGET_LIMIT],
-      ] as const) {
-        if (reserved >= soft && !warnedWebResources.has(resource)) {
-          warnedWebResources.add(resource);
-          sendSoftBudgetNotice(
-            `The child lifetime web ${resource} soft limit has been reached: ${reserved}/${hard} reserved, ${hard - reserved} remaining. ${SOFT_LIMIT_INSTRUCTION}`,
-          );
-          if (!policy) return policyUnavailable();
-        }
-      }
       permit();
       return;
     };

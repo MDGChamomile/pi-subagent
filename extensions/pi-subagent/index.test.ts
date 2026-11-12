@@ -203,7 +203,7 @@ describe("pi-subagent cleanup usage", () => {
           output: formatChildOutput("answer").text, outputTruncated: false,
           status: "complete", durationMs: 1, contextTokens: 20, exitCode: 0, usage,
           budget: { version: 1, toolCallsAttempted: 0, toolCallsExecuted: 0, deniedCalls: 0,
-            queryCount: 0, fetchTargetCount: 0, softLimitReached: false, hardLimitReached: false },
+            hardLimitReached: false },
         };
         const childError = new ChildRunError(boundedParentError("child failed", { phase: "process" }), usage);
         let cleanupPath: Parameters<typeof rm>[0] | undefined;

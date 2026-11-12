@@ -59,9 +59,6 @@ type SubagentDetails = {
   toolCallsAttempted: number;
   toolCallsExecuted: number;
   deniedCalls: number;
-  queryCount: number;
-  fetchTargetCount: number;
-  softLimitReached: boolean;
   hardLimitReached: boolean;
   durationMs: number;
   exitCode: number;
@@ -126,9 +123,6 @@ async function runInTempDirectory(
         toolCallsAttempted: result.budget.toolCallsAttempted,
         toolCallsExecuted: result.budget.toolCallsExecuted,
         deniedCalls: result.budget.deniedCalls,
-        queryCount: result.budget.queryCount,
-        fetchTargetCount: result.budget.fetchTargetCount,
-        softLimitReached: result.budget.softLimitReached,
         hardLimitReached: result.budget.hardLimitReached,
         durationMs: result.durationMs,
         exitCode: result.exitCode,

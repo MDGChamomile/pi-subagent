@@ -13,7 +13,7 @@ const failures = {
   "missing-web-extension": "initialization", "before-session-start": "initialization",
   "web-owner": "toolOwnership",
   "readiness-failure": "readiness", "budget-failure": "readiness",
-  "tool-notice-failure": "runtime", "final-answer-failure": "runtime",
+  "final-answer-failure": "runtime",
 } as const;
 for (const boundary of ["provider", "compaction"]) {
   for (const scenario of ["match", "answered", ...Object.keys(failures)]) {
