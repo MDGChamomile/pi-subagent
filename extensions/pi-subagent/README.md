@@ -178,7 +178,7 @@ This is an application-level capability boundary, not an OS or network sandbox. 
 
 ## Evaluation
 
-The source checkout includes opt-in context evaluation against synthetic fixtures. Historical pilots are limited calibration results, not evidence of universal quality or speed improvements. See the [development evaluation guide](DEVELOPMENT.md#evaluation) for procedures and frozen historical evidence. Live evaluation sends inputs to providers and consumes usage; it requires separate authorization.
+Historical pilots are limited calibration results, not evidence of universal quality or speed improvements. See the [development evaluation guide](DEVELOPMENT.md#evaluation) for the frozen historical evidence and earlier evaluation scripts.
 
 ## Verification
 
