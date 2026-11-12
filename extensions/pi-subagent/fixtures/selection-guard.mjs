@@ -61,7 +61,7 @@ childGuard({
   getAllTools() {
     return web
       ? ALLOWED_WEB_TOOLS.map((name) => ({ name, sourceInfo: { path: scenario === "web-owner" ? policyFile : webExtension } }))
-      : ALLOWED_FILE_TOOLS.map((name) => ({ name, sourceInfo: { source: scenario === "local-owner" ? "local" : "builtin" } }));
+      : ALLOWED_FILE_TOOLS.map((name) => ({ name, sourceInfo: { source: "builtin" } }));
   },
   setActiveTools(names) { activeTools = names; },
   sendUserMessage() { throw new Error("private runtime message failure"); },

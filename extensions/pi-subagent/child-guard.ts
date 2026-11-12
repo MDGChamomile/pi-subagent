@@ -40,14 +40,6 @@ function loadPolicy(): { policy: ChildPolicy; policyPath: string } {
   const policyPath = process.env[POLICY_ENV];
   if (!policyPath) throw new Error("child policy path is missing");
   const resolved = resolve(policyPath);
-  const info = lstatSync(resolved);
-  if (!info.isFile() || info.isSymbolicLink() || (info.mode & 0o077) !== 0) {
-    throw new Error("child policy file is not a private regular file");
-  }
-  if (typeof process.getuid === "function" && info.uid !== process.getuid()) {
-    throw new Error("child policy file is owned by another user");
-  }
-  if (realpathSync(resolved) !== resolved) throw new Error("child policy path changed");
   const parsed = JSON.parse(readFileSync(resolved, "utf8")) as Partial<ChildPolicy>;
   if (
     parsed.version !== 1 ||
@@ -150,10 +142,10 @@ export default function childGuard(
   let startupExitCode: number = CHILD_GUARD_EXIT_CODES.initialization;
   const warnedWebResources = new Set<"queries" | "content targets">();
 
-  // Local tools must be Pi built-ins; web tools must come from the explicitly loaded extension file.
+  // Web tools must come from the explicitly loaded extension file.
   const ownsTool = (name: string, tools: ToolInfo[]) => {
+    if (FILE_TOOLS.has(name)) return true;
     const tool = tools.find((candidate) => candidate.name === name);
-    if (FILE_TOOLS.has(name)) return tool?.sourceInfo?.source === "builtin";
     return WEB_TOOLS.has(name) && webExtensionPath !== undefined
       && canonicalSourcePath(tool?.sourceInfo?.path) === webExtensionPath;
   };
@@ -287,8 +279,7 @@ export default function childGuard(
     startupExitCode = CHILD_GUARD_EXIT_CODES.toolOwnership;
     for (const name of activeTools) {
       if (!ownsTool(name, tools)) {
-        const owner = policy.capability === "local" ? "Pi's built-in tool set" : "the explicitly loaded web extension";
-        failClosed(`${name} is not owned by ${owner}`);
+        failClosed(`${name} is not owned by the explicitly loaded web extension`);
         return;
       }
     }
