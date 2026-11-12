@@ -6,7 +6,7 @@ Pi Subagent delegates bounded, read-only investigations to ephemeral child Pi pr
 
 ## Core boundaries
 
-- Preserve explicit local scope, canonical path checks, tool provenance, and separate local and web capabilities. Children must not write files, execute shell commands or tests, persist Pi sessions, or recursively delegate.
+- Preserve explicit local scope, canonical path checks, web tool provenance, and separate local and web capabilities. Children must not write files, execute shell commands or tests, persist Pi sessions, or recursively delegate.
 - Preserve resource budgets, cancellation and process cleanup, readiness verification, bounded output, and the distinction between runtime-owned status and untrusted child content.
 - Keep telemetry content-free: do not include tasks, paths, queries, URLs, source content, credentials, or private sessions in execution metadata. Never commit private data or local machine configuration.
 - This is an application-level capability boundary, not an OS, network, or credential-isolated sandbox. Do not claim stronger isolation.

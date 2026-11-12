@@ -48,7 +48,7 @@ Follow the README's [first investigation](../../README.md#first-investigation) f
 
 Collection, control-character sanitization, and result assembly run in the parent extension. Complete/partial calls return bounded answer text and separate host-only metadata; failures return bounded error text. Sanitization does not redact source quotations from the final answer. `--no-session` disables persisted Pi sessions, not in-memory context or private runtime files.
 
-The README maintains the [per-run call limits](../../README.md#capabilities), including parallel calls and the corrected retry after a preflight validation failure.
+The README maintains the [per-run call limits](../../README.md#capabilities), including parallel calls and calls that fail preflight validation.
 
 ## Runtime contract
 
@@ -122,7 +122,7 @@ The JSON record cap accommodates Pi's default 4.5 MiB base64 image payload plus 
 - If the last answer still has `stopReason: "length"`, its available text is returned as `partial` with `partialReason: "model_length"`, never as complete. This reason takes precedence over a simultaneous budget or time limit. `outputTruncated` continues to report only truncation by the runtime's byte cap.
 - Allowed and denied tool attempts both count. A soft warning leaves later calls available; a hard stop disables tools, reuses text finalization, and returns a `partial` result with `partialReason: "tool_budget"`.
 - Web calls reserve their full cost synchronously during sequential Pi tool preflight, before parallel execution: `web_search` charges its normalized `query`/`queries`; `source_check` charges its effective queries and, with `fetchContent: true`, conservatively up to five result pages (`min(5, queries × results per query)`); `fetch_content` charges its normalized unique `url`/`urls`; and each `get_search_content` retrieval charges one content target. A call whose queries or targets would cross either limit does not execute or consume query/fetch counters. It also starts tool-disabled finalization, so later calls cannot spend the remaining budget. A returned answer is `partial` with `partialReason: "tool_budget"` unless the higher-priority `model_length` reason applies; finalization can still fail instead of returning an answer. Each resource gets one soft warning after an admitted reservation first reaches or crosses its warning threshold, reporting reserved and remaining counts without queries or URLs. These notices do not disable tools or mark the result partial; the tool-attempt warning and hard limit apply independently.
-- A dedicated parent-liveness pipe makes the child remove private runtime files and terminate its POSIX process group if the parent exits abruptly. The unreferenced monitor stays armed after session shutdown until the child process actually exits. The implementation has a native-Windows fallback that terminates the child process itself, but native Windows is not officially supported or tested.
+- A dedicated parent-liveness pipe makes the child remove private runtime files and terminate its POSIX process group if the parent exits abruptly. The unreferenced monitor stays armed after session shutdown until the child process actually exits. Native Windows is not supported.
 - Final diff, audit, test, and retrieval validation stays with the parent when it holds the edited files or may need to make follow-up fixes.
 
 Only the bounded result text (`content`) enters the parent model context. Every successful call returns this JSON envelope:

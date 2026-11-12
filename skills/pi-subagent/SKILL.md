@@ -20,7 +20,7 @@ Use this workflow when a focused investigation would produce substantial interme
 
 ## Invoke
 
-Use one `pi_subagent` call by default. Use up to three calls per parent agent run only when the investigation can be split into distinct, independent research tracks that materially benefit from parallel work. Separate local and web calls each count toward this limit. At most one corrected retry per parent agent run is allowed after a preflight validation failure.
+Use one `pi_subagent` call by default. Use up to three calls per parent agent run only when the investigation can be split into distinct, independent research tracks that materially benefit from parallel work. Separate local and web calls each count toward this limit. A call that fails preflight validation still counts toward this limit, so check the arguments before calling.
 
 Fill the tool arguments according to its schema, applying these choices:
 

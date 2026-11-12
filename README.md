@@ -45,7 +45,7 @@ The child cannot write files, run Bash or tests, persist a session, or recursive
 
 Requirements:
 
-- Linux, including Ubuntu on WSL, or macOS 15 on Apple Silicon (arm64); native Windows is not officially supported or tested;
+- Linux, including Ubuntu on WSL, or macOS 15 on Apple Silicon (arm64); native Windows is not supported;
 - Pi 1.0.0 or later;
 - authentication for the configured child provider and access to its model (`openai-codex` by default; see [Presets](#presets)).
 
@@ -98,7 +98,7 @@ This command gives delegation guidance to the parent, which then calls the `pi_s
 | `local` | Pi-owned `read`, `grep`, `find`, and `ls` | 1–8 existing paths inside the parent working directory |
 | `web` | Guarded tools from `pi-web-access` v0.33.0 or later (stable releases) | Empty; no local-file access |
 
-Mixed local-and-web work uses separate child calls, with synthesis performed by the parent. One call is the default; each parent agent run allows at most three started child calls in total, whether sequential or parallel. Distinct, independent calls can run in parallel, and local and web calls share the same limit. One corrected retry is allowed after a preflight validation failure; it does not permit a fourth started call. Multiple calls can multiply model, provider, and web-request usage.
+Mixed local-and-web work uses separate child calls, with synthesis performed by the parent. One call is the default; each parent agent run allows at most three child calls in total, whether sequential or parallel. Distinct, independent calls can run in parallel, and local and web calls share the same limit. A call that fails preflight validation still counts toward this limit. Multiple calls can multiply model, provider, and web-request usage.
 
 ## Presets
 
@@ -116,7 +116,7 @@ Run **`/pi-subagent-settings`** in Pi's TUI to change a preset's provider, model
 
 The delegated task, scope path names, local tool results (file contents, matched lines, and file/directory listings), and retrieved web content enter the configured child model provider's context. Web queries and requested URLs also go to the applicable search/fetch services. The final answer returns to the parent and enters its model context. Do not delegate secrets that must not leave the host or use the package for untrusted workloads requiring host isolation.
 
-The runtime canonicalizes local paths, blocks lexical and symlink escapes, verifies tool provenance, and sanitizes control characters in returned text. After the child exits, the parent verifies the guard's private readiness marker before accepting its final answer.
+The runtime canonicalizes local paths, blocks lexical and symlink escapes, verifies web tool provenance, and sanitizes control characters in returned text. After the child exits, the parent verifies the guard's private readiness marker before accepting its final answer.
 
 ## Documentation
 
