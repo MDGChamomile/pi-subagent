@@ -1,5 +1,54 @@
 # Migration
 
+## v0.9.0
+
+### Call limits and result metadata
+
+Each parent agent run now allows at most three child calls, including calls that
+fail preflight validation. The previous corrected-retry exception is removed;
+check task, scope and preset inputs before calling, and continue in the parent
+when the call limit is exhausted.
+
+Each child retains one tool-call limit: 48 attempts for local investigations and
+40 for web investigations. Allowed and denied attempts both count. Soft-limit
+warnings and separate lifetime web query/fetch-target budgets are removed;
+per-call web input bounds, deadlines and tool-disabled finalization remain.
+Web usage can therefore exceed the former aggregate query/fetch-target limits.
+
+Host integrations must stop reading `queryCount`, `fetchTargetCount` and
+`softLimitReached` from tool-result details or budget telemetry; these fields
+are no longer emitted. Attempt, execution and denial counters and
+`hardLimitReached` remain. The model-visible complete/partial result envelope
+and its `tool_budget` reason are unchanged.
+
+### Guard checks and supported platforms
+
+The runtime no longer independently checks built-in local tool ownership, its
+own parent tool source, or the child policy file's ownership, permissions and
+canonical identity. Local children still load only the guard and Pi's built-in
+read tools; policy structure, canonical scope enforcement, web tool provenance,
+readiness and model-selection checks remain. This is an application-level
+capability boundary, not an OS, network or credential-isolated sandbox.
+
+Native Windows process fallbacks are removed. Use Linux (including Ubuntu on
+WSL) or the supported macOS 15 Apple Silicon environment instead.
+
+### Maintenance and verification
+
+Local path admission is checked again after asynchronous path resolution, so a
+read cannot begin after the investigation deadline or finalization has started.
+Runtime lifecycle, result classification, budget tracking and diagnostics are
+split into focused helpers, and package/document validation is strengthened.
+The direct-versus-delegated evaluation scripts are retired to repository history;
+opt-in live smoke checks remain and require separate provider-use authorization.
+Historical evaluations do not validate this release.
+
+Tool input schemas, presets and settings are unchanged. Pi 1.0.0 or later and
+pi-web-access 0.33.0 or later remain the minimum supported versions. Ordinary
+supported installations need no settings migration; integrations consuming the
+removed metadata or relying on the former retry/budget behavior must adapt.
+Offline checks do not establish live provider compatibility.
+
 ## v0.8.4
 
 ### Path identity and process cleanup
