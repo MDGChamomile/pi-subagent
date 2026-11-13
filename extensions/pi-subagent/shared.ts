@@ -13,20 +13,12 @@ export const WEB_INPUT_KEYS = {
   ],
 } as const satisfies Record<WebTool, readonly string[]>;
 export const MAX_WEB_QUERIES_PER_CALL = 4;
-export const DEFAULT_WEB_RESULTS_PER_QUERY = 5;
 export const MAX_WEB_RESULTS_PER_QUERY = 10;
 export const MAX_FETCH_URLS_PER_CALL = 5;
-export const MAX_SOURCE_CHECK_FETCH_TARGETS_PER_CALL = 5;
-export const LIFETIME_TOOL_CALL_LIMITS = {
-  local: { soft: 36, hard: 48 },
-  web: { soft: 30, hard: 40 },
-} as const;
-export const LIFETIME_WEB_QUERY_SOFT_LIMIT = 24;
-export const LIFETIME_WEB_QUERY_LIMIT = 32;
-export const LIFETIME_WEB_FETCH_TARGET_SOFT_LIMIT = 38;
-export const LIFETIME_WEB_FETCH_TARGET_LIMIT = 50;
+export const LIFETIME_TOOL_CALL_LIMIT = { local: 48, web: 40 } as const;
 export const MIN_WEB_EXTENSION_VERSION = "0.33.0";
 export const MAX_SCOPE_ROOTS = 8;
+export const MAX_SCOPE_PATH_LENGTH = 4096;
 export const MAX_FINAL_BYTES = 12 * 1024;
 export const MAX_PARENT_ERROR_BYTES = 4 * 1024;
 // Pi's native read can emit 4.5 MiB of base64 image data in one toolResult.
@@ -88,6 +80,9 @@ export const OBSERVED_CHILD_EVENTS = [
   "auto_retry_start", "auto_retry_end",
 ] as const;
 export type ObservedChildEvent = (typeof OBSERVED_CHILD_EVENTS)[number];
+export function observedEventRecord(valueFor: (event: ObservedChildEvent) => number): Record<ObservedChildEvent, number> {
+  return Object.fromEntries(OBSERVED_CHILD_EVENTS.map((event) => [event, valueFor(event)])) as Record<ObservedChildEvent, number>;
+}
 export const MAX_OBSERVATION_COUNT = 1_000_000;
 export type ChildFailureObservations = {
   counts: Record<ObservedChildEvent, number>;
@@ -136,12 +131,20 @@ export function runtimeFilesIn(directory: string): RuntimeFiles {
   };
 }
 
+export function isRecord(value: unknown): value is Record<string, unknown> {
+  return value !== null && typeof value === "object" && !Array.isArray(value);
+}
+
 export function errorMessage(error: unknown): string {
   return error instanceof Error ? error.message : String(error);
 }
 
 export function sanitizeDisplayText(text: string): string {
   return text.replace(/[\u0000-\u0008\u000b-\u001f\u007f-\u009f\u202a-\u202e\u2066-\u2069]/g, "?");
+}
+
+export function singleLineDisplayText(text: string): string {
+  return sanitizeDisplayText(text).replace(/\s+/g, " ");
 }
 
 /** The first `maxBytes` bytes of UTF-8 text, shortened so no code point is split. */

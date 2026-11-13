@@ -4,14 +4,12 @@ import { homedir } from "node:os";
 import { getAgentDir } from "@earendil-works/pi-coding-agent";
 import { getSupportedThinkingLevels, type Api, type Model } from "@earendil-works/pi-ai";
 import {
-  modelRef, PRESET_NAMES, splitModelRef, SUBAGENT_PRESETS, THINKING_LEVELS, type Preset, type Thinking,
+  isRecord, modelRef, PRESET_NAMES, splitModelRef, SUBAGENT_PRESETS, THINKING_LEVELS, type Preset, type Thinking,
 } from "./shared.ts";
 
 export type PresetSelection = { model: string; thinking: Thinking };
 export type PresetSelections = Record<Preset, PresetSelection>;
 const HELP = "Check presets in pi-subagent.json in the Pi agent directory; configure provider and model together, and a supported thinking level";
-const record = (value: unknown): value is Record<string, unknown> =>
-  !!value && typeof value === "object" && !Array.isArray(value);
 const keysAllowed = (value: Record<string, unknown>, keys: readonly string[]) =>
   Object.keys(value).every((key) => keys.includes(key));
 
@@ -23,15 +21,15 @@ export function isValidProviderModel(provider: unknown, model: unknown): boolean
 }
 
 export function parsePresetSettings(value: unknown): PresetSelections {
-  if (!record(value) || !keysAllowed(value, ["presets"]) ||
-    (value.presets !== undefined && (!record(value.presets) || !keysAllowed(value.presets, PRESET_NAMES)))) {
+  if (!isRecord(value) || !keysAllowed(value, ["presets"]) ||
+    (value.presets !== undefined && (!isRecord(value.presets) || !keysAllowed(value.presets, PRESET_NAMES)))) {
     throw new Error(`Invalid subagent settings. ${HELP}`);
   }
   const selections = Object.fromEntries(PRESET_NAMES.map((name) => [name, { ...SUBAGENT_PRESETS[name] }])) as PresetSelections;
   for (const name of PRESET_NAMES) {
     const override = (value.presets as Record<string, unknown> | undefined)?.[name];
     if (override === undefined) continue;
-    if (!record(override) || !keysAllowed(override, ["provider", "model", "thinking"])) {
+    if (!isRecord(override) || !keysAllowed(override, ["provider", "model", "thinking"])) {
       throw new Error(`Invalid subagent preset settings. ${HELP}`);
     }
     if (override.provider !== undefined || override.model !== undefined) {

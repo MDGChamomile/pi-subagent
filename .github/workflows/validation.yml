@@ -2,6 +2,8 @@ name: validation
 
 on:
   push:
+    branches: [main, updates]
+    tags: ["**"]
   pull_request:
 
 permissions:

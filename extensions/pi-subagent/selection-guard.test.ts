@@ -11,9 +11,9 @@ const failures = {
   "missing-policy": "initialization", "malformed-policy": "initialization",
   "liveness-failure": "initialization", "invalid-deadline": "initialization",
   "missing-web-extension": "initialization", "before-session-start": "initialization",
-  "local-owner": "toolOwnership", "web-owner": "toolOwnership",
+  "web-owner": "toolOwnership",
   "readiness-failure": "readiness", "budget-failure": "readiness",
-  "tool-notice-failure": "runtime", "final-answer-failure": "runtime",
+  "final-answer-failure": "runtime",
 } as const;
 for (const boundary of ["provider", "compaction"]) {
   for (const scenario of ["match", "answered", ...Object.keys(failures)]) {

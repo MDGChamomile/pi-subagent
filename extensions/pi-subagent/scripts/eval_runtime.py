@@ -35,6 +35,7 @@ def runtime_exports(*names: str) -> dict[str, Any]:
     return json.loads(completed.stdout)
 
 
+@functools.cache
 def load_presets() -> dict[str, dict[str, str]]:
     presets = runtime_exports("SUBAGENT_PRESETS").get("SUBAGENT_PRESETS")
     if not isinstance(presets, dict) or not presets:
@@ -43,18 +44,6 @@ def load_presets() -> dict[str, dict[str, str]]:
         if not isinstance(value, dict) or not all(isinstance(value.get(key), str) for key in ("model", "thinking")):
             raise ValueError("Malformed runtime preset")
     return presets
-
-
-@functools.cache
-def investigation_tools() -> frozenset[str]:
-    """Tools a child may use; the same calls in the parent count as direct investigation."""
-    allowlists = runtime_exports("ALLOWED_FILE_TOOLS", "ALLOWED_WEB_TOOLS")
-    if len(allowlists) != 2 or not all(
-        isinstance(tools, list) and tools and all(isinstance(tool, str) for tool in tools)
-        for tools in allowlists.values()
-    ):
-        raise ValueError("Runtime tool allowlists are unavailable")
-    return frozenset(tool for tools in allowlists.values() for tool in tools)
 
 
 def observed_cli(root: Path) -> list[str]:

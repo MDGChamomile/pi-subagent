@@ -32,8 +32,8 @@ Follow the README's [requirements and installation guide](../../README.md#instal
 
 ## Security summary
 
-- The child cannot write files, run Bash, inspect sessions, or load project-controlled resources.
-- Local runs are restricted to explicitly scoped paths inside the parent working directory.
+- The child cannot write files, run Bash, or load project-controlled resources. It has no session-history tool and does not save its own session.
+- Local runs can read files inside the explicitly authorized scope, including any session files there. The scope must be inside the parent's working directory.
 - Web runs have no local-file tools and apply default-deny argument allowlists.
 - The `web` capability is not a credential-isolated sandbox; the trusted web extension may use host credentials and reach authenticated target sources.
 - Delegated content reaches the selected child model provider, and the final answer enters the parent model context; web queries and requested URLs also reach the applicable search/fetch services.

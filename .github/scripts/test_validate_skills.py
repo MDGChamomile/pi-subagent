@@ -78,7 +78,10 @@ class SkillValidationTests(unittest.TestCase):
             document.write_text(
                 '[migration](MIGRATION.md#migration) [local](#start) '
                 '[remote](https://example.test/reference) [mail](mailto:help@example.test) '
-                '[protocol](//example.test/reference)\n',
+                '[protocol](//example.test/reference) '
+                '[wrapped](<https://example.test/reference>) '
+                '[spaced]( https://example.test/reference ) '
+                '[wrapped-local](<MIGRATION.md>)\n',
                 encoding='utf-8',
             )
             self.assertEqual(validate_relative_links([document]), [])

@@ -8,7 +8,8 @@ import { describe, test } from "node:test";
 import { fileURLToPath } from "node:url";
 import { normalizeContext, type Message, type Model } from "@earendil-works/pi-ai";
 import { convertResponsesMessages } from "@earendil-works/pi-ai/api/openai-responses-shared";
-import { buildChildInvocation, ChildRunError, runChild, type ChildResult } from "./subprocess.ts";
+import { buildChildInvocation, runChild } from "./subprocess.ts";
+import { ChildRunError, type ChildResult } from "./child-result.ts";
 import { emptyUsage } from "./child-stream.ts";
 import { CHILD_GUARD_EXIT_CODES, MAX_FINAL_BYTES, MAX_PARENT_ERROR_BYTES, runtimeFilesIn } from "./shared.ts";
 import { buildChildPolicy } from "./path-policy.ts";
@@ -207,9 +208,7 @@ describe("pi-subagent spawned-child integration", () => {
     assert.deepEqual(inheritedEnv, []);
   });
 
-  test("local grep ignores inherited rg config without changing the parent environment", {
-    skip: process.platform === "win32",
-  }, async () => {
+  test("local grep ignores inherited rg config without changing the parent environment", async () => {
     const previousConfig = process.env.RIPGREP_CONFIG_PATH;
     try {
       for (const inheritConfig of [true, false]) {
@@ -570,9 +569,7 @@ describe("pi-subagent spawned-child integration", () => {
     });
   });
 
-  test("finishes cancellation before the grace deadline when the whole group exits", {
-    skip: process.platform === "win32",
-  }, async () => {
+  test("finishes cancellation before the grace deadline when the whole group exits", async () => {
     await withFixture("cooperative-abort", async (options) => {
       const controller = new AbortController();
       const killGraceMs = 5_000;
@@ -600,9 +597,7 @@ describe("pi-subagent spawned-child integration", () => {
     });
   });
 
-  test("protocol cleanup after child close never signals a single PID", {
-    skip: process.platform === "win32",
-  }, async (t) => {
+  test("protocol cleanup after child close never signals a single PID", async (t) => {
     const probe = process.kill.bind(process);
     const signals: Array<{ pid: number; signal: string | number | undefined; gone: boolean }> = [];
     t.mock.method(process, "kill", (pid: number, signal?: string | number) => {
@@ -633,9 +628,7 @@ describe("pi-subagent spawned-child integration", () => {
   });
 
   for (const reason of ["abort", "timeout", "protocol", "progress-output", "progress-timer"] as const) {
-    test(`finishes group escalation after the leader exits during ${reason}`, {
-      skip: process.platform === "win32",
-    }, async () => {
+    test(`finishes group escalation after the leader exits during ${reason}`, async () => {
       await withFixture(`orphan-${reason}`, async (options) => {
         const controller = new AbortController();
         const killGraceMs = 150;
@@ -695,9 +688,7 @@ describe("pi-subagent spawned-child integration", () => {
 
   for (const failure of [false, true]) {
     for (const inherited of [false, true]) {
-      test(`cleans descendants after natural ${failure ? "failure" : "success"} with ${inherited ? "inherited" : "closed"} pipes`, {
-        skip: process.platform === "win32",
-      }, async () => {
+      test(`cleans descendants after natural ${failure ? "failure" : "success"} with ${inherited ? "inherited" : "closed"} pipes`, async () => {
         await withFixture(`natural-exit-${failure ? "failure" : "success"}-${inherited ? "inherited" : "closed"}`, async (options) => {
           let pids: { childPid: number; descendantPid: number } | undefined;
           try {
@@ -730,9 +721,7 @@ describe("pi-subagent spawned-child integration", () => {
     }
   }
 
-  test("normal completion without descendants does not wait the cleanup grace period", {
-    skip: process.platform === "win32",
-  }, async () => {
+  test("normal completion without descendants does not wait the cleanup grace period", async () => {
     const started = performance.now();
     const result = await withFixture("success", (options) => runChild({ ...options, timeoutMs: 10_000, killGraceMs: 10_000 }));
     assert.equal(result.status, "complete");
@@ -740,9 +729,7 @@ describe("pi-subagent spawned-child integration", () => {
   });
 
   for (const shutdown of [false, true]) {
-    test(`terminates the child group when its parent exits${shutdown ? " after session shutdown" : " abruptly"}`, {
-      skip: process.platform === "win32",
-    }, async () => {
+    test(`terminates the child group when its parent exits${shutdown ? " after session shutdown" : " abruptly"}`, async () => {
       const temporary = await mkdtemp(join(tmpdir(), "pi-subagent-parent-exit-"));
       const root = join(temporary, "runtime");
       const alias = join(temporary, "runtime-link");

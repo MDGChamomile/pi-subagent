@@ -10,7 +10,7 @@ import { MAX_FINAL_BYTES, TOOL_NAME } from "./shared.ts";
 import { MAX_SUBAGENT_CALLS } from "./invocation-gate.ts";
 import { formatChildOutput } from "./envelope.ts";
 import { boundedParentError } from "./diagnostics.ts";
-import { ChildRunError, type ChildResult } from "./subprocess.ts";
+import { ChildRunError, type ChildResult } from "./child-result.ts";
 import { emptyUsage } from "./child-stream.ts";
 
 const SOURCE_PATH = "/test/pi-subagent/index.ts";
@@ -73,9 +73,6 @@ function createExtensionHarness(runtime?: Parameters<typeof piSubagentExtension>
   return {
     fire,
     commands,
-    setToolSource(path: string | undefined) {
-      tools[0].sourceInfo.path = path;
-    },
     get toolDefinition() {
       return toolDefinition;
     },
@@ -206,7 +203,7 @@ describe("pi-subagent cleanup usage", () => {
           output: formatChildOutput("answer").text, outputTruncated: false,
           status: "complete", durationMs: 1, contextTokens: 20, exitCode: 0, usage,
           budget: { version: 1, toolCallsAttempted: 0, toolCallsExecuted: 0, deniedCalls: 0,
-            queryCount: 0, fetchTargetCount: 0, softLimitReached: false, hardLimitReached: false },
+            hardLimitReached: false },
         };
         const childError = new ChildRunError(boundedParentError("child failed", { phase: "process" }), usage);
         let cleanupPath: Parameters<typeof rm>[0] | undefined;
@@ -289,61 +286,6 @@ describe("pi-subagent extension wiring", () => {
     assert.doesNotMatch(capability.description, /public web only/);
   });
 
-  for (const { stage, source } of [
-    { stage: "startup", source: undefined },
-    { stage: "tool_call", source: undefined },
-    { stage: "tool_call", source: "/private/replacement/index.ts" },
-    { stage: "execute", source: undefined },
-    { stage: "execute", source: "/private/replacement/index.ts" },
-  ]) {
-    test(`reports source verification failure at ${stage} with source=${source ? "changed" : "missing"}`, async () => {
-      let childCalls = 0;
-      const harness = createExtensionHarness({
-        async runChild() { childCalls++; throw new Error("must not start a child"); },
-        removeTempDirectory: rm,
-      });
-      if (stage === "startup") harness.setToolSource(source);
-      await harness.fire("session_start");
-      await harness.fire("agent_start");
-      const id = "source-failure";
-      if (stage === "execute") {
-        assert.equal(await harness.fire("tool_call", { toolName: TOOL_NAME, toolCallId: id }), undefined);
-      }
-      harness.setToolSource(source);
-      if (stage !== "execute") {
-        const block = await harness.fire("tool_call", { toolName: TOOL_NAME, toolCallId: id });
-        assert.equal(block.block, true);
-        assert.match(block.reason, /tool source could not be verified/);
-        assert.match(block.reason, /Do not retry/);
-        assert.doesNotMatch(block.reason, /at most|private|index\.ts/);
-      }
-      // Direct execution must fail too, even if another caller bypasses tool_call.
-      await assert.rejects(harness.toolDefinition.execute(id, {}, undefined, undefined, {}), (error: Error) => {
-        assert.match(error.message, /tool source could not be verified/);
-        assert.match(error.message, /"phase":"preflight"/);
-        assert.doesNotMatch(error.message, /at most|private|index\.ts/);
-        return true;
-      });
-      assert.equal(childCalls, 0);
-      if (stage === "startup") return;
-      harness.setToolSource(SOURCE_PATH);
-      if (stage === "execute") {
-        // Source failure still claims execution once, until the end event releases it.
-        await assert.rejects(harness.toolDefinition.execute(id, {}, undefined, undefined, {}),
-          /at most 3 model-selected calls/);
-      }
-      await harness.fire("tool_execution_end", toolEvent(id, true));
-      for (let i = 0; i < MAX_SUBAGENT_CALLS; i++) {
-        assert.equal(await harness.fire("tool_call", { toolName: TOOL_NAME, toolCallId: `valid-${i}` }), undefined);
-      }
-      const limit = await harness.fire("tool_call", { toolName: TOOL_NAME, toolCallId: "over-limit" });
-      assert.equal(limit.block, true);
-      assert.match(limit.reason, /at most 3 started calls/);
-      assert.doesNotMatch(limit.reason, /tool source/);
-      assert.equal(childCalls, 0);
-    });
-  }
-
   test("rejects duplicate execution before the first preflight finishes", async () => {
     const harness = await startHarness();
     const id = "duplicate";
@@ -388,36 +330,5 @@ describe("pi-subagent extension wiring", () => {
       assert.equal(await harness.fire("tool_call", { toolName: TOOL_NAME, toolCallId, input: {} }), undefined);
       await harness.fire("tool_execution_end", toolEvent(toolCallId, index % 2 === 0));
     }
-  });
-
-  test("allows another corrected retry when a downstream extension blocks the first replacement", async () => {
-    const harness = await startHarness();
-    const invalidId = "invalid-preflight";
-    assert.equal(await harness.fire("tool_call", { toolName: TOOL_NAME, toolCallId: invalidId, input: {} }), undefined);
-    await assert.rejects(
-      () => harness.toolDefinition.execute(
-        invalidId,
-        { task: "bounded lookup", scope: ["."], capability: "local", preset: "lookup-standard" },
-        undefined,
-        undefined,
-        { cwd: process.cwd(), modelRegistry: { find: () => undefined } },
-      ),
-      /Configured subagent model is unavailable/,
-    );
-    await harness.fire("tool_execution_end", toolEvent(invalidId, true));
-
-    const blockedReplacement = "blocked-replacement";
-    assert.equal(await harness.fire("tool_call", {
-      toolName: TOOL_NAME,
-      toolCallId: blockedReplacement,
-      input: {},
-    }), undefined);
-    await harness.fire("tool_execution_end", toolEvent(blockedReplacement, true));
-
-    assert.equal(await harness.fire("tool_call", {
-      toolName: TOOL_NAME,
-      toolCallId: "next-replacement",
-      input: {},
-    }), undefined);
   });
 });

@@ -1,9 +1,6 @@
 import type { ExtensionCommandContext, Theme } from "@earendil-works/pi-coding-agent";
 import { Input, Key, SelectList, fuzzyFilter, matchesKey, truncateToWidth, type KeybindingsManager, type SelectItem } from "@earendil-works/pi-tui";
-
-import { sanitizeDisplayText } from "./shared.ts";
-
-const oneLine = (text: string) => sanitizeDisplayText(text).replace(/\s+/g, " ");
+import { singleLineDisplayText } from "./shared.ts";
 
 export interface PickerOptions {
   title: string;
@@ -41,7 +38,7 @@ export class SettingsPicker {
   private rebuild(height: number) {
     this.height = height;
     const items = this.filtered.map((item) => ({
-      value: item.value, label: `${oneLine(item.label)}${item.value === this.options.current ? "  ✓ current" : ""}`,
+      value: item.value, label: `${singleLineDisplayText(item.label)}${item.value === this.options.current ? "  ✓ current" : ""}`,
     }));
     this.list = new SelectList(items, height, {
       selectedPrefix: (s) => this.theme.fg("accent", s),
@@ -65,13 +62,13 @@ export class SettingsPicker {
     if (height !== this.height) this.rebuild(height);
     const selected = this.filtered.find((item) => item.value === this.list.getSelectedItem()?.value);
     const lines = [
-      this.theme.fg("accent", this.theme.bold(oneLine(this.options.title))),
-      this.theme.fg("muted", oneLine(this.options.context)),
+      this.theme.fg("accent", this.theme.bold(singleLineDisplayText(this.options.title))),
+      this.theme.fg("muted", singleLineDisplayText(this.options.context)),
       ...this.input.render(width),
       this.theme.fg("muted", `Type to search · ${this.filtered.length} results`),
       ...this.list.render(width),
     ];
-    if (rows >= 10) lines.push(this.theme.fg("muted", oneLine(selected?.description ?? "")));
+    if (rows >= 10) lines.push(this.theme.fg("muted", singleLineDisplayText(selected?.description ?? "")));
     lines.push(this.theme.fg("muted", "↑↓ move · Enter select · Esc back"),
       this.theme.fg("dim", "Ctrl+C cancel · Not saved until confirmed"));
     return lines.map((s) => truncateToWidth(s, width));

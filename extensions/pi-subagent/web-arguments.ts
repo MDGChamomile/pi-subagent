@@ -1,19 +1,15 @@
 import {
   ALLOWED_WEB_TOOLS,
-  DEFAULT_WEB_RESULTS_PER_QUERY,
   MAX_FETCH_URLS_PER_CALL,
-  MAX_SOURCE_CHECK_FETCH_TARGETS_PER_CALL,
   MAX_WEB_QUERIES_PER_CALL,
   MAX_WEB_RESULTS_PER_QUERY,
   WEB_INPUT_KEYS,
   type WebTool,
 } from "./shared.ts";
 
-type WebCost = { queries: number; fetchTargets: number };
 type WebRule = {
   validate(input: Record<string, unknown>): string | undefined;
   pinned?: Record<string, unknown>;
-  cost(input: Record<string, unknown>): WebCost;
 };
 
 function validatePublicHttpUrl(raw: string): string | undefined {
@@ -31,6 +27,11 @@ function validatePublicHttpUrl(raw: string): string | undefined {
   }
 }
 
+function nonEmptyStrings(value: unknown): string[] {
+  if (!Array.isArray(value)) return [];
+  return value.filter((entry): entry is string => typeof entry === "string" && entry.trim().length > 0);
+}
+
 function expandedSingleQueryCount(value: unknown): number {
   if (typeof value !== "string" || !value.trim()) return 0;
   const trimmed = value.trim();
@@ -38,7 +39,7 @@ function expandedSingleQueryCount(value: unknown): number {
     try {
       const parsed: unknown = JSON.parse(trimmed);
       if (Array.isArray(parsed) && parsed.every((entry) => typeof entry === "string")) {
-        return parsed.filter((entry) => entry.trim().length > 0).length;
+        return nonEmptyStrings(parsed).length;
       }
     } catch {
       // pi-web-access treats malformed JSON-shaped strings as one literal query.
@@ -48,26 +49,8 @@ function expandedSingleQueryCount(value: unknown): number {
 }
 
 function webSearchQueryCount(input: Record<string, unknown>): number {
-  if (Array.isArray(input.queries)) {
-    return input.queries.filter((query) => typeof query === "string" && query.trim().length > 0).length;
-  }
+  if (Array.isArray(input.queries)) return nonEmptyStrings(input.queries).length;
   return expandedSingleQueryCount(input.query);
-}
-
-function sourceCheckQueryCount(input: Record<string, unknown>): number {
-  if (typeof input.claim !== "string" || !input.claim.trim()) return 0;
-  const requested = Array.isArray(input.queries)
-    ? input.queries.filter((query) => typeof query === "string" && query.trim().length > 0).length
-    : 0;
-  return requested > 0 ? requested : 1;
-}
-
-function fetchContentTargetCount(input: Record<string, unknown>): number {
-  const urls = Array.isArray(input.urls)
-    ? input.urls.filter((url) => typeof url === "string" && url.trim().length > 0).map((url) => url.trim())
-    : [];
-  if (urls.length > 0) return new Set(urls).size;
-  return typeof input.url === "string" && input.url.trim().length > 0 ? 1 : 0;
 }
 
 function validateBoundedQueries(toolName: string, input: Record<string, unknown>): string | undefined {
@@ -81,17 +64,6 @@ function validateBoundedQueries(toolName: string, input: Record<string, unknown>
     return `${toolName} permits at most ${MAX_WEB_RESULTS_PER_QUERY} results per query`;
   }
   return undefined;
-}
-
-function sourceCheckCost(input: Record<string, unknown>): WebCost {
-  const queries = sourceCheckQueryCount(input);
-  const requestedResults = typeof input.numResults === "number" && Number.isFinite(input.numResults)
-    ? Math.min(MAX_WEB_RESULTS_PER_QUERY, Math.max(1, Math.floor(input.numResults)))
-    : DEFAULT_WEB_RESULTS_PER_QUERY;
-  const fetchTargets = input.fetchContent === true
-    ? Math.min(MAX_SOURCE_CHECK_FETCH_TARGETS_PER_CALL, queries * requestedResults)
-    : 0;
-  return { queries, fetchTargets };
 }
 
 function validateFetchContent(input: Record<string, unknown>): string | undefined {
@@ -119,20 +91,16 @@ const WEB_RULES = {
   web_search: {
     validate: (input) => validateBoundedQueries("web_search", input),
     pinned: { workflow: "none" },
-    cost: (input) => ({ queries: webSearchQueryCount(input), fetchTargets: 0 }),
   },
   source_check: {
     validate: (input) => validateBoundedQueries("source_check", input),
-    cost: sourceCheckCost,
   },
   fetch_content: {
     validate: validateFetchContent,
     pinned: { mode: "readable" },
-    cost: (input) => ({ queries: 0, fetchTargets: fetchContentTargetCount(input) }),
   },
   get_search_content: {
     validate: () => undefined,
-    cost: () => ({ queries: 0, fetchTargets: 1 }),
   },
 } satisfies Record<WebTool, WebRule>;
 
@@ -141,11 +109,11 @@ const WEB_TOOL_RULES = new Map<string, WebRule & { allowed: ReadonlySet<string> 
   ALLOWED_WEB_TOOLS.map((name) => [name, { ...WEB_RULES[name], allowed: new Set<string>(WEB_INPUT_KEYS[name]) }]),
 );
 
-// Keep validation side-effect free; apply prepared arguments only after budget admission.
+// Keep validation side-effect free; the caller applies the prepared arguments.
 export function prepareWebCall(
   toolName: string,
   input: Record<string, unknown>,
-): { violation: string } | { input: Record<string, unknown>; cost: WebCost } {
+): { violation: string } | { input: Record<string, unknown> } {
   const rule = WEB_TOOL_RULES.get(toolName);
   if (!rule) return { violation: `${toolName} is not supported in the subagent` };
   const unknown = Object.keys(input).filter((key) => !rule.allowed.has(key));
@@ -154,6 +122,5 @@ export function prepareWebCall(
   }
   const violation = rule.validate(input);
   if (violation) return { violation };
-  const normalizedInput = { ...input, ...rule.pinned };
-  return { input: normalizedInput, cost: rule.cost(normalizedInput) };
+  return { input: { ...input, ...rule.pinned } };
 }
