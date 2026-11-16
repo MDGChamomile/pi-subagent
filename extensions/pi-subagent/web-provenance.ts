@@ -12,7 +12,7 @@ export type ToolSourceDescriptor = {
 function meetsWebMinimumVersion(version: unknown): boolean {
   if (typeof version !== "string") return false;
   const match = /^(0|[1-9]\d*)\.(0|[1-9]\d*)\.(0|[1-9]\d*)(?:\+[0-9A-Za-z-]+(?:\.[0-9A-Za-z-]+)*)?$/.exec(version);
-  if (!match || match[0] !== version) return false;
+  if (!match) return false;
   const minimum = MIN_WEB_EXTENSION_VERSION.split(".").map(BigInt);
   for (let index = 0; index < 3; index++) {
     const part = BigInt(match[index + 1]!);

@@ -10,6 +10,7 @@ import {
   BUDGET_TELEMETRY_ENV,
   CHILD_GUARD_EXIT_CODES,
   errorMessage,
+  isRecord,
   LIFETIME_TOOL_CALL_LIMIT,
   MAX_SCOPE_ROOTS,
   modelRef,
@@ -94,9 +95,8 @@ function loadWebExtensionPath(): string {
 }
 
 function requestedPath(toolName: string, input: unknown): string | undefined {
-  if (!input || typeof input !== "object") return undefined;
-  const path = (input as { path?: unknown }).path;
-  if (typeof path === "string") return path;
+  if (!isRecord(input)) return undefined;
+  if (typeof input.path === "string") return input.path;
   return toolName === "grep" || toolName === "find" || toolName === "ls" ? "." : undefined;
 }
 
@@ -327,7 +327,7 @@ export default function childGuard(
       return;
     };
     const admitWebCall = () => {
-      const input = event.input && typeof event.input === "object" ? event.input as Record<string, unknown> : {};
+      const input = isRecord(event.input) ? event.input : {};
       const prepared = prepareWebCall(event.toolName, input);
       if ("violation" in prepared) {
         return block(`${prepared.violation}. Retry with allowed bounded inputs or return the final answer.`);

@@ -78,21 +78,18 @@ export async function readBudgetTelemetry(path: string): Promise<BudgetTelemetry
 }
 
 function parseBudgetTelemetry(parsed: unknown): BudgetTelemetry {
-  if (!isRecord(parsed)) {
-    throw new Error("Subagent budget telemetry is malformed");
-  }
-  const value = parsed as Record<string, unknown>;
   const allowedKeys = new Set<string>([
     "version", "toolCallsAttempted", "toolCallsExecuted", "deniedCalls", "hardLimitReached",
   ] satisfies (keyof BudgetTelemetry)[]);
   const integerKeys = ["toolCallsAttempted", "toolCallsExecuted", "deniedCalls"] as const satisfies readonly (keyof BudgetTelemetry)[];
   if (
-    Object.keys(value).some((key) => !allowedKeys.has(key))
-    || value.version !== 1
-    || integerKeys.some((key) => !Number.isSafeInteger(value[key]) || (value[key] as number) < 0)
-    || typeof value.hardLimitReached !== "boolean"
+    !isRecord(parsed)
+    || Object.keys(parsed).some((key) => !allowedKeys.has(key))
+    || parsed.version !== 1
+    || integerKeys.some((key) => !Number.isSafeInteger(parsed[key]) || (parsed[key] as number) < 0)
+    || typeof parsed.hardLimitReached !== "boolean"
   ) {
     throw new Error("Subagent budget telemetry is malformed");
   }
-  return value as BudgetTelemetry;
+  return parsed as BudgetTelemetry;
 }

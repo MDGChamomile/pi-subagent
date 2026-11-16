@@ -2,14 +2,10 @@ import {
   ALLOWED_FILE_TOOLS,
   ALLOWED_WEB_TOOLS,
   errorMessage,
-  MAX_OBSERVATION_COUNT,
   MAX_PARENT_ERROR_BYTES,
-  OBSERVED_CHILD_EVENTS,
-  observedEventRecord,
   sanitizeDisplayText,
   singleLineDisplayText,
   utf8Prefix,
-  type ChildFailureObservations,
   type SubagentFailureDiagnostics,
 } from "./shared.ts";
 
@@ -35,33 +31,21 @@ function safeDiagnosticText(value: string): string {
   return singleLineDisplayText(value).slice(0, 80);
 }
 
-function safeObservations(value: ChildFailureObservations): ChildFailureObservations {
-  const bounded = (n: number, max = MAX_OBSERVATION_COUNT) =>
-    Number.isFinite(n) ? Math.min(max, Math.max(0, Math.trunc(n))) : 0;
-  return {
-    counts: observedEventRecord((key) => bounded(value.counts[key])),
-    receipts: observedEventRecord((key) => bounded(value.receipts[key])),
-    ...(OBSERVED_CHILD_EVENTS.includes(value.lastEvent!) ? { lastEvent: value.lastEvent } : {}),
-    ...(Number.isFinite(value.lastEventAgeMs) ? { lastEventAgeMs: bounded(value.lastEventAgeMs!, 2_147_483_647) } : {}),
-    lastEventValidated: value.lastEventValidated === true,
-    toolBalance: value.incomplete || value.toolBalance === null ? null : bounded(value.toolBalance),
-    incomplete: value.incomplete === true,
-  };
-}
-
+// A fixed field list, never a spread: failure diagnostics must stay content-free.
 function failureDiagnosticSuffix(diagnostics: SubagentFailureDiagnostics): string {
+  const { stopReason, durationMs, lastToolError } = diagnostics;
   const safe = {
     phase: diagnostics.phase,
-    ...(Number.isInteger(diagnostics.exitCode) ? { exitCode: diagnostics.exitCode } : {}),
-    ...(diagnostics.exitSignal ? { exitSignal: safeDiagnosticText(diagnostics.exitSignal) } : {}),
-    ...(typeof diagnostics.guardReady === "boolean" ? { guardReady: diagnostics.guardReady } : {}),
-    ...(diagnostics.stopReason ? { stopReason: safeDiagnosticText(diagnostics.stopReason) } : {}),
-    ...(Number.isFinite(diagnostics.durationMs) ? { durationMs: Math.max(0, Math.round(diagnostics.durationMs!)) } : {}),
-    ...(Number.isInteger(diagnostics.assistantMessages) ? { assistantMessages: diagnostics.assistantMessages } : {}),
-    ...(diagnostics.lastAssistantMode ? { lastAssistantMode: diagnostics.lastAssistantMode } : {}),
-    ...(Number.isInteger(diagnostics.toolErrors) ? { toolErrors: diagnostics.toolErrors } : {}),
-    ...(diagnostics.lastToolError ? { lastToolError: diagnosticToolName(diagnostics.lastToolError) } : {}),
-    ...(diagnostics.observations ? { observations: safeObservations(diagnostics.observations) } : {}),
+    exitCode: diagnostics.exitCode,
+    exitSignal: diagnostics.exitSignal,
+    guardReady: diagnostics.guardReady,
+    stopReason: stopReason ? safeDiagnosticText(stopReason) : undefined,
+    durationMs: durationMs === undefined ? undefined : Math.max(0, Math.round(durationMs)),
+    assistantMessages: diagnostics.assistantMessages,
+    lastAssistantMode: diagnostics.lastAssistantMode,
+    toolErrors: diagnostics.toolErrors,
+    lastToolError: lastToolError ? diagnosticToolName(lastToolError) : undefined,
+    observations: diagnostics.observations,
   };
   return `\n\n[Subagent diagnostics ${JSON.stringify(safe)}]`;
 }

@@ -51,9 +51,6 @@ export async function buildChildPolicy(
   scopeInputs: readonly string[],
   capability: Capability = "local",
 ): Promise<ChildPolicy> {
-  if (capability !== "local" && capability !== "web") {
-    throw new Error("capability must be local or web");
-  }
   if (scopeInputs.length > MAX_SCOPE_ROOTS) {
     throw new Error(`scope must contain 0-${MAX_SCOPE_ROOTS} paths`);
   }
@@ -70,7 +67,7 @@ export async function buildChildPolicy(
 
   const roots: ScopeRoot[] = [];
   for (const raw of scopeInputs) {
-    if (typeof raw !== "string" || raw.length > MAX_SCOPE_PATH_LENGTH) throw new Error(`Each scope path must be a string of at most ${MAX_SCOPE_PATH_LENGTH} characters`);
+    if (raw.length > MAX_SCOPE_PATH_LENGTH) throw new Error(`Each scope path must be at most ${MAX_SCOPE_PATH_LENGTH} characters`);
     const logical = normalizeInputPath(raw, cwd);
     const canonical = await realpath(logical).catch(() => {
       throw new Error(`Scope path does not exist or cannot be resolved: ${raw}`);
