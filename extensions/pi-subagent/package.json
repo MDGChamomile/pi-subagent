@@ -5,7 +5,7 @@
   "scripts": {
     "typecheck": "tsc -p tsconfig.json",
     "test": "node --import ./scripts/pi-sdk-test-loader.mjs --experimental-strip-types --test *.test.ts && python3 -B -m unittest discover -s scripts -p '*_test.py'",
-    "package:check": "node ../../packaging/pi-subagent/check.mjs",
+    "package:check": "node --test ../../packaging/pi-subagent/*.test.mjs",
     "test:web-schema": "node scripts/web-schema-canary.mjs",
     "test:live:local": "python3 -B scripts/live_smoke.py --capability local --preset all",
     "test:live:web": "python3 -B scripts/live_smoke.py --capability web --preset all"
