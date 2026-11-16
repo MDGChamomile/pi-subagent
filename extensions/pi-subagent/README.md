@@ -4,11 +4,9 @@ A foreground, model-invocable Pi extension that runs focused local-file or web i
 
 The companion [skill](../../skills/pi-subagent/README.md) guides the parent in deciding when and how to delegate. This extension enforces the runtime boundary, launches the child, reports progress, and returns a bounded result envelope containing the final answer.
 
-[Install](#requirements-and-installation) · [Runtime contract](#runtime-contract) · [Security](#security-boundary) · [Evaluation](#evaluation) · [Verification](#verification)
+New here? Start with the README's [illustrated walkthrough](../../README.md#see-it-in-action) and [first investigation](../../README.md#first-investigation), which covers preset setup, troubleshooting, and an explicit `/skill:pi-subagent` example.
 
-## In action
-
-See the README's [illustrated walkthrough](../../README.md#see-it-in-action) for model-selected and explicit delegation.
+[Install](#requirements-and-installation) · [Runtime contract](#runtime-contract) · [Security](#security-boundary) · [Failure diagnostics](#failure-diagnostics) · [Verification](#verification)
 
 ## Requirements and installation
 
@@ -31,10 +29,6 @@ Pi registers the local path without copying the checkout and respects `PI_CODING
 For project-only installation, run `pi install -l /absolute/path/to/pi-subagent` from the intended project directory. Project packages load only after Pi's project trust is granted; review the source before granting trust. Use the same `-l` scope when removing the package. Non-interactive project package commands may require `--approve`; use it only after reviewing and trusting that project. Extension installation scope does not change the user-level preset settings described below.
 
 Use one installation method, not npm plus a source package or manual links. If an older installation used symlinks, inspect their destinations and remove only the confirmed Pi Subagent links before switching methods; package removal does not manage those old manual links. Restart Pi or run `/reload` after installation or removal.
-
-### First investigation
-
-Follow the README's [first investigation](../../README.md#first-investigation) for preset setup, troubleshooting, and an explicit `/skill:pi-subagent` example.
 
 ## How it works
 
@@ -107,20 +101,33 @@ The runtime applies these per-child limits:
 
 The JSON record cap accommodates Pi's default 4.5 MiB base64 image payload plus text and metadata. Larger `message_end` or `compaction_end` records still fail closed; this is not an unlimited or arbitrary multi-image response allowance. Intermediate image content is discarded, not returned to the parent.
 
+#### Final answer
+
 - The parent accepts a final answer only after the child guard validates the policy and web tool ownership and publishes its readiness marker.
 - Intermediate assistant turns and investigation tool results are discarded. The collector retains only the last assistant message containing non-empty text without a tool call or terminal model error, then sanitizes and bounds it.
 - A tool-only or token-limited ending gets at most one tool-disabled finalization follow-up. Model errors and aborted turns do not trigger this fallback; Pi owns automatic retry decisions, and existing deadline and tool-budget limits remain enforced. A zero-exit child that still has no final answer is rejected.
-- The collapsed call title shows `pi_subagent` and a task preview capped at 100 terminal columns; the entire title is further truncated to fit one row in narrower terminals. Scope and other inputs are hidden. Expanding the row reveals the full task, scope, capability, and preset as JSON-escaped values. This affects display only, not execution inputs or scope enforcement.
-- Each running call reports `mm:ss · model (thinking) running · N reported tokens` once per second. A settled row reports `✓ Complete · 14.2s · Context injected: ~1,820 tokens`, or `⚠ Partial`; expanding it reveals the result envelope and answer. If the runtime byte cap shortened the answer, both views also show an `Output truncated` warning. Truncation does not change the child's complete/partial execution status.
-- If the investigation deadline passes while the guard is checking a local path, the tool call is blocked before it runs.
+- Final diff, audit, test, and retrieval validation stays with the parent when it holds the edited files or may need to make follow-up fixes.
+
+#### Partial results
+
 - Answers received by the parent during the text-finalization window are labelled `partial` with `partialReason: "time_limit"`. The receipt time of the last eligible answer determines this label, not the child's timestamp or subsequent shutdown duration; termination still starts at the hard deadline.
+- If the investigation deadline passes while the guard is checking a local path, the tool call is blocked before it runs.
+- Allowed and denied tool attempts both count. Reaching the limit disables tools, reuses text finalization, and returns a `partial` result with `partialReason: "tool_budget"` unless the higher-priority `model_length` reason applies; finalization can still fail instead of returning an answer. Web queries and fetch targets have per-call input bounds but no separate lifetime budget.
+- If the last answer still has `stopReason: "length"`, its available text is returned as `partial` with `partialReason: "model_length"`, never as complete. This reason takes precedence over a simultaneous budget or time limit. `outputTruncated` continues to report only truncation by the runtime's byte cap.
+
+#### Termination and cleanup
+
 - Cancellation, timeout, a child JSON protocol error, or a failed progress callback sends SIGTERM to the process group, then SIGKILL after a 5-second grace period unless a POSIX probe confirms that the entire group has disappeared. Probes run at intervals of up to 100 ms; permission errors and other uncertain results retain the grace period and escalation. Already-issued provider requests may still incur usage.
 - A failed first progress update stops the child before the investigation prompt is delivered; later progress failures stop the ongoing investigation. The parent returns a `progress` failure after cleanup, without forwarding callback error text.
 - The direct child's exit alone does not end the wait when descendants may survive, so shutdown can extend beyond the investigation deadline. On POSIX, natural success and error exits also trigger the same bounded cleanup if descendants remain, including descendants holding stdout/stderr open. The investigation timer ends at the direct child's exit, so this cleanup preserves the original result or process failure rather than relabelling it as a timeout. Normal completion without remaining descendants does not add this wait.
-- If the last answer still has `stopReason: "length"`, its available text is returned as `partial` with `partialReason: "model_length"`, never as complete. This reason takes precedence over a simultaneous budget or time limit. `outputTruncated` continues to report only truncation by the runtime's byte cap.
-- Allowed and denied tool attempts both count. Reaching the limit disables tools, reuses text finalization, and returns a `partial` result with `partialReason: "tool_budget"` unless the higher-priority `model_length` reason applies; finalization can still fail instead of returning an answer. Web queries and fetch targets have per-call input bounds but no separate lifetime budget.
 - A dedicated parent-liveness pipe makes the child remove private runtime files and terminate its POSIX process group if the parent exits abruptly. The unreferenced monitor stays armed after session shutdown until the child process actually exits. Native Windows is not supported.
-- Final diff, audit, test, and retrieval validation stays with the parent when it holds the edited files or may need to make follow-up fixes.
+
+#### Display
+
+- The collapsed call title shows `pi_subagent` and a task preview capped at 100 terminal columns; the entire title is further truncated to fit one row in narrower terminals. Scope and other inputs are hidden. Expanding the row reveals the full task, scope, capability, and preset as JSON-escaped values. This affects display only, not execution inputs or scope enforcement.
+- Each running call reports `mm:ss · model (thinking) running · N reported tokens` once per second. A settled row reports `✓ Complete · 14.2s · Context injected: ~1,820 tokens`, or `⚠ Partial`; expanding it reveals the result envelope and answer. If the runtime byte cap shortened the answer, both views also show an `Output truncated` warning. Truncation does not change the child's complete/partial execution status.
+
+#### Result envelope
 
 Only the bounded result text (`content`) enters the parent model context. Every successful call returns this JSON envelope:
 
@@ -155,6 +162,12 @@ An input rejected by argument validation blocks only that call, allowing the chi
 
 Before every provider request, the child requires successful guard initialization, web tool ownership validation, and readiness publication in addition to the selected model/thinking. Pi sends compaction summaries without its provider-request hook, so the child applies the same checks when a compaction starts. A compaction that starts after the child's final answer is cancelled instead: the ephemeral child would not use the summary, and the parent's hard deadline still applies until the child exits. Startup failure stops the child before transmission; the parent also independently requires the readiness marker before accepting any answer.
 
+The README describes [what leaves the host](../../README.md#security-and-data-flow): delegated inputs reach the child model provider and the applicable web services, and the final answer returns to the parent. The trusted web extension may also maintain its documented bounded cache or temporary files.
+
+This is an application-level capability boundary, not an OS or network sandbox. The child and trusted web extension still run as the current user. The `web` capability restricts the available tool names and arguments; it does not guarantee anonymous, public-only target access or isolate host GitHub, Git, SSH, or browser credentials that the trusted web extension may use. Do not use it for untrusted workloads requiring host isolation or for secrets that must not be sent to configured providers.
+
+## Failure diagnostics
+
 Errors returned to the parent are control-character-sanitized and capped at 4 KiB; failure diagnostics omit tasks, paths, assistant text, and tool-result contents. The last failed tool is recorded only when its name exactly matches a supported local or web tool; unknown or malformed names become the fixed value `unknown` before collection and again at serialization. Child stderr is discarded, while reported child usage, including compaction summaries, is attached to the parent tool result on success and failure.
 
 Unexpected process-exit diagnostics include whether a valid guard readiness marker was observed (`guardReady`) and the exit code or termination signal (`exitSignal`). An absent or invalid marker does not by itself identify the cause of failure. A generic nonzero exit with valid readiness but no observed investigation activity adds a fixed hint to check the selected preset's provider authentication, model access, and `/pi-subagent-settings`. This is troubleshooting guidance, not an authentication diagnosis; it is omitted for signals, guard-owned failures, incomplete observations, or observed assistant messages, tool errors, or tracked activity.
@@ -169,16 +182,10 @@ These are untrusted stream observations, not a verified execution trace: IDs are
 
 Pi's JSON `message_update` records are delta-only, but block-end updates carry the completed text, thinking, or tool call, and tool ends contain full results, so records over 4 KiB are routine. Their receipts remain visible, but cannot establish execution or completion; missing events can still hide progress. A tool start without an observed end differs from an observed end followed by assistant streaming, but neither identifies the cause of a stall or confirms when a provider request was sent. Child timestamps, text/thinking, arguments/results, names, IDs, URLs, paths, and raw provider errors are never copied into observations. Observations fit within the 4 KiB total failure-error cap and do not change the 6 MiB JSON record cap.
 
-The delegated task, scope path names, local tool results (file contents, matched lines, and file/directory listings), and retrieved web content enter the configured child model provider's context. Web queries and requested URLs also go to the applicable search/fetch services. The final answer returns to the parent and enters its model context. The trusted web extension may maintain its documented bounded cache or temporary files.
-
-This is an application-level capability boundary, not an OS or network sandbox. The child and trusted web extension still run as the current user. The `web` capability restricts the available tool names and arguments; it does not guarantee anonymous, public-only target access or isolate host GitHub, Git, SSH, or browser credentials that the trusted web extension may use. Do not use it for untrusted workloads requiring host isolation or for secrets that must not be sent to configured providers.
-
-## Evaluation
-
-Historical pilots are limited calibration results, not evidence of universal quality or speed improvements. See the [development evaluation guide](DEVELOPMENT.md#evaluation) for the frozen historical evidence and earlier evaluation scripts.
-
 ## Verification
 
 Offline tests do not establish live provider compatibility. Provider transport coverage uses synthetic credentials and responses for the default Codex SSE path only, and the opt-in live observation harness is Codex-specific; these are test limitations, not restrictions on configurable runtime providers.
 
 See the [development verification guide](DEVELOPMENT.md#verification) for source-checkout commands, prerequisites, and coverage limits. Live checks require separate authorization for provider usage and input disclosure. Installing the npm package does not require running evaluation scripts or installing development test dependencies.
+
+Historical pilots are limited calibration results, not evidence of universal quality or speed improvements. See the [development evaluation guide](DEVELOPMENT.md#evaluation) for the frozen historical evidence and earlier evaluation scripts.

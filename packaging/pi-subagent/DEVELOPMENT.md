@@ -4,13 +4,7 @@ The npm package is assembled from the canonical runtime modules, skill, and user
 
 ## Verify a package candidate
 
-From the repository root:
-
-```bash
-npm --prefix extensions/pi-subagent run typecheck
-npm --prefix extensions/pi-subagent test
-npm --prefix extensions/pi-subagent run package:check
-```
+Run the [offline checks in CONTRIBUTING.md](../../CONTRIBUTING.md#source-and-checks) from the repository root; they include `package:check`.
 
 `package:check` rebuilds the ignored `packaging/pi-subagent/dist/` directory, runs `npm pack --dry-run`, verifies the exact tarball file set and Pi resource paths, checks canonical README and model-loaded skill requirements plus README preset mappings and extension guide limits against the runtime, verifies that the generated npm README preserves the complete body with rebased image/document links, checks bundled relative Markdown links and version-matched absolute top-level guide links, and loads the staged package manifest through Pi's SDK resource loader with an isolated offline configuration. It uses the development package's selected Pi version, asserts error-free parent and child extension loading, exactly one `pi_subagent` tool, the `pi-subagent-settings` command, and the companion skill, and runs negative controls for parent-only and child-only broken imports, omitted path-policy and web-provenance modules, missing tool registration, and missing skill discovery. Child discovery checks module loading only; it does not start a child session or verify runtime readiness. No model session or provider request is created.
 
