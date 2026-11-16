@@ -219,19 +219,17 @@ test("save refuses symlink targets and directories and cleans its lock", async (
 
 test("new agent directories are created only on save; other defaults stay implicit", async () => {
   const dir = await directory();
-  const path = presetSettingsPath(join(dir, "new-agent"));
+  const path = join(dir, "new-agent", "pi-subagent.json");
   const snapshot = await readPresetSettingsSnapshot(path);
   savePresetSettings(snapshot, "lookup-standard", override);
   assert.deepEqual(JSON.parse(await readFile(path, "utf8")), { presets: { "lookup-standard": override } });
 });
 
-test("getAgentDir controls default paths and explicit tilde injection stays supported", async () => {
+test("getAgentDir controls the settings path", async () => {
   const dir = await directory();
   assert.equal(presetSettingsPath(), join(dir, "pi-subagent.json"));
   process.env.PI_CODING_AGENT_DIR = "~/custom-agent";
   assert.equal(presetSettingsPath(), join(homedir(), "custom-agent", "pi-subagent.json"));
   delete process.env.PI_CODING_AGENT_DIR;
   assert.equal(presetSettingsPath(), join(homedir(), ".pi", "agent", "pi-subagent.json"));
-  assert.equal(presetSettingsPath("~"), join(homedir(), "pi-subagent.json"));
-  assert.equal(presetSettingsPath("~/explicit"), join(homedir(), "explicit", "pi-subagent.json"));
 });

@@ -71,8 +71,7 @@ function getPiLauncher(): ChildLauncher {
   if (currentScript && !isBunVirtualScript && existsSync(currentScript)) {
     return { command: process.execPath, args: [currentScript] };
   }
-  const execName = basename(process.execPath).toLowerCase();
-  if (!/^(node|bun)(\.exe)?$/.test(execName)) return { command: process.execPath, args: [] };
+  if (!/^(node|bun)$/.test(basename(process.execPath))) return { command: process.execPath, args: [] };
   return { command: "pi", args: [] };
 }
 

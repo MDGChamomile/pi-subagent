@@ -309,9 +309,7 @@ export default function childGuard(
       if (expired) requestPartialAnswer();
       if (!policy) return policyUnavailable();
       if (!expired && !finalizationRequested) return;
-      const hardLimitExceeded = budget.hardLimitReached
-        && budget.toolCallsAttempted > LIFETIME_TOOL_CALL_LIMIT[policy.capability];
-      return block(hardLimitExceeded
+      return block(budget.hardLimitReached
         ? "The child lifetime tool-call hard limit has been exceeded; finalization has started"
         : "Finalization has started; return the final answer without further tool calls");
     };

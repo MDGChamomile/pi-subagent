@@ -66,8 +66,7 @@ def observed_cli(root: Path) -> list[str]:
 def observation_env(trace: Path, fetch_url: str | None = None) -> dict[str, str]:
     env = {**os.environ, "PI_OFFLINE": "1", "PI_TELEMETRY": "0", "PI_SKIP_VERSION_CHECK": "1",
            "PI_SUBAGENT_EVAL_TRACE_FILE": str(trace)}
-    for key in ("PI_SUBAGENT_EVAL_EXPECT_MODEL", "PI_SUBAGENT_EVAL_EXPECT_THINKING", "PI_SUBAGENT_EVAL_FETCH_URL"):
-        env.pop(key, None)
+    env.pop("PI_SUBAGENT_EVAL_FETCH_URL", None)
     if fetch_url is not None:
         env["PI_SUBAGENT_EVAL_FETCH_URL"] = fetch_url
     return env

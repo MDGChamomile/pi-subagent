@@ -1,5 +1,12 @@
 # Migration
 
+## Unreleased
+
+Tool-result `details` no longer include `webEnabled`, which repeated
+`capability`. Host integrations must read `capability` instead. The
+model-visible result envelope, tool input schema, presets and settings are
+unchanged.
+
 ## v0.9.0
 
 ### Call limits and result metadata
