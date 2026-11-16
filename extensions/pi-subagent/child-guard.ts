@@ -121,6 +121,57 @@ function isFinalAnswer(message: AssistantMessage): boolean {
     && message.stopReason !== "length";
 }
 
+/** Asks the model for a tool-free final answer, at most once per child. */
+class Finalization {
+  answerSeen = false;
+  requested = false;
+  softDeadline: number | undefined;
+  private timer: ReturnType<typeof setTimeout> | undefined;
+  private readonly pi: ExtensionAPI;
+  private readonly onRequestFailure: (message: string) => void;
+
+  constructor(pi: ExtensionAPI, onRequestFailure: (message: string) => void) {
+    this.pi = pi;
+    this.onRequestFailure = onRequestFailure;
+  }
+
+  timeLimitReached(): boolean {
+    return this.softDeadline !== undefined && Date.now() >= this.softDeadline;
+  }
+
+  request(content: string, deliverAs: "steer" | "followUp"): void {
+    if (this.answerSeen || this.requested) return;
+    this.requested = true;
+    this.pi.setActiveTools([]);
+    try {
+      this.pi.sendUserMessage(`${content}\n\nDo not call tools. Return the concise final answer as ordinary assistant text.`, { deliverAs });
+    } catch (error) {
+      // Tools were disabled before delivery; retain that ordering on failure.
+      this.onRequestFailure(`could not request the final answer: ${errorMessage(error)}`);
+    }
+  }
+
+  requestPartial(cause: string): void {
+    this.request(`${cause} ${PARTIAL_ANSWER_INSTRUCTION}`, "steer");
+  }
+
+  requestTimeLimitAnswer(): void {
+    this.requestPartial("The investigation time limit has been reached.");
+  }
+
+  armDeadline(): void {
+    if (this.softDeadline === undefined) return;
+    this.timer = setTimeout(() => this.requestTimeLimitAnswer(), Math.max(0, this.softDeadline - Date.now()));
+    this.timer.unref?.();
+  }
+
+  disarm(): void {
+    if (this.timer) clearTimeout(this.timer);
+  }
+}
+
+type ToolCall = { toolCallId: string; toolName: string; input: unknown };
+
 export default function childGuard(
   pi: ExtensionAPI,
   installLiveness = installParentLivenessMonitor,
@@ -128,10 +179,6 @@ export default function childGuard(
   let policy: ChildPolicy | undefined;
   let runtimeFiles: RuntimeFiles | undefined;
   let webExtensionPath: string | undefined;
-  let softDeadline: number | undefined;
-  let softDeadlineTimer: ReturnType<typeof setTimeout> | undefined;
-  let finalAnswerSeen = false;
-  let finalizationRequested = false;
   let policyError: string | undefined;
   let guardReady = false;
   let startupExitCode: number = CHILD_GUARD_EXIT_CODES.initialization;
@@ -153,26 +200,7 @@ export default function childGuard(
   };
   const ledger = new BudgetLedger((error) => failClosed(`could not persist budget telemetry: ${errorMessage(error)}`));
   const { budget } = ledger;
-  const timeLimitReached = () => softDeadline !== undefined && Date.now() >= softDeadline;
-  const requestFinalAnswer = (content: string, deliverAs: "steer" | "followUp") => {
-    if (finalAnswerSeen || finalizationRequested) return;
-    finalizationRequested = true;
-    pi.setActiveTools([]);
-    try {
-      pi.sendUserMessage(`${content}\n\nDo not call tools. Return the concise final answer as ordinary assistant text.`, { deliverAs });
-    } catch (error) {
-      // Tools were disabled before delivery; retain that ordering on failure.
-      invalidatePolicy(`could not request the final answer: ${errorMessage(error)}`);
-    }
-  };
-  const requestPartialAnswer = () => {
-    requestFinalAnswer(`The investigation time limit has been reached. ${PARTIAL_ANSWER_INSTRUCTION}`, "steer");
-  };
-  const requestBudgetPartialAnswer = () => {
-    budget.hardLimitReached = true;
-    ledger.persist();
-    requestFinalAnswer(`The child lifetime tool budget has been exhausted. ${PARTIAL_ANSWER_INSTRUCTION}`, "steer");
-  };
+  const finalization = new Finalization(pi, invalidatePolicy);
 
   try {
     const loaded = loadPolicy();
@@ -181,7 +209,7 @@ export default function childGuard(
     runtimeFiles = files;
     ledger.attach(files.budgetTelemetry);
     installLiveness(() => cleanupPrivateRuntimeFiles(files));
-    softDeadline = loadSoftDeadline();
+    finalization.softDeadline = loadSoftDeadline();
     if (policy.capability === "web") webExtensionPath = loadWebExtensionPath();
   } catch (error) {
     policyError = errorMessage(error);
@@ -189,31 +217,31 @@ export default function childGuard(
 
   pi.on("turn_end", (event) => {
     if (event.message.role !== "assistant") return;
-    finalAnswerSeen = isFinalAnswer(event.message);
+    finalization.answerSeen = isFinalAnswer(event.message);
   });
 
   pi.on("agent_start", () => {
-    finalAnswerSeen = false;
+    finalization.answerSeen = false;
   });
 
   pi.on("agent_end", (event) => {
-    if (!policy || finalAnswerSeen || finalizationRequested) return;
+    if (!policy || finalization.answerSeen || finalization.requested) return;
     // Pi decides whether to retry after dispatching agent_end. Do not queue a
     // finalization or disable investigation tools for a terminal model error.
     const lastAssistant = [...event.messages].reverse().find((message) => message.role === "assistant");
     if (lastAssistant?.stopReason === "error" || lastAssistant?.stopReason === "aborted") return;
-    if (timeLimitReached()) {
-      requestPartialAnswer();
+    if (finalization.timeLimitReached()) {
+      finalization.requestTimeLimitAnswer();
       return;
     }
-    requestFinalAnswer(
+    finalization.request(
       "The investigation ended without a final answer. Do not investigate further; answer using only evidence already gathered and state any uncertainty or coverage gap.",
       "followUp",
     );
   });
 
   pi.on("session_shutdown", () => {
-    if (softDeadlineTimer) clearTimeout(softDeadlineTimer);
+    finalization.disarm();
     ledger.persist();
     // Session shutdown can precede process exit while other handles remain.
     // The unreferenced liveness pipe must stay armed until the process exits.
@@ -251,7 +279,7 @@ export default function childGuard(
   // parent's hard deadline still covers it, so cancel that one. Other compactions
   // (before a later request or for overflow recovery) keep the request checks.
   pi.on("session_before_compact", (_event, ctx) => {
-    if (finalAnswerSeen) return { cancel: true };
+    if (finalization.answerSeen) return { cancel: true };
     requireTransmissionAllowed(ctx);
   });
 
@@ -278,76 +306,75 @@ export default function childGuard(
       return;
     }
     pi.setActiveTools(activeTools);
-    if (softDeadline !== undefined) {
-      softDeadlineTimer = setTimeout(requestPartialAnswer, Math.max(0, softDeadline - Date.now()));
-      softDeadlineTimer.unref?.();
-    }
+    finalization.armDeadline();
     guardReady = true;
   });
 
   pi.on("tool_execution_start", () => {
     budget.toolCallsAttempted += 1;
-    if (policy && budget.toolCallsAttempted > LIFETIME_TOOL_CALL_LIMIT[policy.capability]) requestBudgetPartialAnswer();
+    if (policy && budget.toolCallsAttempted > LIFETIME_TOOL_CALL_LIMIT[policy.capability]) {
+      budget.hardLimitReached = true;
+      ledger.persist();
+      finalization.requestPartial("The child lifetime tool budget has been exhausted.");
+    }
     ledger.persist();
   });
 
+  const block = (call: ToolCall, reason: string, terminate?: true) => {
+    ledger.markDenied(call.toolCallId);
+    return { block: true as const, reason, ...(terminate ? { terminate } : {}) };
+  };
+  const permit = (call: ToolCall) => {
+    ledger.permittedToolCallIds.add(call.toolCallId);
+    ledger.persist();
+  };
+  const policyUnavailable = (call: ToolCall) =>
+    block(call, `Subagent policy is unavailable: ${policyError ?? "unknown error"}`, true);
+  const blockIfFinalizing = (call: ToolCall) => {
+    const expired = finalization.timeLimitReached();
+    if (expired) finalization.requestTimeLimitAnswer();
+    if (!policy) return policyUnavailable(call);
+    if (!expired && !finalization.requested) return;
+    return block(call, budget.hardLimitReached
+      ? "The child lifetime tool-call hard limit has been exceeded; finalization has started"
+      : "Finalization has started; return the final answer without further tool calls");
+  };
+  const admitLocalCall = async (call: ToolCall, activePolicy: ChildPolicy) => {
+    const path = requestedPath(call.toolName, call.input);
+    if (path === undefined) return block(call, `${call.toolName} requires a path`);
+    try {
+      (call.input as Record<string, unknown>).path = await authorizeReadPath(activePolicy, path);
+    } catch (error) {
+      return block(call, errorMessage(error));
+    }
+    // The deadline can pass while the path is being resolved.
+    const finalBlock = blockIfFinalizing(call);
+    if (finalBlock) return finalBlock;
+    permit(call);
+  };
+  const admitWebCall = (call: ToolCall) => {
+    const input = isRecord(call.input) ? call.input : {};
+    const prepared = prepareWebCall(call.toolName, input);
+    if ("violation" in prepared) {
+      return block(call, `${prepared.violation}. Retry with allowed bounded inputs or return the final answer.`);
+    }
+    Object.assign(input, prepared.input);
+    permit(call);
+  };
+
   pi.on("tool_call", async (event) => {
     ledger.validatedToolCallIds.add(event.toolCallId);
-    const block = (reason: string, terminate?: true) => {
-      ledger.markDenied(event.toolCallId);
-      return { block: true as const, reason, ...(terminate ? { terminate } : {}) };
-    };
-    const permit = () => {
-      ledger.permittedToolCallIds.add(event.toolCallId);
-      ledger.persist();
-    };
-    const policyUnavailable = () => block(`Subagent policy is unavailable: ${policyError ?? "unknown error"}`, true);
-
-    if (!policy || (policy.capability === "web" && !webExtensionPath)) return policyUnavailable();
-    const blockIfFinalizing = () => {
-      const expired = timeLimitReached();
-      if (expired) requestPartialAnswer();
-      if (!policy) return policyUnavailable();
-      if (!expired && !finalizationRequested) return;
-      return block(budget.hardLimitReached
-        ? "The child lifetime tool-call hard limit has been exceeded; finalization has started"
-        : "Finalization has started; return the final answer without further tool calls");
-    };
-    const admitLocalCall = async (activePolicy: ChildPolicy) => {
-      const path = requestedPath(event.toolName, event.input);
-      if (path === undefined) return block(`${event.toolName} requires a path`);
-      try {
-        (event.input as Record<string, unknown>).path = await authorizeReadPath(activePolicy, path);
-      } catch (error) {
-        return block(errorMessage(error));
-      }
-      const finalBlock = blockIfFinalizing();
-      if (finalBlock) return finalBlock;
-      permit();
-      return;
-    };
-    const admitWebCall = () => {
-      const input = isRecord(event.input) ? event.input : {};
-      const prepared = prepareWebCall(event.toolName, input);
-      if ("violation" in prepared) {
-        return block(`${prepared.violation}. Retry with allowed bounded inputs or return the final answer.`);
-      }
-      Object.assign(input, prepared.input);
-      permit();
-      return;
-    };
-    const initialBlock = blockIfFinalizing();
-    if (initialBlock) return initialBlock;
+    if (!policy || (policy.capability === "web" && !webExtensionPath)) return policyUnavailable(event);
+    const finalizing = blockIfFinalizing(event);
+    if (finalizing) return finalizing;
     const allowed = policy.capability === "local" ? FILE_TOOLS : WEB_TOOLS;
     if (!allowed.has(event.toolName)) {
-      return block(`Tool ${event.toolName} is not allowed in the subagent. Use an available tool or return the final answer`);
+      return block(event, `Tool ${event.toolName} is not allowed in the subagent. Use an available tool or return the final answer`);
     }
-
     if (!ownsTool(event.toolName, pi.getAllTools())) {
-      return block(`Tool ${event.toolName} ownership changed`, true);
+      return block(event, `Tool ${event.toolName} ownership changed`, true);
     }
-    if (FILE_TOOLS.has(event.toolName)) return admitLocalCall(policy);
-    if (WEB_TOOLS.has(event.toolName)) return admitWebCall();
+    return policy.capability === "local" ? admitLocalCall(event, policy) : admitWebCall(event);
   });
 
   pi.on("tool_result", (event) => {

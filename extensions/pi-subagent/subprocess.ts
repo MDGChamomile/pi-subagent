@@ -162,6 +162,9 @@ function spawnChild(
   return { child, stdin: child.stdin, stdout: child.stdout, stderr: child.stderr, parentLivenessPipe };
 }
 
+type StopReason = "timeout" | "aborted" | "protocol" | "progress" | "setup" | "exit";
+type ChildExit = { code: number; signal?: NodeJS.Signals };
+
 export async function runChild(options: ChildLaunchOptions & {
   task: string;
   signal?: AbortSignal;
@@ -195,27 +198,24 @@ export async function runChild(options: ChildLaunchOptions & {
   }, options.launcherOverride);
 
   const { child, stdin, stdout, stderr, parentLivenessPipe } = spawnChild(invocation, options.policy.cwd, startedAt);
-  let timedOut = false;
-  let aborted = false;
-  let progressFailed = false;
+  // The first reason starts cleanup; later ones still decide how the run is classified.
+  const stopReasons = new Set<StopReason>();
+  const stopping = () => stopReasons.size > 0;
   let latestReportedTokens = 0;
-  let stopping = false;
   let stopCleanup: Promise<void> | undefined;
   let progressTimer: ReturnType<typeof setInterval> | undefined;
 
-  const requestStop = (reason: "timeout" | "aborted" | "protocol" | "progress" | "setup" | "exit") => {
-    if (reason === "timeout") timedOut = true;
-    if (reason === "aborted") aborted = true;
-    if (stopping) return;
-    stopping = true;
+  const requestStop = (reason: StopReason) => {
+    const alreadyStopping = stopping();
+    stopReasons.add(reason);
     // A failed spawn has no process group to clean up. Every child that received
     // a PID goes through the conservative group probe below.
-    if (child.pid === undefined) return;
+    if (alreadyStopping || child.pid === undefined) return;
     stopCleanup = terminateProcessGroup(child.pid, options.killGraceMs ?? 5_000);
   };
 
   const emitProgress = () => {
-    if (stopping || !options.onUpdate) return;
+    if (stopping() || !options.onUpdate) return;
     try {
       options.onUpdate({
         content: [{
@@ -227,7 +227,6 @@ export async function runChild(options: ChildLaunchOptions & {
     } catch {
       // An unobservable investigation must stop, but callback errors must not
       // escape stream/timer handlers or bypass process-group cleanup.
-      progressFailed = true;
       requestStop("progress");
     }
   };
@@ -241,11 +240,10 @@ export async function runChild(options: ChildLaunchOptions & {
   );
   const onAbort = () => requestStop("aborted");
   let timeout: ReturnType<typeof setTimeout> | undefined;
-  let exitCode = 1;
-  let exitSignal: NodeJS.Signals | undefined;
+  let exit: ChildExit = { code: 1 };
   let waitError: unknown;
   // Register completion before initialization can call user code or request a stop.
-  const exited = new Promise<number>((resolveExit, reject) => {
+  const exited = new Promise<ChildExit>((resolveExit, reject) => {
     child.once("error", reject);
     child.once("exit", () => {
       clearTimeout(timeout);
@@ -254,10 +252,7 @@ export async function runChild(options: ChildLaunchOptions & {
       // delaying close. Reuse bounded group cleanup without changing the result.
       if (!isProcessGroupGone(child.pid)) requestStop("exit");
     });
-    child.once("close", (code, signal) => {
-      exitSignal = signal ?? undefined;
-      resolveExit(code ?? 1);
-    });
+    child.once("close", (code, signal) => resolveExit({ code: code ?? 1, signal: signal ?? undefined }));
   });
   try {
     parentLivenessPipe.on("error", () => undefined);
@@ -268,14 +263,14 @@ export async function runChild(options: ChildLaunchOptions & {
     timeout = setTimeout(() => requestStop("timeout"), Math.max(0, hardDeadline - Date.now()));
     timeout.unref?.();
     if (options.signal?.aborted) onAbort();
-    if (!stopping) emitProgress();
-    if (!stopping && options.onUpdate) {
+    if (!stopping()) emitProgress();
+    if (!stopping() && options.onUpdate) {
       progressTimer = setInterval(emitProgress, 1_000);
       progressTimer.unref?.();
     }
     // Do not deliver the investigation when its first progress update failed.
-    if (!stopping) stdin.end(buildChildPrompt(options.task, options.policy));
-    exitCode = await exited;
+    if (!stopping()) stdin.end(buildChildPrompt(options.task, options.policy));
+    exit = await exited;
   } catch (error) {
     waitError = error;
     requestStop("setup");
@@ -291,6 +286,7 @@ export async function runChild(options: ChildLaunchOptions & {
   }
   return finishChildRun({
     completedAt: Date.now(), snapshot: collector.snapshot(), files: options.files,
-    startedAt, softDeadline, exitCode, exitSignal, progressFailed, aborted, timedOut, effectiveTimeoutMs, waitError,
+    startedAt, softDeadline, exitCode: exit.code, exitSignal: exit.signal, effectiveTimeoutMs, waitError,
+    progressFailed: stopReasons.has("progress"), aborted: stopReasons.has("aborted"), timedOut: stopReasons.has("timeout"),
   });
 }
