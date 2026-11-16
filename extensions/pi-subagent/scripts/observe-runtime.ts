@@ -3,8 +3,8 @@ import { appendFileSync } from "node:fs";
 import type { ExtensionAPI } from "@earendil-works/pi-coding-agent";
 
 export default function observeRuntime(pi: ExtensionAPI): void {
-  const trace = process.env.PI_SUBAGENT_EVAL_TRACE_FILE;
-  if (!trace) throw new Error("Evaluation trace path is required");
+  const trace = process.env.PI_SUBAGENT_SMOKE_TRACE_FILE;
+  if (!trace) throw new Error("Smoke trace path is required");
   const actor = process.env.PI_SUBAGENT_POLICY_FILE ? "child" : "parent";
   const record = (value: Record<string, unknown>) => {
     appendFileSync(trace, `${JSON.stringify({ actor, ...value })}\n`, { encoding: "utf8", mode: 0o600 });
@@ -20,7 +20,7 @@ export default function observeRuntime(pi: ExtensionAPI): void {
   // Keep only a target-match bit while the call runs. Never persist its input,
   // URL, result text, response ID, or error. End events include final isError
   // after tool-result hooks, including failures blocked before execution.
-  const fetchUrl = process.env.PI_SUBAGENT_EVAL_FETCH_URL;
+  const fetchUrl = process.env.PI_SUBAGENT_SMOKE_FETCH_URL;
   const fetches = new Map<string, boolean>();
   pi.on("tool_execution_start", (event) => {
     if (actor !== "child" || !fetchUrl || event.toolName !== "fetch_content") return;

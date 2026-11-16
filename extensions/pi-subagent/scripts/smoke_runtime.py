@@ -1,4 +1,4 @@
-"""Shared, content-free runtime observation for opt-in Codex evaluations."""
+"""Content-free runtime observation for the opt-in Codex live smoke."""
 from __future__ import annotations
 
 import functools
@@ -25,19 +25,14 @@ def json_events(output: str):
             yield event
 
 
-def runtime_exports(*names: str) -> dict[str, Any]:
-    completed = subprocess.run([
-        "node", "--experimental-strip-types", "--input-type=module", "--eval",
-        "const runtime=await import(process.argv[1]);"
-        " console.log(JSON.stringify(Object.fromEntries(process.argv.slice(2).map((name) => [name, runtime[name]]))));",
-        (EXTENSION_DIR / "shared.ts").as_uri(), *names,
-    ], text=True, capture_output=True, check=True, timeout=15)
-    return json.loads(completed.stdout)
-
-
 @functools.cache
 def load_presets() -> dict[str, dict[str, str]]:
-    presets = runtime_exports("SUBAGENT_PRESETS").get("SUBAGENT_PRESETS")
+    completed = subprocess.run([
+        "node", "--experimental-strip-types", "--input-type=module", "--eval",
+        "const { SUBAGENT_PRESETS } = await import(process.argv[1]); console.log(JSON.stringify(SUBAGENT_PRESETS));",
+        (EXTENSION_DIR / "shared.ts").as_uri(),
+    ], text=True, capture_output=True, check=True, timeout=15)
+    presets = json.loads(completed.stdout)
     if not isinstance(presets, dict) or not presets:
         raise ValueError("Runtime presets are unavailable")
     for value in presets.values():
@@ -52,7 +47,7 @@ def observed_cli(root: Path) -> list[str]:
         raise RuntimeError("pi executable is unavailable")
     entry = Path(executable).resolve()
     if entry.suffix not in (".js", ".mjs"):
-        raise RuntimeError("Observed live evaluations currently require the Node.js Pi installation")
+        raise RuntimeError("The observed live smoke requires the Node.js Pi installation")
     wrapper = root / "observed-pi.mjs"
     # runChild relaunches process.argv[1], so every child reuses this wrapper.
     # The observer loads BEFORE the production guard and has no tool policy hooks.
@@ -65,10 +60,10 @@ def observed_cli(root: Path) -> list[str]:
 
 def observation_env(trace: Path, fetch_url: str | None = None) -> dict[str, str]:
     env = {**os.environ, "PI_OFFLINE": "1", "PI_TELEMETRY": "0", "PI_SKIP_VERSION_CHECK": "1",
-           "PI_SUBAGENT_EVAL_TRACE_FILE": str(trace)}
-    env.pop("PI_SUBAGENT_EVAL_FETCH_URL", None)
+           "PI_SUBAGENT_SMOKE_TRACE_FILE": str(trace)}
+    env.pop("PI_SUBAGENT_SMOKE_FETCH_URL", None)
     if fetch_url is not None:
-        env["PI_SUBAGENT_EVAL_FETCH_URL"] = fetch_url
+        env["PI_SUBAGENT_SMOKE_FETCH_URL"] = fetch_url
     return env
 
 

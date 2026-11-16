@@ -14,8 +14,8 @@ async function harness(actor: "child" | "parent", run: (emit: (name: string, eve
   const root = await mkdtemp(join(tmpdir(), "pi-subagent-observer-test-"));
   const trace = join(root, "trace.jsonl");
   const restoreEnv = setEnv({
-    PI_SUBAGENT_EVAL_TRACE_FILE: trace,
-    PI_SUBAGENT_EVAL_FETCH_URL: TARGET,
+    PI_SUBAGENT_SMOKE_TRACE_FILE: trace,
+    PI_SUBAGENT_SMOKE_FETCH_URL: TARGET,
     PI_SUBAGENT_POLICY_FILE: actor === "child" ? "synthetic-policy" : undefined,
   });
   try {
