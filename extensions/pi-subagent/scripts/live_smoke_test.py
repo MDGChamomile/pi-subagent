@@ -11,8 +11,8 @@ from contextlib import redirect_stdout, redirect_stderr
 from types import SimpleNamespace
 from unittest.mock import patch
 
-import live_smoke as evaluator
-from eval_runtime import json_events, load_presets, observation_env, runtime_checks
+import live_smoke
+from smoke_runtime import json_events, load_presets, observation_env, runtime_checks
 
 
 SELECTION = {"model": "openai-codex/gpt-6-luna", "thinking": "medium"}
@@ -48,7 +48,7 @@ def smoke_messages(capability="local", preset=PRESET, selection=None):
         }}]},
         {"role": "toolResult", "toolName": "pi_subagent", "isError": False,
          "content": [{"type": "text", "text": envelope("plain-final-answer (fixture.txt:1)" if capability == "local"
-                      else f"{evaluator.SMOKE_WEB_PURPOSE}; {evaluator.SMOKE_WEB_QUOTE} — {evaluator.SMOKE_WEB_URL}")}],
+                      else f"{live_smoke.SMOKE_WEB_PURPOSE}; {live_smoke.SMOKE_WEB_QUOTE} — {live_smoke.SMOKE_WEB_URL}")}],
          "details": {"capability": capability, "preset": preset, **selection, "status": "complete",
                      "outputTruncated": False, "usage": {"totalTokens": 42}, "durationMs": 10}},
     ]
@@ -59,7 +59,7 @@ def wire(messages):
 
 
 def check(messages=None, observed=None, capability="local"):
-    return evaluator.evaluate_smoke(wire(messages if messages is not None else smoke_messages(capability)),
+    return live_smoke.evaluate_smoke(wire(messages if messages is not None else smoke_messages(capability)),
                                     observations(web=capability == "web") if observed is None else observed,
                                     capability=capability, preset=PRESET, selection=SELECTION)
 
@@ -118,13 +118,13 @@ class ResultEnvelopeTests(unittest.TestCase):
         for reason in ("tool_budget", "time_limit", "model_length"):
             messages = smoke_messages()
             body = envelope("plain-final-answer (fixture.txt:1)", status="partial", partialReason=reason)
-            self.assertIsNone(evaluator.parse_result_envelope(body, messages[1]["details"]))
+            self.assertIsNone(live_smoke.parse_result_envelope(body, messages[1]["details"]))
             messages[1]["details"].update(status="partial", partialReason=reason)
-            self.assertIsNotNone(evaluator.parse_result_envelope(body, messages[1]["details"]))
+            self.assertIsNotNone(live_smoke.parse_result_envelope(body, messages[1]["details"]))
             messages[1]["content"][0]["text"] = body
             self.assertEqual(check(messages)["status"], "fail", "smoke requires complete output")
         for status, reason in [("complete", "tool_budget"), ("partial", None)]:
-            self.assertIsNone(evaluator.parse_result_envelope(envelope("answer", status=status, partialReason=reason),
+            self.assertIsNone(live_smoke.parse_result_envelope(envelope("answer", status=status, partialReason=reason),
                              {"status": status, "partialReason": reason, "outputTruncated": False}))
         messages = smoke_messages()
         messages[1]["content"][0]["text"] = envelope("plain-final-answer (fixture.txt:1)", outputTruncated=True)
@@ -149,11 +149,11 @@ class PortableWebSmokeTests(unittest.TestCase):
         with tempfile.TemporaryDirectory() as directory:
             for path in (None, Path(directory), Path(directory) / "missing.ts"):
                 args = argparse.Namespace(capability="web", web_extension=path)
-                with patch.object(evaluator, "observe_run") as run, self.assertRaises(SystemExit):
-                    evaluator.run_smoke(args)
+                with patch.object(live_smoke, "observe_run") as run, self.assertRaises(SystemExit):
+                    live_smoke.run_smoke(args)
                 run.assert_not_called()
 
-    @patch.object(evaluator, "load_presets", return_value={PRESET: SELECTION})
+    @patch.object(live_smoke, "load_presets", return_value={PRESET: SELECTION})
     def test_web_uses_supplied_entry_and_source_helper_without_personal_loader(self, _presets):
         with tempfile.TemporaryDirectory() as directory:
             entry = Path(directory) / "custom-install" / "web.ts"
@@ -163,20 +163,20 @@ class PortableWebSmokeTests(unittest.TestCase):
                                       main_model="openai-codex/gpt-6-astra", main_thinking="medium", timeout_seconds=60)
             def run(command, **kwargs):
                 extensions = [command[i + 1] for i, item in enumerate(command) if item == "--extension"]
-                self.assertEqual(extensions, [str(evaluator.EXTENSION_ENTRY), str(entry.resolve()),
-                                              str(evaluator.WEB_SMOKE_PARENT)])
+                self.assertEqual(extensions, [str(live_smoke.EXTENSION_ENTRY), str(entry.resolve()),
+                                              str(live_smoke.WEB_SMOKE_PARENT)])
                 self.assertNotIn("--tools", command, "CLI allowlist must not strip web provenance entries")
                 self.assertNotIn("web-tool-loader.ts", " ".join(command))
-                self.assertEqual(kwargs["fetch_url"], evaluator.SMOKE_WEB_URL)
+                self.assertEqual(kwargs["fetch_url"], live_smoke.SMOKE_WEB_URL)
                 return SimpleNamespace(stdout=wire(smoke_messages("web")), returncode=0), observations(web=True)
-            with patch.object(evaluator, "observe_run", side_effect=run) as observed, redirect_stdout(io.StringIO()):
-                self.assertEqual(evaluator.run_smoke(args), 0)
+            with patch.object(live_smoke, "observe_run", side_effect=run) as observed, redirect_stdout(io.StringIO()):
+                self.assertEqual(live_smoke.run_smoke(args), 0)
             observed.assert_called_once()
 
-    @patch.object(evaluator, "load_presets", return_value={PRESET: SELECTION})
+    @patch.object(live_smoke, "load_presets", return_value={PRESET: SELECTION})
     def test_web_entry_cli_is_optional_for_local(self, _presets):
-        self.assertIsNone(evaluator.parse_args([]).web_extension)
-        self.assertEqual(evaluator.parse_args(["--web-extension", "somewhere/web.ts"]).web_extension,
+        self.assertIsNone(live_smoke.parse_args([]).web_extension)
+        self.assertEqual(live_smoke.parse_args(["--web-extension", "somewhere/web.ts"]).web_extension,
                          Path("somewhere/web.ts"))
 
 
@@ -199,21 +199,21 @@ class SmokeContractTests(unittest.TestCase):
         self.assertEqual(check(observed=rows, capability="web")["status"], "pass", "a successful recovery is allowed")
 
     def test_fetch_target_environment_is_explicit_and_not_inherited(self):
-        with patch.dict("os.environ", {"PI_SUBAGENT_EVAL_FETCH_URL": "https://fixture.invalid/private"}):
-            self.assertNotIn("PI_SUBAGENT_EVAL_FETCH_URL", observation_env(Path("fixture-trace")))
-            self.assertEqual(observation_env(Path("fixture-trace"), fetch_url=evaluator.SMOKE_WEB_URL)
-                             ["PI_SUBAGENT_EVAL_FETCH_URL"], evaluator.SMOKE_WEB_URL)
+        with patch.dict("os.environ", {"PI_SUBAGENT_SMOKE_FETCH_URL": "https://fixture.invalid/private"}):
+            self.assertNotIn("PI_SUBAGENT_SMOKE_FETCH_URL", observation_env(Path("fixture-trace")))
+            self.assertEqual(observation_env(Path("fixture-trace"), fetch_url=live_smoke.SMOKE_WEB_URL)
+                             ["PI_SUBAGENT_SMOKE_FETCH_URL"], live_smoke.SMOKE_WEB_URL)
 
     def test_web_title_alone_is_not_sufficient(self):
         messages = smoke_messages("web")
-        set_answer(messages, f"Example Domains — {evaluator.SMOKE_WEB_URL}")
+        set_answer(messages, f"Example Domains — {live_smoke.SMOKE_WEB_URL}")
         self.assertEqual(check(messages, capability="web")["status"], "fail")
 
     def test_web_body_evidence_does_not_require_an_extractor_heading(self):
         messages = smoke_messages("web")
         self.assertNotIn("Example Domains", messages[1]["content"][0]["text"])
         self.assertEqual(check(messages, capability="web")["status"], "pass")
-        set_answer(messages, f"{evaluator.SMOKE_WEB_QUOTE} — {evaluator.SMOKE_WEB_URL}")
+        set_answer(messages, f"{live_smoke.SMOKE_WEB_QUOTE} — {live_smoke.SMOKE_WEB_URL}")
         self.assertEqual(check(messages, capability="web")["status"], "fail")
 
     def test_rejects_missing_or_wrong_result_metadata(self):
@@ -262,7 +262,7 @@ class SmokeContractTests(unittest.TestCase):
             set_answer(messages, answer)
             self.assertEqual(check(messages)["status"], "fail")
 
-    @patch.object(evaluator, "load_presets", return_value={PRESET: SELECTION, "future-preset": SELECTION})
+    @patch.object(live_smoke, "load_presets", return_value={PRESET: SELECTION, "future-preset": SELECTION})
     def test_all_presets_are_run_in_fresh_parents(self, _presets):
         seen = []
         def run(_command, *, cwd, prompt, timeout):
@@ -272,21 +272,21 @@ class SmokeContractTests(unittest.TestCase):
             return SimpleNamespace(stdout=wire(smoke_messages(preset=preset)), returncode=0), observations()
         args = argparse.Namespace(capability="local", preset="all", main_model="openai-codex/gpt-6-astra",
                                   main_thinking="medium", timeout_seconds=60)
-        with patch.object(evaluator, "observe_run", side_effect=run), \
-                patch.object(evaluator, "web_smoke_extension", side_effect=AssertionError("local must not resolve web")), \
+        with patch.object(live_smoke, "observe_run", side_effect=run), \
+                patch.object(live_smoke, "web_smoke_extension", side_effect=AssertionError("local must not resolve web")), \
                 redirect_stdout(io.StringIO()) as output:
-            self.assertEqual(evaluator.run_smoke(args), 0)
+            self.assertEqual(live_smoke.run_smoke(args), 0)
         self.assertEqual([row[0] for row in seen], [PRESET, "future-preset"])
         self.assertEqual(len(set(row[1] for row in seen)), 2)
         self.assertEqual(len(json.loads(output.getvalue())["results"]), 2)
 
-    @patch.object(evaluator, "load_presets", return_value={PRESET: SELECTION})
+    @patch.object(live_smoke, "load_presets", return_value={PRESET: SELECTION})
     def test_cli_defaults_to_all_and_bounds_timeout(self, _presets):
-        self.assertEqual(evaluator.parse_args([]).preset, "all")
-        self.assertEqual(evaluator.parse_args(["--preset", PRESET]).preset, PRESET)
+        self.assertEqual(live_smoke.parse_args([]).preset, "all")
+        self.assertEqual(live_smoke.parse_args(["--preset", PRESET]).preset, PRESET)
         for value in ("0", "1201", "not-a-number"):
             with redirect_stderr(io.StringIO()), self.assertRaises(SystemExit):
-                evaluator.parse_args(["--timeout-seconds", value])
+                live_smoke.parse_args(["--timeout-seconds", value])
 
 
 if __name__ == "__main__":

@@ -47,7 +47,6 @@ for (const filtered of [false, true]) {
         });
         assert.equal(denied?.block, true);
       }
-      // No prompt is sent: registry/provenance checks require no model or web requests.
     } finally {
       session?.dispose();
       await rm(root, { recursive: true, force: true });

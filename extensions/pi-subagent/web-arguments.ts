@@ -48,16 +48,10 @@ function expandedSingleQueryCount(value: unknown): number {
   return 1;
 }
 
-function webSearchQueryCount(input: Record<string, unknown>): number {
-  if (Array.isArray(input.queries)) return nonEmptyStrings(input.queries).length;
-  return expandedSingleQueryCount(input.query);
-}
-
 function validateBoundedQueries(toolName: string, input: Record<string, unknown>): string | undefined {
-  if (Array.isArray(input.queries) && input.queries.length > MAX_WEB_QUERIES_PER_CALL) {
-    return `${toolName} permits at most ${MAX_WEB_QUERIES_PER_CALL} queries`;
-  }
-  if (toolName === "web_search" && webSearchQueryCount(input) > MAX_WEB_QUERIES_PER_CALL) {
+  const queryCount = Array.isArray(input.queries) ? input.queries.length
+    : toolName === "web_search" ? expandedSingleQueryCount(input.query) : 0;
+  if (queryCount > MAX_WEB_QUERIES_PER_CALL) {
     return `${toolName} permits at most ${MAX_WEB_QUERIES_PER_CALL} queries`;
   }
   if (typeof input.numResults === "number" && input.numResults > MAX_WEB_RESULTS_PER_QUERY) {

@@ -13,7 +13,7 @@ from dataclasses import dataclass, field
 from pathlib import Path
 from typing import Any
 
-from eval_runtime import json_events, load_presets, observe_run, runtime_checks
+from smoke_runtime import json_events, load_presets, observe_run, runtime_checks
 
 EXTENSION_DIR = Path(__file__).resolve().parents[1]
 EXTENSION_ENTRY = EXTENSION_DIR / "index.ts"

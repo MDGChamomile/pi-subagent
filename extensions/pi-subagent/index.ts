@@ -53,7 +53,6 @@ type SubagentDetails = {
   model: string;
   thinking: Thinking;
   scopeRoots: number;
-  webEnabled: boolean;
   status: ResultStatus;
   partialReason?: PartialReason;
   toolCallsAttempted: number;
@@ -117,7 +116,6 @@ async function runInTempDirectory(
         model,
         thinking,
         scopeRoots: policy.roots.length,
-        webEnabled: capability === "web",
         status: result.status,
         partialReason: result.partialReason,
         toolCallsAttempted: result.budget.toolCallsAttempted,

@@ -1,6 +1,5 @@
 import { readFile } from "node:fs/promises";
 import { join } from "node:path";
-import { homedir } from "node:os";
 import { getAgentDir } from "@earendil-works/pi-coding-agent";
 import { getSupportedThinkingLevels, type Api, type Model } from "@earendil-works/pi-ai";
 import {
@@ -54,11 +53,8 @@ export type PresetSettings = {
 export type SettingsSnapshot = { path: string; text: string | null; settings: PresetSettings; selections: PresetSelections };
 
 // Only the user's agent directory is consulted, never project files or tool arguments.
-export function presetSettingsPath(agentDir = getAgentDir()): string {
-  // Preserve explicit directory injection, including its historical tilde support.
-  if (agentDir === "~") agentDir = homedir();
-  else if (agentDir.startsWith("~/")) agentDir = join(homedir(), agentDir.slice(2));
-  return join(agentDir, "pi-subagent.json");
+export function presetSettingsPath(): string {
+  return join(getAgentDir(), "pi-subagent.json");
 }
 
 export async function readPresetSettingsSnapshot(path = presetSettingsPath()): Promise<SettingsSnapshot> {
@@ -76,8 +72,8 @@ export async function readPresetSettingsSnapshot(path = presetSettingsPath()): P
   return { path, text, settings: value as PresetSettings, selections: parsePresetSettings(value) };
 }
 
-export async function loadPresetSettings(agentDir = getAgentDir()): Promise<PresetSelections> {
-  return (await readPresetSettingsSnapshot(presetSettingsPath(agentDir))).selections;
+export async function loadPresetSettings(): Promise<PresetSelections> {
+  return (await readPresetSettingsSnapshot()).selections;
 }
 
 export function validatePresetSelection(

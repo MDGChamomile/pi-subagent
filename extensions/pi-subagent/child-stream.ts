@@ -22,9 +22,8 @@ export function emptyUsage(): Usage {
   };
 }
 
-function addUsage(total: Usage, value: unknown): void {
-  if (!value || typeof value !== "object") return;
-  const usage = value as Record<string, unknown>;
+function addUsage(total: Usage, usage: unknown): void {
+  if (!isRecord(usage)) return;
   for (const key of ["input", "output", "cacheRead", "cacheWrite", "totalTokens"] as const) {
     const amount = usage[key];
     total[key] += typeof amount === "number" && Number.isFinite(amount) ? amount : 0;
@@ -34,26 +33,21 @@ function addUsage(total: Usage, value: unknown): void {
     if (typeof amount === "number" && Number.isFinite(amount)) total[key] = (total[key] ?? 0) + amount;
   }
   const cost = usage.cost;
-  if (cost && typeof cost === "object") {
-    const values = cost as Record<string, unknown>;
+  if (isRecord(cost)) {
     for (const key of ["input", "output", "cacheRead", "cacheWrite", "total"] as const) {
-      const amount = values[key];
+      const amount = cost[key];
       total.cost[key] += typeof amount === "number" && Number.isFinite(amount) ? amount : 0;
     }
   }
 }
 
 function isTextPart(part: unknown): part is { type: "text"; text: string } {
-  if (!part || typeof part !== "object") return false;
-  const item = part as { type?: unknown; text?: unknown };
-  return item.type === "text" && typeof item.text === "string";
+  return isRecord(part) && part.type === "text" && typeof part.text === "string";
 }
 
-function assistantText(message: unknown): string {
-  if (!message || typeof message !== "object") return "";
-  const value = message as { role?: unknown; content?: unknown };
-  if (value.role !== "assistant" || !Array.isArray(value.content)) return "";
-  return value.content
+function assistantText(message: { content?: unknown }): string {
+  if (!Array.isArray(message.content)) return "";
+  return message.content
     .filter(isTextPart)
     .map((part) => part.text)
     .join("\n");
@@ -64,9 +58,7 @@ type AssistantMode = "none" | "empty" | "text" | "tool" | "mixed";
 function assistantMode(message: { content?: unknown }): AssistantMode {
   if (!Array.isArray(message.content)) return "empty";
   const hasText = message.content.some((part) => isTextPart(part) && part.text.trim().length > 0);
-  const hasTool = message.content.some((part) =>
-    Boolean(part && typeof part === "object" && (part as { type?: unknown }).type === "toolCall")
-  );
+  const hasTool = message.content.some((part) => isRecord(part) && part.type === "toolCall");
   if (hasText && hasTool) return "mixed";
   if (hasTool) return "tool";
   if (hasText) return "text";
@@ -179,7 +171,7 @@ export class ChildJsonCollector {
         counts: { ...this.eventCounts },
         receipts: { ...this.eventReceipts },
         lastEvent: this.lastEvent,
-        lastEventAgeMs: this.lastEventAt === undefined ? undefined : Math.max(0, performance.now() - this.lastEventAt),
+        lastEventAgeMs: this.lastEventAt === undefined ? undefined : Math.round(performance.now() - this.lastEventAt),
         lastEventValidated: this.lastEventValidated,
         toolBalance: this.observationsIncomplete || this.protocolError ? null
           : Math.max(0, this.eventCounts.tool_execution_start - this.eventCounts.tool_execution_end),
@@ -259,7 +251,7 @@ export class ChildJsonCollector {
   }
 
   private processLine(line: string): void {
-    if (this.protocolError || !line.trim()) return;
+    if (this.protocolError) return;
     let event: unknown;
     try {
       event = JSON.parse(line);
@@ -268,33 +260,24 @@ export class ChildJsonCollector {
       else this.fail("Subagent emitted malformed JSON");
       return;
     }
-    if (!event || typeof event !== "object") return;
-    const record = event as { type?: unknown; message?: unknown; result?: unknown };
-    if (this.pendingObservedType && record.type !== this.pendingObservedType) {
+    if (!isRecord(event)) return;
+    if (this.pendingObservedType && event.type !== this.pendingObservedType) {
       this.observationsIncomplete = true;
       return;
     }
-    if (OBSERVED_CHILD_EVENTS.includes(record.type as ObservedChildEvent)) {
-      if (!this.pendingObservedType) this.observeReceipt(record.type as ObservedChildEvent);
-      if (Buffer.byteLength(line) <= MAX_OBSERVED_RECORD_BYTES) this.observe(event as Record<string, unknown>);
+    if (OBSERVED_CHILD_EVENTS.includes(event.type as ObservedChildEvent)) {
+      if (!this.pendingObservedType) this.observeReceipt(event.type as ObservedChildEvent);
+      if (Buffer.byteLength(line) <= MAX_OBSERVED_RECORD_BYTES) this.observe(event);
       else this.observationsIncomplete = true;
       return;
     }
-    if (record.type === "compaction_end") {
+    if (event.type === "compaction_end") {
       // Summary requests produce no message_end; a failed or cancelled compaction has no result.
-      if (record.result && typeof record.result === "object") addUsage(this.usage, (record.result as { usage?: unknown }).usage);
+      if (isRecord(event.result)) addUsage(this.usage, event.result.usage);
       return;
     }
-    if (record.type !== "message_end" || !record.message || typeof record.message !== "object") return;
-    const message = record.message as {
-      role?: unknown;
-      toolName?: unknown;
-      content?: unknown;
-      isError?: unknown;
-      usage?: unknown;
-      stopReason?: unknown;
-      errorMessage?: unknown;
-    };
+    const message = event.message;
+    if (event.type !== "message_end" || !isRecord(message)) return;
     if (message.role === "toolResult") {
       addUsage(this.usage, message.usage);
       if (message.isError === true) {

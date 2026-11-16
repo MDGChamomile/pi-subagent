@@ -14,12 +14,9 @@ async function harness(actor: "child" | "parent", run: (emit: (name: string, eve
   const root = await mkdtemp(join(tmpdir(), "pi-subagent-observer-test-"));
   const trace = join(root, "trace.jsonl");
   const restoreEnv = setEnv({
-    PI_SUBAGENT_EVAL_TRACE_FILE: trace,
-    PI_SUBAGENT_EVAL_FETCH_URL: TARGET,
+    PI_SUBAGENT_SMOKE_TRACE_FILE: trace,
+    PI_SUBAGENT_SMOKE_FETCH_URL: TARGET,
     PI_SUBAGENT_POLICY_FILE: actor === "child" ? "synthetic-policy" : undefined,
-    // Tests set expectations explicitly; ambient values must not leak in.
-    PI_SUBAGENT_EVAL_EXPECT_MODEL: undefined,
-    PI_SUBAGENT_EVAL_EXPECT_THINKING: undefined,
   });
   try {
     const handlers = new Map<string, (event: any, ctx?: any) => void>();
@@ -46,10 +43,6 @@ function fetch(emit: (name: string, event: any) => void, id: string, args: any, 
 
 test("provider observer records mismatches without claiming to block transmission", async () => {
   await harness("child", async (emit, rows) => {
-    // Inherited PI_SUBAGENT_EVAL_EXPECT_* values must not turn this observation
-    // hook into a purported transmission blocker; the observer ignores them.
-    process.env.PI_SUBAGENT_EVAL_EXPECT_MODEL = "offline/expected";
-    process.env.PI_SUBAGENT_EVAL_EXPECT_THINKING = "high";
     assert.doesNotThrow(() => emit("before_provider_request", {
       payload: { model: "wire-other", reasoning: { effort: "low" }, privateInput: PRIVATE },
     }, { model: { provider: "offline", id: "expected" }, thinkingLevel: "high" }));

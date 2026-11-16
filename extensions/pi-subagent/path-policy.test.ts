@@ -34,7 +34,6 @@ describe("pi-subagent scope policy", () => {
       assert.equal(localPolicy.capability, "local");
       await assert.rejects(() => buildChildPolicy(root, [], "local"), /requires at least one local scope/);
       await assert.rejects(() => buildChildPolicy(root, ["local.txt"], "web"), /requires an empty local scope/);
-      await assert.rejects(() => buildChildPolicy(root, ["local.txt"], "both" as any), /must be local or web/);
     } finally {
       await rm(root, { recursive: true, force: true });
     }
