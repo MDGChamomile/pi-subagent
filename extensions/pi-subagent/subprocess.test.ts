@@ -103,7 +103,6 @@ describe("child invocation", () => {
       assert.equal(env.PI_SUBAGENT_SOFT_DEADLINE_EPOCH_MS, "1234");
       assert.equal(env.PI_SUBAGENT_PARENT_LIVENESS_FD, "3");
       assert.deepEqual(JSON.parse(env.PI_SUBAGENT_MODEL_SELECTION!), { model: "provider/model", thinking: "high" });
-      // rg config is removed only for local children; web children keep the parent value.
       assert.equal(env.RIPGREP_CONFIG_PATH, capability === "local" ? undefined : "/synthetic/rg.conf");
       assert.equal(env.PI_SUBAGENT_WEB_EXTENSION_PATH, capability === "web" ? "/synthetic/pi-web-access/index.ts" : undefined);
     }

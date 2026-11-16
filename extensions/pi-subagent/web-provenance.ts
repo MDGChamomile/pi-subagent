@@ -37,9 +37,7 @@ async function webEntryFile(path: string): Promise<string | undefined> {
         if ((error as NodeJS.ErrnoException).code !== "ENOENT") return undefined;
       }
     }
-  } catch {
-    // Missing or unusable entry point.
-  }
+  } catch {}
   return undefined;
 }
 

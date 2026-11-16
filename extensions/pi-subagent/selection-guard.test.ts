@@ -26,7 +26,6 @@ for (const boundary of ["provider", "compaction"]) {
       assert.equal(result.stderr, "", "guard failures must not be module-loading errors");
       const output = JSON.parse(result.stdout);
       if (scenario === "match" || scenario === "answered") {
-        // Only a compaction after the final answer is cancelled; it never reaches the transport.
         const cancelled = boundary === "compaction" && scenario === "answered";
         assert.equal(result.status, 0);
         assert.deepEqual(output, { requests: cancelled ? 0 : 1, guardReady: true, activeTools: [...ALLOWED_FILE_TOOLS], cancelled });

@@ -10,7 +10,6 @@ export interface PickerOptions {
   selected?: string;
 }
 
-// A fresh component per step: no terminal ownership, provider requests, or writes.
 export class SettingsPicker {
   readonly input = new Input();
   private list!: SelectList;

@@ -228,7 +228,6 @@ if (scenario.startsWith("observations-")) {
   if (scenario === "timeout-after-usage") {
     emitText("Partial work before the hard timeout.", "toolUse");
   }
-  // Ignore SIGTERM but record it, then publish that the handler is installed.
   process.on("SIGTERM", () => { writeFileSync(join(process.cwd(), "sigterm-received"), ""); });
   writeFileSync(join(process.cwd(), "sigterm-ignored.pid"), String(process.pid));
   setInterval(() => {}, 1_000);

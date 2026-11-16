@@ -30,7 +30,6 @@ export class BudgetLedger {
     this.onPersistFailure = onPersistFailure;
   }
 
-  /** Until a file is attached, persist() is a no-op. */
   attach(file: string): void {
     this.file = file;
   }

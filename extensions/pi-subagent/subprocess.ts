@@ -84,7 +84,6 @@ type ChildLaunchOptions = {
   thinking: Thinking;
 };
 
-/** Child Pi command line and environment; spawning and lifecycle remain in runChild. */
 export function buildChildInvocation(
   options: ChildLaunchOptions & { softDeadline: number },
   launcher: ChildLauncher = getPiLauncher(),
