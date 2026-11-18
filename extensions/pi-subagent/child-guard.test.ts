@@ -63,6 +63,7 @@ async function createHarness(
       handlers.set(name, [...(handlers.get(name) ?? []), handler]);
     },
     getAllTools() {
+      assert.equal(capability, "web", "local tool checks must not enumerate the registry");
       return tools;
     },
     setActiveTools(names: string[]) {
