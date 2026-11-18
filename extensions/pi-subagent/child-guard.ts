@@ -184,8 +184,7 @@ export default function childGuard(
   let startupExitCode: number = CHILD_GUARD_EXIT_CODES.initialization;
 
   // Web tools must come from the explicitly loaded extension file.
-  const ownsTool = (name: string, tools: ToolInfo[]) => {
-    if (FILE_TOOLS.has(name)) return true;
+  const ownsWebTool = (name: string, tools: ToolInfo[]) => {
     const tool = tools.find((candidate) => candidate.name === name);
     return WEB_TOOLS.has(name) && webExtensionPath !== undefined
       && canonicalSourcePath(tool?.sourceInfo?.path) === webExtensionPath;
@@ -288,13 +287,15 @@ export default function childGuard(
       pi.setActiveTools([]);
       return;
     }
-    const tools = pi.getAllTools();
     const activeTools = toolsForCapability(policy.capability);
-    startupExitCode = CHILD_GUARD_EXIT_CODES.toolOwnership;
-    for (const name of activeTools) {
-      if (!ownsTool(name, tools)) {
-        failClosed(`${name} is not owned by the explicitly loaded web extension`);
-        return;
+    if (policy.capability === "web") {
+      startupExitCode = CHILD_GUARD_EXIT_CODES.toolOwnership;
+      const tools = pi.getAllTools();
+      for (const name of activeTools) {
+        if (!ownsWebTool(name, tools)) {
+          failClosed(`${name} is not owned by the explicitly loaded web extension`);
+          return;
+        }
       }
     }
     startupExitCode = CHILD_GUARD_EXIT_CODES.readiness;
@@ -371,10 +372,11 @@ export default function childGuard(
     if (!allowed.has(event.toolName)) {
       return block(event, `Tool ${event.toolName} is not allowed in the subagent. Use an available tool or return the final answer`);
     }
-    if (!ownsTool(event.toolName, pi.getAllTools())) {
+    if (policy.capability === "local") return admitLocalCall(event, policy);
+    if (!ownsWebTool(event.toolName, pi.getAllTools())) {
       return block(event, `Tool ${event.toolName} ownership changed`, true);
     }
-    return policy.capability === "local" ? admitLocalCall(event, policy) : admitWebCall(event);
+    return admitWebCall(event);
   });
 
   pi.on("tool_result", (event) => {
