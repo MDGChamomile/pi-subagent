@@ -47,7 +47,7 @@ Requirements:
 
 - Linux, including Ubuntu on WSL, or macOS 15 on Apple Silicon (arm64); native Windows is not supported;
 - Pi 1.0.0 or later;
-- authentication for the configured child provider and access to its model (`openai-codex` by default; see [Presets](#presets)).
+- authentication for the configured child provider and access to its model (`openai-codex` for lookup and analysis, `anthropic` for review by default).
 
 macOS validation targets the Node.js Pi installation on macOS 15/arm64. Other macOS versions and Intel Macs are not covered by CI; no live provider compatibility is implied.
 
@@ -105,12 +105,14 @@ Mixed local-and-web work uses separate child calls, with synthesis performed by 
 | Preset | Provider/model ID | Thinking | Best for |
 | --- | --- | --- | --- |
 | `lookup-standard` | `openai-codex/gpt-6-luna` | `medium` | Bounded fact-finding |
-| `analysis-standard` | `openai-codex/gpt-6.1-sol` | `medium` | Synthesis and causal comparison |
-| `review-standard` | `openai-codex/gpt-6.1-sol` | `high` | Adversarial review |
+| `analysis-standard` | `openai-codex/gpt-6.2-sol` | `medium` | Synthesis and causal comparison |
+| `review-standard` | `anthropic/claude-opus-5-5` | `high` | Adversarial review |
 
 These are **default settings**, not required providers or models. They do not inherit the parent model or change its thinking level.
 
-Run **`/pi-subagent-settings`** in Pi's TUI to change a preset's provider, model, or thinking level, or edit `~/.pi/agent/pi-subagent.json` (under `PI_CODING_AGENT_DIR` when set). Settings apply to the next call without a reload. OpenAI access is not required when you configure other providers available through Pi. Change each preset you intend to use; untouched presets retain their Codex defaults. Only user-level settings are read; project files and tool arguments cannot override them, and there is no automatic fallback. Authenticate each provider through Pi. See the [extension guide](extensions/pi-subagent/README.md#presets) for the settings file format and validation rules.
+If Pi does not list GPT-6.2 Sol, run `pi update --models` to refresh its catalog. Children use the cached catalog offline. By default, delegated review tasks and their evidence are sent to Anthropic.
+
+Run **`/pi-subagent-settings`** in Pi's TUI to change a preset's provider, model, or thinking level, or edit `~/.pi/agent/pi-subagent.json` (under `PI_CODING_AGENT_DIR` when set). Each preset can use any supported provider you authenticate through Pi. Saved overrides take precedence over the defaults above and apply to the next call without a reload. Only user-level settings are read; project files and tool arguments cannot override them, and there is no automatic fallback. See the [extension guide](extensions/pi-subagent/README.md#presets) for the settings file format and validation rules.
 
 ## Security and data flow
 

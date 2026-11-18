@@ -60,7 +60,7 @@ The README maintains the [per-run call limits](../../README.md#capabilities), in
 
 Each standard preset selects a child model without changing the main model's thinking level. The default provider/model and thinking for each preset are listed in the [README](../../README.md#presets).
 
-OpenAI access is not required if you configure other available providers. Authenticate through Pi, then use `/pi-subagent-settings` to change every preset you intend to use: changing one does not update the others, and untouched presets keep their Codex defaults. A provider's web/app subscription does not necessarily grant access through Pi's supported authentication methods or API.
+Lookup and analysis default to OpenAI Codex. Review defaults to Anthropic. Authenticate the provider for each preset you use, or choose another available model in `/pi-subagent-settings`. Each preset has independent overrides. A provider's web/app subscription does not necessarily grant access through Pi's supported authentication methods or API.
 
 Run **`/pi-subagent-settings`** in TUI mode to configure persistent user defaults. Select a preset, provider, model, and supported thinking level in searchable, height-bounded lists. Type to filter by ID or display name; use arrow keys to scroll. The current setting is marked; Escape goes back a selection step (or exits the first) and Ctrl+C cancels. Review the before/after values and confirm to save; cancelling leaves the file unchanged. Providers and models are filtered using Pi's local authentication metadata, which does not guarantee account access or child availability. Other registered models can still be configured in the settings file; RPC and other non-TUI clients must edit that file directly. This is a user command, not a model-callable tool; it never changes the parent model or thinking level or makes a provider request.
 
@@ -184,7 +184,7 @@ Pi's JSON `message_update` records are delta-only, but block-end updates carry t
 
 ## Verification
 
-Offline tests do not establish live provider compatibility. Provider transport coverage uses synthetic credentials and responses for the default Codex SSE path only, and the opt-in live observation harness is Codex-specific; these are test limitations, not restrictions on configurable runtime providers.
+Offline transport tests use synthetic credentials and responses for the Codex SSE path. The opt-in live smoke checks outgoing requests for the default Codex and Anthropic presets.
 
 See the [development verification guide](DEVELOPMENT.md#verification) for source-checkout commands, prerequisites, and coverage limits. Live checks require separate authorization for provider usage and input disclosure. Installing the npm package does not require running evaluation scripts or installing development test dependencies.
 

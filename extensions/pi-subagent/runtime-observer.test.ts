@@ -52,6 +52,22 @@ test("provider observer records mismatches without claiming to block transmissio
   });
 });
 
+test("Opus observer checks the active effort even when the top-level effort stays high", async () => {
+  await harness("child", async (emit, rows) => {
+    const model = { provider: "anthropic", id: "claude-opus-5-5", api: "anthropic-messages" };
+    const ctx = { model, thinkingLevel: "high" };
+    for (const effort of ["high", "low", undefined]) {
+      const messages = [{ role: "user", content: PRIVATE },
+        ...(effort ? [{ role: "system", content: [], output_config: { effort } }] : [])];
+      emit("before_provider_request", { payload: { model: model.id, thinking: { type: "adaptive" },
+        output_config: { effort: "high" }, messages } }, ctx);
+    }
+    const recorded = await rows();
+    assert.deepEqual(recorded.map((row) => row.wireThinking), ["high", "low", undefined]);
+    assert.equal(JSON.stringify(recorded).includes(PRIVATE), false);
+  });
+});
+
 test("web observer accepts single-target success and persists only content-free booleans", async () => {
   await harness("child", async (emit, rows) => {
     fetch(emit, "single", { url: TARGET, privateInput: PRIVATE });
