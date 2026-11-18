@@ -1,5 +1,5 @@
 import assert from "node:assert/strict";
-import { mkdtemp, mkdir, rm, writeFile } from "node:fs/promises";
+import { copyFile, mkdtemp, mkdir, rm, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { test } from "node:test";
@@ -35,12 +35,15 @@ test("defaults remain independent and review defaults to high", () => {
   assert.equal(SUBAGENT_PRESETS["lookup-standard"].thinking, "medium");
 });
 
-test("default models and thinking levels exist in Pi's bundled offline catalog", async () => {
+test("default models and thinking levels resolve offline with the refreshed Pi catalog", async () => {
   const root = await mkdtemp(join(tmpdir(), "pi-subagent-catalog-test-"));
   try {
+    // Pi 1.0.0 needs the Sol entry from https://pi.dev/api/models/providers/openai-codex (2026-11-17).
+    const modelsStorePath = join(root, "models-store.json");
+    await copyFile(new URL("./fixtures/sol-model-store.json", import.meta.url), modelsStorePath);
     const runtime = await ModelRuntime.create({
       authPath: join(root, "auth.json"), modelsPath: join(root, "models.json"),
-      modelsStorePath: join(root, "model-store.json"), allowModelNetwork: false,
+      modelsStorePath, allowModelNetwork: false,
     });
     const registry = new ModelRegistry(runtime);
     for (const selection of Object.values(parsePresetSettings({}))) {

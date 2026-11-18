@@ -2,10 +2,22 @@
 
 ## Unreleased
 
+### Analysis and review defaults
+
+`analysis-standard` now uses `openai-codex/gpt-6.2-sol` with medium thinking.
+If Pi's model list is missing GPT-6.2 Sol, refresh it with `pi update --models`.
+
+`review-standard` now uses `anthropic/claude-opus-5-5` with high thinking.
+By default, review tasks and their evidence, including local file content read
+during review, are sent to Anthropic. Authenticate with Anthropic through Pi
+to use this default. To keep reviews on the previous provider, select
+`openai-codex/gpt-6.1-sol` and high thinking in `/pi-subagent-settings`
+before your next review. Saved per-preset overrides take precedence.
+
+### Tool-result metadata
+
 Tool-result `details` no longer include `webEnabled`, which repeated
-`capability`. Host integrations must read `capability` instead. The
-model-visible result envelope, tool input schema, presets and settings are
-unchanged.
+`capability`. Host integrations must read `capability` instead.
 
 ## v0.9.0
 

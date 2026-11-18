@@ -1,4 +1,4 @@
-"""Content-free runtime observation for the opt-in Codex live smoke."""
+"""Content-free runtime observation for the opt-in live smoke."""
 from __future__ import annotations
 
 import functools

@@ -22,7 +22,7 @@ The development dependencies pin the declared minimum Pi version, and the direct
 
 Live smoke runs are opt-in: they need authorization, require the Node.js Pi installation, and consume model/provider usage. `--preset all` (the default) runs every current runtime preset in a fresh parent session; select one with, for example, `--preset review-standard`. If both `PI_PROVIDER` and `PI_MODEL` are set, `--main-model` may be omitted, and an omitted `--main-thinking` uses `PI_REASONING_LEVEL`, or `high` when that is unset; explicit parent model and thinking arguments are preferred for reproducibility.
 
-The live observation harness is Codex-specific and evaluates default presets, not arbitrary provider overrides. Use a dedicated Pi agent directory (`PI_CODING_AGENT_DIR`) without `pi-subagent.json` for these opt-in commands. Offline configuration tests cover Anthropic/OpenRouter selection; they do not establish live provider compatibility.
+The live observer checks the Codex and Anthropic request formats used by the default presets. Use a dedicated Pi agent directory (`PI_CODING_AGENT_DIR`) without `pi-subagent.json` for these commands. For `--preset all`, authenticate both providers in that directory and run `pi update --models` there if GPT-6.2 Sol is missing from the catalog.
 
 ```bash
 python3 -B extensions/pi-subagent/scripts/live_smoke.py \

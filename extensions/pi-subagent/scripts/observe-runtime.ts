@@ -10,12 +10,24 @@ export default function observeRuntime(pi: ExtensionAPI): void {
     appendFileSync(trace, `${JSON.stringify({ actor, ...value })}\n`, { encoding: "utf8", mode: 0o600 });
   };
   pi.on("before_provider_request", (event, ctx) => {
-    const payload = event.payload as { model?: unknown; reasoning?: { effort?: unknown } };
+    const payload = event.payload as {
+      model?: string;
+      reasoning?: { effort?: string };
+      thinking?: { type?: string };
+      messages?: { role?: string; output_config?: { effort?: string } }[];
+    };
     const model = `${ctx.model?.provider}/${ctx.model?.id}`;
+    let wireThinking = payload.reasoning?.effort;
+    if (ctx.model?.api === "anthropic-messages") {
+      // Opus 5.5 carries the active effort in the final system message.
+      const last = payload.messages?.at(-1);
+      wireThinking = payload.thinking?.type === "adaptive" && last?.role === "system"
+        ? last.output_config?.effort : undefined;
+    }
     // Observation only: Pi can swallow provider-hook exceptions. The Python
     // runtime_checks verdict validates every request after the run; the production
     // guard separately enforces effective model/thinking before transmission.
-    record({ kind: "request", model, thinking: ctx.thinkingLevel, wireModel: payload.model, wireThinking: payload.reasoning?.effort });
+    record({ kind: "request", model, thinking: ctx.thinkingLevel, wireModel: payload.model, wireThinking });
   });
   // Keep only a target-match bit while the call runs. Never persist its input,
   // URL, result text, response ID, or error. End events include final isError

@@ -47,8 +47,8 @@ export type Thinking = (typeof THINKING_LEVELS)[number];
 
 export const SUBAGENT_PRESETS = {
   "lookup-standard": { model: "openai-codex/gpt-6-luna", thinking: "medium" },
-  "analysis-standard": { model: "openai-codex/gpt-6.1-sol", thinking: "medium" },
-  "review-standard": { model: "openai-codex/gpt-6.1-sol", thinking: "high" },
+  "analysis-standard": { model: "openai-codex/gpt-6.2-sol", thinking: "medium" },
+  "review-standard": { model: "anthropic/claude-opus-5-5", thinking: "high" },
 } as const satisfies Record<string, { model: string; thinking: Thinking }>;
 export type Preset = keyof typeof SUBAGENT_PRESETS;
 export const PRESET_NAMES = Object.keys(SUBAGENT_PRESETS) as Preset[];
