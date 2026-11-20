@@ -7,6 +7,7 @@ import argparse
 import json
 import os
 import re
+import secrets
 import subprocess
 import tempfile
 from dataclasses import dataclass, field
@@ -124,7 +125,7 @@ def requested_call_matches(calls: list[Any], *, capability: str, preset: str, sc
 
 
 def evaluate_smoke(output: str, observations: list[dict[str, Any]], *, capability: str,
-                   preset: str, selection: dict[str, str]) -> dict[str, Any]:
+                   preset: str, selection: dict[str, str], marker: str | None = None) -> dict[str, Any]:
     transcript = parent_transcript(output)
     answers = [result.body for result in transcript.subagent_results if not result.is_error]
     errors = [result.body[:500] for result in transcript.subagent_results if result.is_error]
@@ -146,10 +147,15 @@ def evaluate_smoke(output: str, observations: list[dict[str, Any]], *, capabilit
         "non_empty_answer": bool(answer.strip()),
         "within_12_kib": bool(result_text) and len(result_text.encode("utf-8")) <= MAX_RESULT_BYTES,
         "no_raw_tool_syntax": bool(answer) and not bool(TOOL_SYNTAX_RE.search(answer)),
-        "expected_fact": (capability == "local" and "plain-final-answer" in answer)
+        "expected_fact": (capability == "local" and bool(marker) and marker in answer)
             or (capability == "web" and SMOKE_WEB_PURPOSE in answer.casefold() and SMOKE_WEB_QUOTE in answer.casefold()),
         "evidence_present": "fixture.txt:1" in answer if capability == "local" else SMOKE_WEB_URL in answer,
         "no_parent_investigation_or_loader_calls": not transcript.other_calls,
+        "observed_successful_target_read": capability != "local" or any(
+            row.get("actor") == "child" and row.get("kind") == "local_read"
+            and row.get("targetMatch") is True and row.get("success") is True
+            for row in observations
+        ),
         "observed_successful_target_fetch": capability != "web" or any(
             row.get("actor") == "child" and row.get("kind") == "web_fetch"
             and row.get("targetMatch") is True and row.get("success") is True
@@ -170,7 +176,7 @@ def evaluate_smoke(output: str, observations: list[dict[str, Any]], *, capabilit
         "result_bytes": len(result_text.encode("utf-8")), "errors": errors,
         "parent_other_calls": transcript.other_calls, "child_usage": usage,
         "child_duration_ms": details.get("durationMs"),
-        # Fixed synthetic/public smoke targets only; retain bounded final text to diagnose failures.
+        # Synthetic/public smoke targets only; retain bounded final text to diagnose failures.
         **({"failure_answer_excerpt": answer[:1500]} if not all(checks.values()) else {}),
     }
 
@@ -195,9 +201,10 @@ def run_smoke(args: argparse.Namespace) -> int:
         selection = presets[preset]
         with tempfile.TemporaryDirectory(prefix="pi-subagent-live-") as temporary:
             cwd = Path(temporary)
+            marker = secrets.token_hex(16) if args.capability == "local" else None
             command = [*base_command(args.main_model, args.main_thinking), "--extension", str(EXTENSION_ENTRY)]
             if args.capability == "local":
-                (cwd / "fixture.txt").write_text("SMOKE_MARKER=plain-final-answer\n", encoding="utf-8")
+                (cwd / "fixture.txt").write_text(f"SMOKE_MARKER={marker}\n", encoding="utf-8")
                 command += ["--tools", "pi_subagent"]
                 prompt = (
                     "Call pi_subagent exactly once with capability=local, scope=[\"fixture.txt\"], "
@@ -219,8 +226,10 @@ def run_smoke(args: argparse.Namespace) -> int:
                 completed, observations = observe_run(
                     command, cwd=cwd, prompt=prompt, timeout=args.timeout_seconds,
                     **({"fetch_url": SMOKE_WEB_URL} if args.capability == "web" else {}),
+                    **({"read_path": str((cwd / "fixture.txt").resolve())} if args.capability == "local" else {}),
                 )
-                result = evaluate_smoke(completed.stdout, observations, capability=args.capability, preset=preset, selection=selection)
+                result = evaluate_smoke(completed.stdout, observations, capability=args.capability,
+                                        preset=preset, selection=selection, marker=marker)
                 result["exit_code"] = completed.returncode
                 if completed.returncode != 0:
                     result["status"] = "fail"

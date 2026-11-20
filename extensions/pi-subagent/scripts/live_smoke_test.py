@@ -19,13 +19,15 @@ SELECTION = {"model": "openai-codex/gpt-6-luna", "thinking": "medium"}
 PRESET = "lookup-standard"
 
 
-def observations(selection=None, web=False):
+def observations(selection=None, web=False, local=True):
     selection = selection or SELECTION
     rows = [
         {"actor": "child", "kind": "request", **selection,
          "wireModel": selection["model"].split("/", 1)[1], "wireThinking": selection["thinking"]},
         {"actor": "child", "kind": "assistant", "model": selection["model"], "stopReason": "stop"},
     ]
+    if local and not web:
+        rows.append({"actor": "child", "kind": "local_read", "targetMatch": True, "success": True})
     if web:
         rows.append({"actor": "child", "kind": "web_fetch", "targetMatch": True, "success": True})
     return rows
@@ -61,7 +63,7 @@ def wire(messages):
 def check(messages=None, observed=None, capability="local"):
     return live_smoke.evaluate_smoke(wire(messages if messages is not None else smoke_messages(capability)),
                                     observations(web=capability == "web") if observed is None else observed,
-                                    capability=capability, preset=PRESET, selection=SELECTION)
+                                    capability=capability, preset=PRESET, selection=SELECTION, marker="plain-final-answer")
 
 
 class RuntimeObservationTests(unittest.TestCase):
@@ -186,6 +188,36 @@ class SmokeContractTests(unittest.TestCase):
             with self.subTest(capability=capability):
                 self.assertEqual(check(capability=capability)["status"], "pass")
 
+    def test_local_answer_cannot_replace_a_successful_child_target_read(self):
+        self.assertEqual(check(observed=observations(local=False))["status"], "fail")
+        for key, wrong in [("actor", "parent"), ("kind", "web_fetch"), ("targetMatch", False),
+                           ("success", False), ("success", "true"), ("targetMatch", 1)]:
+            with self.subTest(key=key, wrong=wrong):
+                rows = observations()
+                rows[-1][key] = wrong
+                self.assertEqual(check(observed=rows)["status"], "fail")
+        rows = observations(local=False)
+        rows.extend([
+            {"actor": "child", "kind": "local_read", "targetMatch": True, "success": False},
+            {"actor": "child", "kind": "local_read", "targetMatch": False, "success": True},
+        ])
+        self.assertEqual(check(observed=rows)["status"], "fail")
+        rows.extend(observations()[-1:])
+        self.assertEqual(check(observed=rows)["status"], "pass", "a successful recovery is allowed")
+
+    def test_local_fact_requires_the_current_run_marker(self):
+        for marker in (None, "", "different-marker"):
+            verdict = live_smoke.evaluate_smoke(wire(smoke_messages()), observations(), capability="local",
+                                                preset=PRESET, selection=SELECTION, marker=marker)
+            self.assertFalse(verdict["checks"]["expected_fact"])
+            self.assertEqual(verdict["status"], "fail")
+
+    def test_read_target_environment_is_explicit_and_not_inherited(self):
+        with patch.dict("os.environ", {"PI_SUBAGENT_SMOKE_READ_PATH": "/synthetic/stale-target"}):
+            self.assertNotIn("PI_SUBAGENT_SMOKE_READ_PATH", observation_env(Path("fixture-trace")))
+            self.assertEqual(observation_env(Path("fixture-trace"), read_path="/synthetic/fixture.txt")
+                             ["PI_SUBAGENT_SMOKE_READ_PATH"], "/synthetic/fixture.txt")
+
     def test_web_answer_cannot_replace_a_successful_child_target_fetch(self):
         self.assertEqual(check(observed=observations(), capability="web")["status"], "fail")
         for key, wrong in [("actor", "parent"), ("kind", "request"), ("targetMatch", False),
@@ -265,11 +297,17 @@ class SmokeContractTests(unittest.TestCase):
     @patch.object(live_smoke, "load_presets", return_value={PRESET: SELECTION, "future-preset": SELECTION})
     def test_all_presets_are_run_in_fresh_parents(self, _presets):
         seen = []
-        def run(_command, *, cwd, prompt, timeout):
+        def run(_command, *, cwd, prompt, timeout, read_path):
             self.assertEqual(_command[:2], ["--mode", "json"])
             preset = PRESET if f"preset={PRESET}." in prompt else "future-preset"
-            seen.append((preset, str(cwd)))
-            return SimpleNamespace(stdout=wire(smoke_messages(preset=preset)), returncode=0), observations()
+            self.assertEqual(read_path, str((cwd / "fixture.txt").resolve()))
+            marker = (cwd / "fixture.txt").read_text().strip().split("=", 1)[1]
+            self.assertNotIn(marker, prompt)
+            self.assertNotEqual(marker, "plain-final-answer")
+            seen.append((preset, str(cwd), marker))
+            messages = smoke_messages(preset=preset)
+            set_answer(messages, f"{marker} (fixture.txt:1)")
+            return SimpleNamespace(stdout=wire(messages), returncode=0), observations()
         args = argparse.Namespace(capability="local", preset="all", main_model="openai-codex/gpt-6-astra",
                                   main_thinking="medium", timeout_seconds=60)
         with patch.object(live_smoke, "observe_run", side_effect=run), \
@@ -278,6 +316,7 @@ class SmokeContractTests(unittest.TestCase):
             self.assertEqual(live_smoke.run_smoke(args), 0)
         self.assertEqual([row[0] for row in seen], [PRESET, "future-preset"])
         self.assertEqual(len(set(row[1] for row in seen)), 2)
+        self.assertEqual(len(set(row[2] for row in seen)), 2)
         self.assertEqual(len(json.loads(output.getvalue())["results"]), 2)
 
     @patch.object(live_smoke, "load_presets", return_value={PRESET: SELECTION})
