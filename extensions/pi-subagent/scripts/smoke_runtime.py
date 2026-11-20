@@ -58,23 +58,26 @@ def observed_cli(root: Path) -> list[str]:
     return ["node", str(wrapper)]
 
 
-def observation_env(trace: Path, fetch_url: str | None = None) -> dict[str, str]:
+def observation_env(trace: Path, fetch_url: str | None = None, read_path: str | None = None) -> dict[str, str]:
     env = {**os.environ, "PI_OFFLINE": "1", "PI_TELEMETRY": "0", "PI_SKIP_VERSION_CHECK": "1",
            "PI_SUBAGENT_SMOKE_TRACE_FILE": str(trace)}
     env.pop("PI_SUBAGENT_SMOKE_FETCH_URL", None)
+    env.pop("PI_SUBAGENT_SMOKE_READ_PATH", None)
     if fetch_url is not None:
         env["PI_SUBAGENT_SMOKE_FETCH_URL"] = fetch_url
+    if read_path is not None:
+        env["PI_SUBAGENT_SMOKE_READ_PATH"] = read_path
     return env
 
 
 def observe_run(args: list[str], *, cwd: Path, prompt: str, timeout: int,
-                fetch_url: str | None = None):
+                fetch_url: str | None = None, read_path: str | None = None):
     with tempfile.TemporaryDirectory(prefix="pi-subagent-observe-") as directory:
         root = Path(directory)
         trace = root / "runtime.jsonl"
         completed = subprocess.run(
             [*observed_cli(root), *args], cwd=cwd, input=prompt, text=True, capture_output=True,
-            timeout=timeout, check=False, env=observation_env(trace, fetch_url),
+            timeout=timeout, check=False, env=observation_env(trace, fetch_url, read_path),
         )
         observations = list(json_events(trace.read_text(encoding="utf-8"))) if trace.exists() else []
     return completed, observations

@@ -1,6 +1,7 @@
 // Test-only observer: never register tools or persist prompts, headers, credentials, or response text.
-import { appendFileSync } from "node:fs";
+import { appendFileSync, realpathSync } from "node:fs";
 import type { ExtensionAPI } from "@earendil-works/pi-coding-agent";
+import { normalizeInputPath } from "../path-policy.ts";
 
 export default function observeRuntime(pi: ExtensionAPI): void {
   const trace = process.env.PI_SUBAGENT_SMOKE_TRACE_FILE;
@@ -34,7 +35,18 @@ export default function observeRuntime(pi: ExtensionAPI): void {
   // after tool-result hooks, including failures blocked before execution.
   const fetchUrl = process.env.PI_SUBAGENT_SMOKE_FETCH_URL;
   const fetches = new Map<string, boolean>();
-  pi.on("tool_execution_start", (event) => {
+  const readPath = process.env.PI_SUBAGENT_SMOKE_READ_PATH;
+  const reads = new Map<string, boolean>();
+  pi.on("tool_execution_start", (event, ctx) => {
+    if (actor === "child" && readPath && event.toolName === "read") {
+      let targetMatch = false;
+      try {
+        if (typeof event.args?.path === "string") {
+          targetMatch = realpathSync(normalizeInputPath(event.args.path, ctx.cwd)) === readPath;
+        }
+      } catch {}
+      reads.set(event.toolCallId, targetMatch);
+    }
     if (actor !== "child" || !fetchUrl || event.toolName !== "fetch_content") return;
     const urls = event.args?.urls;
     const url = event.args?.url;
@@ -42,6 +54,14 @@ export default function observeRuntime(pi: ExtensionAPI): void {
     fetches.set(event.toolCallId, targets.length === 1 && targets[0] === fetchUrl);
   });
   pi.on("tool_execution_end", (event) => {
+    const readMatch = reads.get(event.toolCallId);
+    if (readMatch !== undefined) {
+      reads.delete(event.toolCallId);
+      const success = event.isError === false && Array.isArray(event.result?.content)
+        && event.result.content.some((block: { type: string; text?: string }) =>
+          block.type === "text" && typeof block.text === "string" && block.text.trim().length > 0);
+      record({ kind: "local_read", targetMatch: readMatch, success });
+    }
     const targetMatch = fetches.get(event.toolCallId);
     if (targetMatch === undefined) return;
     fetches.delete(event.toolCallId);
