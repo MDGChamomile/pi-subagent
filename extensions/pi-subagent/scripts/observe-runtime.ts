@@ -1,7 +1,7 @@
 // Test-only observer: never register tools or persist prompts, headers, credentials, or response text.
 import { appendFileSync, realpathSync } from "node:fs";
-import { resolve } from "node:path";
 import type { ExtensionAPI } from "@earendil-works/pi-coding-agent";
+import { normalizeInputPath } from "../path-policy.ts";
 
 export default function observeRuntime(pi: ExtensionAPI): void {
   const trace = process.env.PI_SUBAGENT_SMOKE_TRACE_FILE;
@@ -42,7 +42,7 @@ export default function observeRuntime(pi: ExtensionAPI): void {
       let targetMatch = false;
       try {
         if (typeof event.args?.path === "string") {
-          targetMatch = realpathSync(resolve(ctx.cwd, event.args.path)) === readPath;
+          targetMatch = realpathSync(normalizeInputPath(event.args.path, ctx.cwd)) === readPath;
         }
       } catch {}
       reads.set(event.toolCallId, targetMatch);

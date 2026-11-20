@@ -3,6 +3,7 @@ import { mkdtemp, readFile, realpath, rm, symlink, writeFile } from "node:fs/pro
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { test } from "node:test";
+import { pathToFileURL } from "node:url";
 import observeRuntime from "./scripts/observe-runtime.ts";
 import { setEnv } from "./test-support.ts";
 
@@ -50,15 +51,16 @@ test("local observer correlates canonical target reads and records only booleans
     await symlink(fixture, join(root, "alias.txt"));
     await writeFile(join(root, "other.txt"), PRIVATE);
     for (const [id, path] of [["relative", "fixture.txt"], ["absolute", fixture], ["alias", "alias.txt"],
+      ["mention", "@fixture.txt"], ["file-url", pathToFileURL(fixture).href],
       ["other", "other.txt"], ["missing", "missing.txt"], ["malformed", 42]] as const) {
       emit("tool_execution_start", { toolCallId: id, toolName: "read", args: { path } }, { cwd: root });
     }
     assert.deepEqual(await rows(), []);
-    for (const id of ["other", "relative", "absolute", "alias", "missing", "malformed", "relative", "unstarted"]) {
+    for (const id of ["other", "relative", "absolute", "alias", "mention", "file-url", "missing", "malformed", "relative", "unstarted"]) {
       emit("tool_execution_end", { toolCallId: id, toolName: "read", isError: false,
         result: { content: [{ type: "text", text: PRIVATE }] } });
     }
-    assert.deepEqual(await rows(), [false, true, true, true, false, false].map((targetMatch) => ({
+    assert.deepEqual(await rows(), [false, true, true, true, true, true, false, false].map((targetMatch) => ({
       actor: "child", kind: "local_read", targetMatch, success: true,
     })));
     assert.equal(JSON.stringify(await rows()).includes(PRIVATE), false);
